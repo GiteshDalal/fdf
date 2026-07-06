@@ -1,0 +1,4 @@
+exit: 1
+contains: shipped
+contains: draft
+contains: (F7)

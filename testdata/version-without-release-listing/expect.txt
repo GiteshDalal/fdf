@@ -1,0 +1,3 @@
+exit: 1
+contains: 0.9
+contains: (F7)
