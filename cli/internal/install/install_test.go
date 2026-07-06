@@ -53,6 +53,43 @@ func TestInstallCodexManagedBlockIdempotent(t *testing.T) {
 	}
 }
 
+func TestInstallCodexPreservesSurroundingContentOrder(t *testing.T) {
+	home := t.TempDir()
+	p := filepath.Join(home, ".codex", "AGENTS.md")
+	var out bytes.Buffer
+	if code := Run("codex", home, &out); code != 0 {
+		t.Fatalf("install: %d\n%s", code, out.String())
+	}
+	// Wrap the freshly installed block in user content before and after it.
+	installed, _ := os.ReadFile(p)
+	before := "# My own preamble\n\nkeep me first\n\n"
+	after := "\n# My own appendix\n\nkeep me last\n"
+	if err := os.WriteFile(p, []byte(before+string(installed)+after), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if code := Run("codex", home, &out); code != 0 {
+		t.Fatalf("re-install: %d\n%s", code, out.String())
+	}
+	got, _ := os.ReadFile(p)
+	s := string(got)
+	if strings.Count(s, "<!-- fdf:begin") != 1 {
+		t.Fatalf("expected exactly one managed block:\n%s", s)
+	}
+	iBefore := strings.Index(s, "keep me first")
+	iBlock := strings.Index(s, "<!-- fdf:begin")
+	iAfter := strings.Index(s, "keep me last")
+	if iBefore < 0 || iBlock < 0 || iAfter < 0 {
+		t.Fatalf("content lost (before=%d block=%d after=%d):\n%s", iBefore, iBlock, iAfter, s)
+	}
+	if !(iBefore < iBlock && iBlock < iAfter) {
+		t.Fatalf("order not preserved (before=%d block=%d after=%d):\n%s", iBefore, iBlock, iAfter, s)
+	}
+	if !strings.Contains(out.String(), "upgraded") {
+		t.Fatalf("replacing an existing block should report upgraded: %q", out.String())
+	}
+}
+
 func TestInstallUnknownHarness(t *testing.T) {
 	var out bytes.Buffer
 	if code := Run("emacs", t.TempDir(), &out); code != 2 {

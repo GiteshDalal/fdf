@@ -66,15 +66,37 @@ func claudeCode(home string, out io.Writer) int {
 			fmt.Fprintln(out, "error:", err)
 			return 1
 		}
-		os.WriteFile(filepath.Join(dir, "SKILL.md"), raw, 0o644)
-		os.WriteFile(filepath.Join(dir, ".fdf-version"), []byte(Version), 0o644)
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), raw, 0o644); err != nil {
+			fmt.Fprintln(out, "error:", err)
+			return 1
+		}
+		// The marker is written only after SKILL.md landed, so a failed
+		// install can never masquerade as "up to date" on the next run.
+		if err := os.WriteFile(filepath.Join(dir, ".fdf-version"), []byte(Version), 0o644); err != nil {
+			fmt.Fprintln(out, "error:", err)
+			return 1
+		}
 	}
-	cmds, _ := fs.ReadDir(fdf.Assets, "harness/claude-code/commands")
+	cmds, err := fs.ReadDir(fdf.Assets, "harness/claude-code/commands")
+	if err != nil {
+		fmt.Fprintf(out, "error: embedded harness/claude-code/commands: %v\n", err)
+		return 1
+	}
 	cmdDir := filepath.Join(home, ".claude", "commands")
-	os.MkdirAll(cmdDir, 0o755)
+	if err := os.MkdirAll(cmdDir, 0o755); err != nil {
+		fmt.Fprintln(out, "error:", err)
+		return 1
+	}
 	for _, e := range cmds {
-		raw, _ := fs.ReadFile(fdf.Assets, "harness/claude-code/commands/"+e.Name())
-		os.WriteFile(filepath.Join(cmdDir, e.Name()), raw, 0o644)
+		raw, err := fs.ReadFile(fdf.Assets, "harness/claude-code/commands/"+e.Name())
+		if err != nil {
+			fmt.Fprintf(out, "error: embedded command %s: %v\n", e.Name(), err)
+			return 1
+		}
+		if err := os.WriteFile(filepath.Join(cmdDir, e.Name()), raw, 0o644); err != nil {
+			fmt.Fprintln(out, "error:", err)
+			return 1
+		}
 	}
 	verb := "installed"
 	if hadAny {
@@ -104,16 +126,31 @@ func managedBlock(path string, out io.Writer) int {
 	}
 	b.WriteString("<!-- fdf:end -->\n")
 
+	block := b.String()
 	existing, _ := os.ReadFile(path)
-	content := blockRe.ReplaceAllString(string(existing), "")
+	var content string
 	verb := "installed"
-	if len(existing) > 0 && len(content) != len(existing) {
+	if blockRe.MatchString(string(existing)) {
+		// Replace the existing block in place so user content before and
+		// after it keeps its position. ReplaceAllStringFunc avoids `$`
+		// expansion in the replacement text; any duplicate blocks collapse
+		// into the first.
 		verb = "upgraded"
+		replaced := false
+		content = blockRe.ReplaceAllStringFunc(string(existing), func(string) string {
+			if replaced {
+				return ""
+			}
+			replaced = true
+			return block
+		})
+	} else {
+		content = string(existing)
+		if content != "" && !strings.HasSuffix(content, "\n") {
+			content += "\n"
+		}
+		content += block
 	}
-	if content != "" && !strings.HasSuffix(content, "\n") {
-		content += "\n"
-	}
-	content += b.String()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		fmt.Fprintln(out, "error:", err)
 		return 1
