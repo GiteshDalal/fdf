@@ -22,9 +22,15 @@ docs/features/
 
 ## Install
 
-Binaries on the [releases page](https://github.com/GiteshDalal/fdf/releases),
-or with [mise](https://mise.jdx.dev): `mise use ubi:GiteshDalal/fdf`, or
-`go install github.com/GiteshDalal/fdf/cli/cmd/fdf@latest`.
+- Binaries on the [releases page](https://github.com/GiteshDalal/fdf/releases)
+- With [mise](https://mise.jdx.dev)
+```
+mise use ubi:GiteshDalal/fdf
+```
+- With [Go](https://go.dev/)
+```
+go install github.com/GiteshDalal/fdf/cli/cmd/fdf@latest
+```
 
 ## Use
 
