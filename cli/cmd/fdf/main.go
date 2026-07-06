@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -13,6 +14,8 @@ var commands = map[string]func(args []string, stdout io.Writer) int{
 	"validate": runValidate,
 	"init":     runInit,
 	"new":      runNew,
+	"install":  runInstall,
+	"serve":    runServe,
 	"migrate":  runMigrate,
 }
 
@@ -24,11 +27,22 @@ Commands:
   validate   Check the bundle against SPEC v0.2 (F1-F8 + R1)
   init       Scaffold a bundle at the resolved root
   new        Scaffold a draft feature: fdf new <group>/<slug>
+  install    Install/upgrade the FDF skills for an AI harness (claude-code|codex|opencode)
+  serve      Serve the bundle in a browser (wraps bun x mdts)
   migrate    Upgrade a bundle to the current spec version
   version    Print the CLI version
 
 Bundle root: --root flag > FDF_ROOT_DIR env > docs/features (relative paths
 resolve against the project root).`
+
+// newFlagSet builds a FlagSet shared by every command: errors are handled by
+// the caller (ContinueOnError) and usage/errors are written to stdout so
+// tests can capture them alongside command output.
+func newFlagSet(name string, stdout io.Writer) *flag.FlagSet {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	fs.SetOutput(stdout)
+	return fs
+}
 
 func main() {
 	if len(os.Args) < 2 {

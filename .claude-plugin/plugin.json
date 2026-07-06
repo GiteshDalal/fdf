@@ -1,0 +1,10 @@
+{
+  "name": "fdf",
+  "description": "Feature Document Format: brainstorm → plan → execute skills that keep feature docs, Gherkin scenarios, TEST.md acceptance, and statuses in lockstep with the fdf CLI.",
+  "version": "0.2.0",
+  "author": { "name": "Gitesh Dalal" },
+  "homepage": "https://github.com/GiteshDalal/fdf",
+  "repository": "https://github.com/GiteshDalal/fdf",
+  "license": "MIT",
+  "keywords": ["fdf", "features", "gherkin", "documentation", "workflow"]
+}

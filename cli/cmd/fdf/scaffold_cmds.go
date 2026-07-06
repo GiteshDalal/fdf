@@ -12,7 +12,6 @@ import (
 
 func resolveRoot(fs *flag.FlagSet, args []string, stdout io.Writer) (string, []string, bool) {
 	root := rootFlag(fs)
-	fs.SetOutput(stdout)
 	if err := fs.Parse(args); err != nil {
 		return "", nil, false
 	}
@@ -26,7 +25,7 @@ func resolveRoot(fs *flag.FlagSet, args []string, stdout io.Writer) (string, []s
 }
 
 func runInit(args []string, stdout io.Writer) int {
-	fs := flag.NewFlagSet("init", flag.ContinueOnError)
+	fs := newFlagSet("init", stdout)
 	root, _, ok := resolveRoot(fs, args, stdout)
 	if !ok {
 		return 2
@@ -35,7 +34,7 @@ func runInit(args []string, stdout io.Writer) int {
 }
 
 func runNew(args []string, stdout io.Writer) int {
-	fs := flag.NewFlagSet("new", flag.ContinueOnError)
+	fs := newFlagSet("new", stdout)
 	root, rest, ok := resolveRoot(fs, args, stdout)
 	if !ok {
 		return 2

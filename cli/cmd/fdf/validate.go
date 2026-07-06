@@ -16,8 +16,7 @@ func rootFlag(fs *flag.FlagSet) *string {
 }
 
 func runValidate(args []string, stdout io.Writer) int {
-	fs := flag.NewFlagSet("validate", flag.ContinueOnError)
-	fs.SetOutput(stdout)
+	fs := newFlagSet("validate", stdout)
 	root := rootFlag(fs)
 	repoRoot := fs.String("repo-root", "", "project root for R1 resource checks (default: auto-detect)")
 	if err := fs.Parse(args); err != nil {
