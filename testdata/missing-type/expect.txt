@@ -1,0 +1,3 @@
+exit: 1
+contains: type
+contains: (F1)

@@ -3,6 +3,7 @@ package main
 import (
 	"io"
 
+	"github.com/GiteshDalal/fdf/cli/internal/fdfroot"
 	"github.com/GiteshDalal/fdf/cli/internal/migrate"
 )
 
@@ -12,5 +13,9 @@ func runMigrate(args []string, stdout io.Writer) int {
 	if !ok {
 		return 2
 	}
-	return migrate.Run(root, stdout)
+	repoRoot := ""
+	if pr, standalone := fdfroot.ProjectRoot(root); !standalone {
+		repoRoot = pr
+	}
+	return migrate.Run(root, repoRoot, stdout)
 }

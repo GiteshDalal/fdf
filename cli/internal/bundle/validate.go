@@ -438,6 +438,10 @@ func Validate(root string, opts Options) int {
 		fmt.Fprintln(out, "Bundle is FDF-conformant but has drifted from the repo (R1).")
 		return 1
 	}
+	if opts.RepoRoot == "" {
+		fmt.Fprintln(out, "Bundle is conformant with FDF v0.2 (R1 skipped: no project root).")
+		return 0
+	}
 	fmt.Fprintln(out, "Bundle is conformant with FDF v0.2; repo integrity (R1) verified.")
 	return 0
 }

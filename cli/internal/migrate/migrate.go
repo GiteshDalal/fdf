@@ -23,7 +23,7 @@ var statusRe = regexp.MustCompile(`(?m)^status:\s*(\S+)`)
 var scenarioRe = regexp.MustCompile(`(?m)^\s*Scenario(?: Outline)?:\s*(\S[^\n]*)`)
 var timestampRe = regexp.MustCompile(`(?m)^timestamp:\s*(\S+)`)
 
-func Run(root string, out io.Writer) int {
+func Run(root, repoRoot string, out io.Writer) int {
 	if fi, err := os.Stat(root); err != nil || !fi.IsDir() {
 		fmt.Fprintf(out, "error: %s is not a directory\n", root)
 		return 1
@@ -165,7 +165,7 @@ func Run(root string, out io.Writer) int {
 
 	// 6. Validate the result.
 	fmt.Fprintln(out, "\nvalidating migrated bundle:")
-	return bundle.Validate(root, bundle.Options{Out: out})
+	return bundle.Validate(root, bundle.Options{RepoRoot: repoRoot, Out: out})
 }
 
 func rel(root, p string) string {

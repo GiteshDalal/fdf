@@ -52,7 +52,7 @@ func TestMigrateV01ToV02(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "features")
 	buildV01Bundle(t, root)
 	var out bytes.Buffer
-	if code := Run(root, &out); code != 0 {
+	if code := Run(root, "", &out); code != 0 {
 		t.Fatalf("migrate exit %d\n%s", code, out.String())
 	}
 	for _, p := range []string{"INDEX.md", "LOG.md", "wdise/INDEX.md", "wdise/example/SPEC.md", "wdise/example/PLAN.md", "wdise/example/TEST.md"} {

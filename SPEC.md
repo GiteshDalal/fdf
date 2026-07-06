@@ -161,7 +161,7 @@ never errors:
 
 | Rule | Hard requirement |
 |------|------------------|
-| F1 | Parseable YAML frontmatter with non-empty `type`; ISO-8601 `## YYYY-MM-DD` log headings; root `fdf_version` pin matches a spec version the tool supports |
+| F1 | Parseable YAML frontmatter with non-empty `type`; ISO-8601 `## YYYY-MM-DD` log headings; root `fdf_version` pin, when present, matches a spec version the tool supports (an absent pin is a warning) |
 | F2 | `Feature`/`Task`/`Release` carry a valid `status` from the closed vocabularies |
 | F3 | Positional integrity: paired directories contain only `SPEC.md`/`PLAN.md`/`TEST.md`/`NN-slug.md`; every paired directory has its sibling feature; `type` matches position; casing rules; nothing nests deeper |
 | F4 | Status ↔ artifact invariants (table above) |
