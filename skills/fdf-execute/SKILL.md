@@ -20,7 +20,10 @@ Implement a planned feature task by task, statuses always truthful.
 1. Set `status: in-progress` in the task file; feature to `implementing` if
    this is the first task. `fdf validate` after every frontmatter change.
 2. Do the work per `# Steps`; touch only paths consistent with `resource:`.
-3. Verify `# Acceptance`; set `status: done`; update `timestamp`.
+3. Verify `# Acceptance`; set `status: done`; update `timestamp`. When
+   completing the FINAL task, flip the task and the feature status in the
+   same edit before validating — a lone final-task flip fails F4
+   ("implementing but every task is done").
 
 ## Completion gate
 

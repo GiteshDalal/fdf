@@ -2,6 +2,7 @@
   "name": "fdf",
   "description": "Feature Document Format: brainstorm → plan → execute skills that keep feature docs, Gherkin scenarios, TEST.md acceptance, and statuses in lockstep with the fdf CLI.",
   "version": "0.2.0",
+  "commands": "./harness/claude-code/commands",
   "author": { "name": "Gitesh Dalal" },
   "homepage": "https://github.com/GiteshDalal/fdf",
   "repository": "https://github.com/GiteshDalal/fdf",

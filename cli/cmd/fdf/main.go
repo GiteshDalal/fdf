@@ -33,7 +33,9 @@ Commands:
   version    Print the CLI version
 
 Bundle root: --root flag > FDF_ROOT_DIR env > docs/features (relative paths
-resolve against the project root).`
+resolve against the project root).
+
+Flags must precede positional arguments (e.g. fdf new --root <dir> <group>/<slug>).`
 
 // newFlagSet builds a FlagSet shared by every command: errors are handled by
 // the caller (ContinueOnError) and usage/errors are written to stdout so
