@@ -29,7 +29,9 @@ func Run(root string, out io.Writer) int {
 		return 1
 	}
 
-	// 1. Two-step case renames, deepest paths first.
+	// 1. Two-step case renames. All files are collected before any rename;
+	// the walk's default top-down order is fine because only basenames
+	// change, so every collected path stays valid throughout.
 	var files []string
 	filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
 		if err == nil && !d.IsDir() {
@@ -37,14 +39,26 @@ func Run(root string, out io.Writer) int {
 		}
 		return nil
 	})
+	renameFailed := false
 	for _, p := range files {
 		if to, ok := renames[filepath.Base(p)]; ok {
 			tmp := p + ".migrating"
 			final := filepath.Join(filepath.Dir(p), to)
-			if os.Rename(p, tmp) == nil && os.Rename(tmp, final) == nil {
-				fmt.Fprintf(out, "renamed %s -> %s\n", rel(root, p), to)
+			if err := os.Rename(p, tmp); err != nil {
+				fmt.Fprintf(out, "error: renaming %s: %v\n", rel(root, p), err)
+				renameFailed = true
+				continue
 			}
+			if err := os.Rename(tmp, final); err != nil {
+				fmt.Fprintf(out, "error: renaming %s: %v\n", rel(root, p), err)
+				renameFailed = true
+				continue
+			}
+			fmt.Fprintf(out, "renamed %s -> %s\n", rel(root, p), to)
 		}
+	}
+	if renameFailed {
+		return 1
 	}
 
 	// 2. Delete the vendored v0.1 spec.
@@ -77,19 +91,31 @@ func Run(root string, out io.Writer) int {
 		s := linkRe.ReplaceAllStringFunc(string(raw), func(m string) string {
 			parts := linkRe.FindStringSubmatch(m)
 			target := parts[2]
-			if strings.Contains(target, "fdf-spec.md") {
-				return parts[1] + specURL + parts[3]
+			// Leave external and intra-document targets untouched
+			// (mirrors bundle.resolveLink's guard).
+			if strings.Contains(target, "://") || strings.HasPrefix(target, "mailto:") ||
+				strings.HasPrefix(target, "tel:") || strings.HasPrefix(target, "#") {
+				return m
 			}
-			dir, base := filepath.Dir(target), filepath.Base(target)
+			// Root-absolute targets keep their leading "/" and get only
+			// the relative remainder rewritten — never "//".
+			prefix, relTarget := "", target
+			if strings.HasPrefix(target, "/") {
+				prefix, relTarget = "/", strings.TrimPrefix(target, "/")
+			}
+			dir, base := filepath.Dir(relTarget), filepath.Base(relTarget)
 			frag := ""
 			if i := strings.IndexAny(base, "#?"); i >= 0 {
 				base, frag = base[:i], base[i:]
 			}
+			if base == "fdf-spec.md" {
+				return parts[1] + specURL + parts[3]
+			}
 			if to, ok := renames[base]; ok {
 				if dir == "." {
-					return parts[1] + to + frag + parts[3]
+					return parts[1] + prefix + to + frag + parts[3]
 				}
-				return parts[1] + dir + "/" + to + frag + parts[3]
+				return parts[1] + prefix + dir + "/" + to + frag + parts[3]
 			}
 			return m
 		})
