@@ -22,7 +22,7 @@ func write(t *testing.T, root, rel, content string) {
 // buildV01Bundle writes a miniature FDF v0.1 bundle: lowercase reserved
 // names, vendored fdf-spec.md, a planned feature without TEST.md.
 func buildV01Bundle(t *testing.T, root string) {
-	write(t, root, "index.md", "---\nfdf_version: \"0.1\"\n---\n\n# Bundle\n\n* [FDF format](/fdf-spec.md) - vendored spec.\n* [Wdise](/wdise/index.md) - group.\n* [log](/log.md) - root-absolute trail link.\n* [u](https://example.com/a/log.md) - external URL, must stay untouched.\n* [w](https://example.com/other-fdf-spec.md-notes.md) - external URL, must stay untouched.\n")
+	write(t, root, "index.md", "---\nfdf_version: \"0.1\"\n---\n\n# Bundle\n\n* [FDF format](/fdf-spec.md) - vendored spec.\n* [Wdise](/wdise/index.md) - group.\n* [log](/log.md) - root-absolute trail link.\n* [u](https://example.com/a/log.md) - external URL, must stay untouched.\n* [w](https://example.com/other-fdf-spec.md-notes.md) - external URL, must stay untouched.\n* [OKF map](../okf/index.md) - sibling bundle (not FDF; must not be rewritten).\n")
 	write(t, root, "log.md", "# Bundle Update Log\n\n## 2026-07-05\n* **Initialization**: v0.1.\n")
 	write(t, root, "fdf-spec.md", "---\ntype: Reference\ntitle: FDF v0.1\ndescription: vendored.\ntimestamp: 2026-07-05T00:00:00Z\n---\n\nOld spec body.\n")
 	write(t, root, "wdise/index.md", "# Wdise\n\n* [Example](/wdise/example.md) - example.\n")
@@ -75,6 +75,9 @@ func TestMigrateV01ToV02(t *testing.T) {
 	}
 	if !strings.Contains(string(idx), "(https://example.com/other-fdf-spec.md-notes.md)") {
 		t.Fatalf("external URL containing fdf-spec.md substring was modified:\n%s", idx)
+	}
+	if !strings.Contains(string(idx), "(../okf/index.md)") {
+		t.Fatalf("out-of-bundle relative link must stay untouched (not rewritten to INDEX.md):\n%s", idx)
 	}
 	feat, _ := os.ReadFile(filepath.Join(root, "wdise", "example.md"))
 	if !strings.Contains(string(feat), "example/SPEC.md") || !strings.Contains(string(feat), "example/PLAN.md") {

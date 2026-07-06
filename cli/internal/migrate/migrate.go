@@ -28,6 +28,10 @@ func Run(root, repoRoot string, out io.Writer) int {
 		fmt.Fprintf(out, "error: %s is not a directory\n", root)
 		return 1
 	}
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		rootAbs = root
+	}
 
 	// 1. Two-step case renames. All files are collected before any rename;
 	// the walk's default top-down order is fine because only basenames
@@ -102,6 +106,18 @@ func Run(root, repoRoot string, out io.Writer) int {
 			prefix, relTarget := "", target
 			if strings.HasPrefix(target, "/") {
 				prefix, relTarget = "/", strings.TrimPrefix(target, "/")
+			} else {
+				// Relative targets that resolve outside the bundle root
+				// point at a sibling (non-FDF) tree we don't own —
+				// leave them exactly as written.
+				pathPart := target
+				if i := strings.IndexAny(pathPart, "#?"); i >= 0 {
+					pathPart = pathPart[:i]
+				}
+				joined := filepath.Clean(filepath.Join(filepath.Dir(p), pathPart))
+				if rel, err := filepath.Rel(rootAbs, joined); err != nil || rel == ".." || strings.HasPrefix(rel, "../") {
+					return m
+				}
 			}
 			dir, base := filepath.Dir(relTarget), filepath.Base(relTarget)
 			frag := ""
