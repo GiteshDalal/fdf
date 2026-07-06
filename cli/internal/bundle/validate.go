@@ -27,7 +27,7 @@ var (
 	taskFileRe    = regexp.MustCompile(`^\d{2}-[a-z0-9][a-z0-9-]*\.md$`)
 	lowerFileRe   = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]*\.md$`)
 	lowerDirRe    = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
-	fenceRe       = regexp.MustCompile("(?s)```gherkin[ \t]*\n(.*?)```")
+	fenceRe       = regexp.MustCompile("(?s)```gherkin[ \t]*\r?\n(.*?)```")
 	gherkinStart  = regexp.MustCompile(`^\s*(Feature:|Scenario:|Scenario Outline:|Background:|Rule:|@)`)
 	featureDeclRe = regexp.MustCompile(`(?m)^\s*Feature:`)
 	scenarioRe    = regexp.MustCompile(`(?m)^\s*Scenario(?: Outline)?:\s*(\S[^\n]*)`)
