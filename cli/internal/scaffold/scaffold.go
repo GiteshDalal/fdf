@@ -2,8 +2,10 @@
 package scaffold
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -101,10 +103,19 @@ Scenario: Replace me
 	gidx := filepath.Join(root, group, "INDEX.md")
 	entry := fmt.Sprintf("* [%s](/%s/%s.md) - TODO. (**draft**)\n", title, group, slug)
 	if raw, err := os.ReadFile(gidx); err == nil {
-		os.WriteFile(gidx, append(raw, []byte(entry)...), 0o644)
-	} else {
+		if err := os.WriteFile(gidx, append(raw, []byte(entry)...), 0o644); err != nil {
+			fmt.Fprintln(out, "error:", err)
+			return 1
+		}
+	} else if errors.Is(err, fs.ErrNotExist) {
 		heading := strings.ToUpper(group[:1]) + group[1:]
-		os.WriteFile(gidx, []byte(fmt.Sprintf("# %s features\n\n%s", heading, entry)), 0o644)
+		if err := os.WriteFile(gidx, []byte(fmt.Sprintf("# %s features\n\n%s", heading, entry)), 0o644); err != nil {
+			fmt.Fprintln(out, "error:", err)
+			return 1
+		}
+	} else {
+		fmt.Fprintln(out, "error:", err)
+		return 1
 	}
 	fmt.Fprintf(out, "created %s (status: draft)\n", featurePath)
 	return 0
