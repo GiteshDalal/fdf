@@ -11,6 +11,8 @@ var version = "0.2.0-dev"
 
 var commands = map[string]func(args []string, stdout io.Writer) int{
 	"validate": runValidate,
+	"init":     runInit,
+	"new":      runNew,
 }
 
 const usage = `fdf — Feature Document Format tooling (SPEC v0.2)
@@ -19,6 +21,8 @@ Usage: fdf <command> [flags]
 
 Commands:
   validate   Check the bundle against SPEC v0.2 (F1-F8 + R1)
+  init       Scaffold a bundle at the resolved root
+  new        Scaffold a draft feature: fdf new <group>/<slug>
   version    Print the CLI version
 
 Bundle root: --root flag > FDF_ROOT_DIR env > docs/features (relative paths

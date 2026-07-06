@@ -1,0 +1,80 @@
+package scaffold
+
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/GiteshDalal/fdf/cli/internal/bundle"
+)
+
+func TestInitScaffoldsConformingBundle(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "docs", "features")
+	var out bytes.Buffer
+	if code := Init(root, &out); code != 0 {
+		t.Fatalf("init: %d\n%s", code, out.String())
+	}
+	for _, f := range []string{"INDEX.md", "LOG.md"} {
+		if _, err := os.Stat(filepath.Join(root, f)); err != nil {
+			t.Fatalf("missing %s", f)
+		}
+	}
+	raw, _ := os.ReadFile(filepath.Join(root, "INDEX.md"))
+	if !strings.Contains(string(raw), `fdf_version: "0.2"`) ||
+		!strings.Contains(string(raw), "https://github.com/GiteshDalal/fdf/blob/main/SPEC.md") {
+		t.Fatalf("INDEX.md missing pin or spec link:\n%s", raw)
+	}
+	var vout bytes.Buffer
+	if exit := bundle.Validate(root, bundle.Options{Out: &vout}); exit != 0 {
+		t.Fatalf("scaffold not conformant:\n%s", vout.String())
+	}
+}
+
+func TestInitIdempotentAndMigrateHint(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "docs", "features")
+	var out bytes.Buffer
+	Init(root, &out)
+	out.Reset()
+	if code := Init(root, &out); code != 0 || !strings.Contains(out.String(), "up to date") {
+		t.Fatalf("re-init: code %d out %q", code, out.String())
+	}
+	// Simulate an older bundle: rewrite the pin.
+	idx := filepath.Join(root, "INDEX.md")
+	raw, _ := os.ReadFile(idx)
+	os.WriteFile(idx, bytes.Replace(raw, []byte(`"0.2"`), []byte(`"0.1"`), 1), 0o644)
+	out.Reset()
+	if code := Init(root, &out); code != 1 || !strings.Contains(out.String(), "fdf migrate") {
+		t.Fatalf("older pin: code %d out %q", code, out.String())
+	}
+}
+
+func TestNewScaffoldsDraftFeature(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "docs", "features")
+	var out bytes.Buffer
+	Init(root, &out)
+	if code := New(root, "payments/instant-refunds", &out); code != 0 {
+		t.Fatalf("new: %d\n%s", code, out.String())
+	}
+	raw, _ := os.ReadFile(filepath.Join(root, "payments", "instant-refunds.md"))
+	for _, want := range []string{"type: Feature", "status: draft", "Feature: Instant refunds", "Scenario:"} {
+		if !strings.Contains(string(raw), want) {
+			t.Fatalf("feature missing %q:\n%s", want, raw)
+		}
+	}
+	gidx, _ := os.ReadFile(filepath.Join(root, "payments", "INDEX.md"))
+	if !strings.Contains(string(gidx), "/payments/instant-refunds.md") {
+		t.Fatalf("group index not linking feature:\n%s", gidx)
+	}
+	var vout bytes.Buffer
+	if exit := bundle.Validate(root, bundle.Options{Out: &vout}); exit != 0 {
+		t.Fatalf("bundle with new feature not conformant:\n%s", vout.String())
+	}
+	if code := New(root, "payments/instant-refunds", &out); code != 1 {
+		t.Fatal("re-new same id must fail")
+	}
+	if code := New(root, "Payments/Bad", &out); code != 1 {
+		t.Fatal("uppercase id must fail")
+	}
+}
