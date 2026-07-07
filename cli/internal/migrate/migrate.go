@@ -12,9 +12,11 @@ import (
 	"strings"
 
 	"github.com/GiteshDalal/fdf/cli/internal/bundle"
+	"github.com/GiteshDalal/fdf/cli/internal/scaffold"
 )
 
 const specURL = "https://github.com/GiteshDalal/fdf/blob/main/SPEC.md"
+const currentVersion = "0.3"
 
 var renames = map[string]string{"index.md": "INDEX.md", "log.md": "LOG.md", "spec.md": "SPEC.md", "plan.md": "PLAN.md"}
 var linkRe = regexp.MustCompile(`(\]\()([^)]*)(\))`)
@@ -71,14 +73,16 @@ func Run(root, repoRoot string, out io.Writer) int {
 		fmt.Fprintln(out, "removed vendored fdf-spec.md (spec is pinned by URL now)")
 	}
 
-	// 3. Upgrade the root pin.
+	// 3. Upgrade the root pin to the current version (migration chains
+	// forward: a v0.1 or v0.2 bundle both land on the latest pin).
 	idx := filepath.Join(root, "INDEX.md")
 	if raw, err := os.ReadFile(idx); err == nil {
 		s := string(raw)
+		pin := fmt.Sprintf(`fdf_version: "%s"`, currentVersion)
 		if pinRe.MatchString(s) {
-			s = pinRe.ReplaceAllString(s, `fdf_version: "0.2"`)
+			s = pinRe.ReplaceAllString(s, pin)
 		} else {
-			s = "---\nfdf_version: \"0.2\"\n---\n\n" + s
+			s = "---\n" + pin + "\n---\n\n" + s
 		}
 		os.WriteFile(idx, []byte(s), 0o644)
 	}
@@ -179,9 +183,26 @@ func Run(root, repoRoot string, out io.Writer) int {
 		return nil
 	})
 
-	// 6. Validate the result.
+	// 6. v0.3: refresh the bundle-root spec copy to the target version (a
+	// migrated bundle must not keep a stale vendored spec) and scaffold the
+	// Context stubs if absent. The stubs satisfy structure; the fdf-init
+	// interview fills them (F9 flags them as unfilled until it does — the
+	// intended nudge).
+	if code := scaffold.RefreshSpec(root, out); code != 0 {
+		return code
+	}
+	if code := scaffold.EnsureContextStubs(root, out); code != 0 {
+		return code
+	}
+
+	// 7. Validate the result. Freshly scaffolded Context stubs are advisory
+	// here — migration succeeded; filling them is the human's next step.
 	fmt.Fprintln(out, "\nvalidating migrated bundle:")
-	return bundle.Validate(root, bundle.Options{RepoRoot: repoRoot, Out: out})
+	code := bundle.Validate(root, bundle.Options{RepoRoot: repoRoot, Out: out, FreshStubsAdvisory: true})
+	if code == 0 {
+		fmt.Fprintln(out, "\nnext: run the fdf-init skill to fill STACK.md, ARCHITECTURE.md, and INFRA.md.")
+	}
+	return code
 }
 
 func rel(root, p string) string {

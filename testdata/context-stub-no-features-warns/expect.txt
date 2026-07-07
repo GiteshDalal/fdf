@@ -1,0 +1,2 @@
+exit: 0
+contains: still an unfilled stub — run the fdf-init interview

@@ -1,11 +1,19 @@
 {
   "name": "fdf",
-  "description": "Feature Document Format: brainstorm → plan → execute skills that keep feature docs, Gherkin scenarios, TEST.md acceptance, and statuses in lockstep with the fdf CLI.",
-  "version": "0.2.2",
+  "description": "Feature Document Format: init \u2192 brainstorm \u2192 plan \u2192 execute skills that keep context docs (stack/architecture/infra), feature docs, Gherkin scenarios, TEST.md acceptance, and statuses in lockstep with the fdf CLI.",
+  "version": "0.3.0",
   "commands": "./harness/claude-code/commands",
-  "author": { "name": "Gitesh Dalal" },
+  "author": {
+    "name": "Gitesh Dalal"
+  },
   "homepage": "https://github.com/GiteshDalal/fdf",
   "repository": "https://github.com/GiteshDalal/fdf",
   "license": "MIT",
-  "keywords": ["fdf", "features", "gherkin", "documentation", "workflow"]
+  "keywords": [
+    "fdf",
+    "features",
+    "gherkin",
+    "documentation",
+    "workflow"
+  ]
 }

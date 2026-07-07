@@ -10,12 +10,22 @@ import (
 )
 
 func runInstall(args []string, stdout io.Writer) int {
-	if len(args) != 1 || args[0] == "-h" || args[0] == "--help" {
-		fmt.Fprintln(stdout, "usage: fdf install <claude-code|codex|opencode>\n\nInstalls (or auto-upgrades) the FDF skills for the given AI harness.")
+	fs := newFlagSet("install", stdout)
+	rootFlag := fs.String("root", "", "bundle root to bake into the installed skills (default docs/features; FDF_ROOT_DIR is honored)")
+	if err := fs.Parse(args); err != nil {
 		return 2
 	}
+	rest := fs.Args()
+	if len(rest) != 1 {
+		fmt.Fprintln(stdout, "usage: fdf install [--root <dir>] <claude-code|codex|opencode>\n\nInstalls (or auto-upgrades) the FDF skills and instruction-file primer for\nthe given AI harness. --root (or FDF_ROOT_DIR) rewrites the bundle-root path\nreferenced by the installed skills; keep it project-relative.")
+		return 2
+	}
+	root := *rootFlag
+	if root == "" {
+		root = os.Getenv("FDF_ROOT_DIR")
+	}
 	install.Version = version
-	return install.Run(args[0], "", stdout)
+	return install.Run(rest[0], "", root, stdout)
 }
 
 func runServe(args []string, stdout io.Writer) int {

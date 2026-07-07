@@ -48,7 +48,7 @@ Trail: [spec](example/spec.md), [plan](example/plan.md).
 	write(t, root, "wdise/example/plan.md", "---\ntype: Plan\ntitle: P\ndescription: d.\ntimestamp: 2026-07-05T00:00:00Z\n---\n\n# Tasks\n\n1. (tasks pending)\n")
 }
 
-func TestMigrateV01ToV02(t *testing.T) {
+func TestMigrateChainsToCurrentVersion(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "features")
 	buildV01Bundle(t, root)
 	var out bytes.Buffer
@@ -64,8 +64,24 @@ func TestMigrateV01ToV02(t *testing.T) {
 		t.Fatal("vendored fdf-spec.md must be deleted")
 	}
 	idx, _ := os.ReadFile(filepath.Join(root, "INDEX.md"))
-	if !strings.Contains(string(idx), `fdf_version: "0.2"`) {
-		t.Fatalf("pin not upgraded:\n%s", idx)
+	if !strings.Contains(string(idx), `fdf_version: "0.3"`) {
+		t.Fatalf("pin not upgraded to current version:\n%s", idx)
+	}
+	// v0.3: migration scaffolds the spec copy and the three Context stubs.
+	for _, p := range []string{"SPEC.md", "STACK.md", "ARCHITECTURE.md", "INFRA.md"} {
+		if _, err := os.Stat(filepath.Join(root, p)); err != nil {
+			t.Fatalf("migrate did not scaffold %s", p)
+		}
+	}
+	// The vendored spec must match the target version, not a stale one.
+	spec, _ := os.ReadFile(filepath.Join(root, "SPEC.md"))
+	if !strings.Contains(string(spec), "FDF v0.3") && !strings.Contains(string(spec), "— v0.3") {
+		t.Fatalf("vendored SPEC.md not the v0.3 spec:\n%.200s", spec)
+	}
+	// Unfilled stubs are advisory during migrate, so it still exits 0 and
+	// points the user at the fdf-init interview.
+	if !strings.Contains(out.String(), "fdf-init") {
+		t.Fatalf("migrate should direct the user to fdf-init:\n%s", out.String())
 	}
 	if !strings.Contains(string(idx), "(/LOG.md)") {
 		t.Fatalf("root-absolute link not rewritten to /LOG.md:\n%s", idx)
@@ -86,5 +102,28 @@ func TestMigrateV01ToV02(t *testing.T) {
 	tst, _ := os.ReadFile(filepath.Join(root, "wdise", "example", "TEST.md"))
 	if !strings.Contains(string(tst), "Scenario: It works") {
 		t.Fatalf("TEST.md stub missing scenario:\n%s", tst)
+	}
+}
+
+// A bundle whose vendored SPEC.md predates the target version must have it
+// refreshed, not left stale, when the pin is bumped.
+func TestMigrateRefreshesStaleVendoredSpec(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "features")
+	buildV01Bundle(t, root)
+	// Seed a stale root SPEC.md as if an older version had vendored it.
+	stale := "---\ntype: Reference\ntitle: old\ndescription: stale.\ntimestamp: 2026-01-01T00:00:00Z\n---\n\n# Feature Document Format (FDF) — v0.2\n\nOLD VENDORED TEXT.\n"
+	if err := os.WriteFile(filepath.Join(root, "SPEC.md"), []byte(stale), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if code := Run(root, "", &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
+	}
+	spec, _ := os.ReadFile(filepath.Join(root, "SPEC.md"))
+	if strings.Contains(string(spec), "OLD VENDORED TEXT") {
+		t.Fatalf("stale vendored spec was not refreshed:\n%.200s", spec)
+	}
+	if !strings.Contains(string(spec), "v0.3") {
+		t.Fatalf("refreshed spec is not v0.3:\n%.200s", spec)
 	}
 }

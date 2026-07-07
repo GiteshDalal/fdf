@@ -1,5 +1,5 @@
-// Package bundle validates an FDF v0.2 bundle. Rules F1-F8 are format
-// conformance; R1 is repo integrity. See SPEC.md.
+// Package bundle validates an FDF bundle (spec v0.2 or v0.3). Rules F1-F9 are
+// format conformance; R1 is repo integrity. See SPEC.md.
 package bundle
 
 import (
@@ -15,11 +15,18 @@ import (
 type Options struct {
 	RepoRoot string    // project root for R1; "" = standalone (skip R1, warn)
 	Out      io.Writer // defaults to os.Stdout
+	// FreshStubsAdvisory downgrades F9 "unfilled context stub" from error to
+	// warning even when features exist. `fdf migrate` sets it: it has just
+	// created the stubs and cannot fill them (only the fdf-init interview
+	// can), so unfilled stubs are expected post-migration state, not a
+	// migration failure. Plain `fdf validate` leaves it false and enforces F9.
+	FreshStubsAdvisory bool
 }
 
 var (
 	reserved      = map[string]bool{"INDEX.md": true, "LOG.md": true}
 	trailNames    = map[string]string{"SPEC.md": "Spec", "PLAN.md": "Plan", "TEST.md": "Test"}
+	contextNames  = map[string]bool{"STACK.md": true, "ARCHITECTURE.md": true, "INFRA.md": true}
 	structural    = map[string]bool{"Feature": true, "Spec": true, "Plan": true, "Task": true, "Test": true, "Release": true}
 	recommended   = []string{"title", "description", "timestamp"}
 	linkRe        = regexp.MustCompile(`\[[^\]]*\]\(([^)]+)\)`)
@@ -38,6 +45,33 @@ var (
 var featureStatuses = []string{"draft", "specified", "planned", "implementing", "done"}
 var taskStatuses = []string{"pending", "in-progress", "done"}
 var releaseStatuses = []string{"planned", "shipped"}
+
+// supportedVersions are the spec versions this validator understands; a pin
+// outside this set is an F1 error directing the user to `fdf migrate`.
+var supportedVersions = map[string]bool{"0.2": true, "0.3": true}
+
+const stubSentinel = "<!-- fdf:stub -->"
+
+// readPin returns the fdf_version pinned by the bundle's root INDEX.md, or ""
+// if absent/unreadable. It runs before the walk because version-gated rules
+// (Context documents, feature-directory LOG.md) must be known for every file,
+// and WalkDir visits files lexically — ARCHITECTURE.md sorts before INDEX.md.
+func readPin(rootAbs string) string {
+	raw, err := os.ReadFile(filepath.Join(rootAbs, "INDEX.md"))
+	if err != nil {
+		return ""
+	}
+	block, delimited, _ := splitFrontmatter(strings.TrimPrefix(string(raw), "\uFEFF"))
+	if !delimited {
+		return ""
+	}
+	data, _ := parseFrontmatter(block)
+	if data == nil {
+		return ""
+	}
+	v, _ := data["fdf_version"].(string)
+	return v
+}
 
 func in(list []string, s string) bool {
 	for _, v := range list {
@@ -79,6 +113,15 @@ func Validate(root string, opts Options) int {
 	pairs := map[string]*pairInfo{}
 	releases := map[string]*releaseInfo{}
 	documents := 0
+
+	// Version gate: v0.3 rules (Context documents, feature-directory LOG.md,
+	// F9) apply only when the bundle pins 0.3. Anything else validates under
+	// the v0.2 rules, unchanged.
+	pinnedVer := readPin(rootAbs)
+	specV3 := pinnedVer == "0.3"
+	// contextDocs[name] records a seen root Context document and whether it is
+	// still an unfilled stub, for F9.
+	contextDocs := map[string]bool{} // name -> isStub
 
 	pair := func(fid string) *pairInfo {
 		if pairs[fid] == nil {
@@ -124,8 +167,8 @@ func Validate(root string, opts Options) int {
 					data, _ := parseFrontmatter(block)
 					if rel != "INDEX.md" || data == nil || data["fdf_version"] == nil {
 						warns = append(warns, fmt.Sprintf("%s: index file should not carry frontmatter", rel))
-					} else if v, _ := data["fdf_version"].(string); v != "0.2" {
-						errs = append(errs, fmt.Sprintf("INDEX.md: fdf_version %q is not \"0.2\" — run `fdf migrate` (F1)", v))
+					} else if v, _ := data["fdf_version"].(string); !supportedVersions[v] {
+						errs = append(errs, fmt.Sprintf("INDEX.md: fdf_version %q is not a supported version (0.2, 0.3) — run `fdf migrate` (F1)", v))
 					}
 				} else if rel == "INDEX.md" {
 					warns = append(warns, "INDEX.md: root index should pin fdf_version")
@@ -152,10 +195,19 @@ func Validate(root string, opts Options) int {
 			return nil
 		}
 
-		// Casing gate for everything non-reserved.
-		if _, isTrail := trailNames[name]; !isTrail {
+		// isContext: a bundle-root context document, recognized only under v0.3.
+		isContext := specV3 && contextNames[name]
+
+		// Casing gate for everything non-reserved (trail and context docs are
+		// legitimately uppercase).
+		_, isTrail := trailNames[name]
+		if !isTrail && !isContext {
 			if !lowerFileRe.MatchString(name) && !taskFileRe.MatchString(name) {
-				errs = append(errs, fmt.Sprintf("%s: filenames are lowercase; uppercase is reserved for INDEX/LOG/SPEC/PLAN/TEST.md (F3)", rel))
+				allowed := "INDEX/LOG/SPEC/PLAN/TEST.md"
+				if specV3 {
+					allowed = "INDEX/LOG/SPEC/PLAN/TEST/STACK/ARCHITECTURE/INFRA.md"
+				}
+				errs = append(errs, fmt.Sprintf("%s: filenames are lowercase; uppercase is reserved for %s (F3)", rel, allowed))
 				return nil
 			}
 		}
@@ -185,7 +237,15 @@ func Validate(root string, opts Options) int {
 		parts := strings.Split(filepath.ToSlash(rel), "/")
 		switch {
 		case len(parts) == 1: // bundle root
-			if structural[docType] {
+			switch {
+			case isContext:
+				if docType != "Context" {
+					errs = append(errs, fmt.Sprintf("%s: expected `type: Context`, got %q (F3)", rel, docType))
+				}
+				contextDocs[name] = strings.Contains(text, stubSentinel)
+			case docType == "Context":
+				errs = append(errs, fmt.Sprintf("%s: `type: Context` is reserved for STACK/ARCHITECTURE/INFRA.md at the bundle root (F3)", rel))
+			case structural[docType]:
 				errs = append(errs, fmt.Sprintf("%s: `type: %s` documents cannot live at the bundle root — move it to its FDF position (F3)", rel, docType))
 			}
 		case parts[0] == "releases" && len(parts) == 2:
@@ -316,6 +376,27 @@ func Validate(root string, opts Options) int {
 		}
 	}
 
+	// F9: from the first feature onward, the three bundle-root Context
+	// documents must exist and be past their stub state. Before any feature
+	// exists a missing-or-stub context doc is only a nudge (warning). v0.3+.
+	if specV3 {
+		for _, name := range []string{"STACK.md", "ARCHITECTURE.md", "INFRA.md"} {
+			stub, present := contextDocs[name]
+			switch {
+			case !present && len(features) > 0:
+				errs = append(errs, fmt.Sprintf("%s: required once the bundle has features — run the fdf-init interview to create it (F9)", name))
+			case stub && len(features) > 0 && opts.FreshStubsAdvisory:
+				warns = append(warns, fmt.Sprintf("%s: freshly scaffolded stub — run the fdf-init interview to populate it (F9)", name))
+			case stub && len(features) > 0:
+				errs = append(errs, fmt.Sprintf("%s: still an unfilled stub; the fdf-init interview must populate it before feature work (F9)", name))
+			case !present:
+				warns = append(warns, fmt.Sprintf("%s: recommended context document is missing — run the fdf-init interview", name))
+			case stub:
+				warns = append(warns, fmt.Sprintf("%s: still an unfilled stub — run the fdf-init interview to populate it", name))
+			}
+		}
+	}
+
 	// F6: plan <-> tasks, depends-on resolution, acyclicity.
 	for fid, p := range pairs {
 		if p.plan {
@@ -430,8 +511,12 @@ func Validate(root string, opts Options) int {
 	}
 	fmt.Fprintf(out, "\n%d document(s), %d feature(s), %d release(s) checked; %d error(s), %d warning(s).\n",
 		documents, len(features), len(releases), len(errs)+len(repoErrs), len(warns))
+	verLabel := pinnedVer
+	if verLabel == "" {
+		verLabel = "0.2"
+	}
 	if len(errs) > 0 {
-		fmt.Fprintln(out, "Bundle is NOT conformant with FDF v0.2.")
+		fmt.Fprintf(out, "Bundle is NOT conformant with FDF v%s.\n", verLabel)
 		return 1
 	}
 	if len(repoErrs) > 0 {
@@ -439,10 +524,10 @@ func Validate(root string, opts Options) int {
 		return 1
 	}
 	if opts.RepoRoot == "" {
-		fmt.Fprintln(out, "Bundle is conformant with FDF v0.2 (R1 skipped: no project root).")
+		fmt.Fprintf(out, "Bundle is conformant with FDF v%s (R1 skipped: no project root).\n", verLabel)
 		return 0
 	}
-	fmt.Fprintln(out, "Bundle is conformant with FDF v0.2; repo integrity (R1) verified.")
+	fmt.Fprintf(out, "Bundle is conformant with FDF v%s; repo integrity (R1) verified.\n", verLabel)
 	return 0
 }
 

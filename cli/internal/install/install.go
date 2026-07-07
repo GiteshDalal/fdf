@@ -1,6 +1,12 @@
 // Package install places the FDF skills into an AI harness's configuration.
-// Installs are idempotent: an existing install at the current version is
-// reported "up to date"; any other version is auto-upgraded in place.
+// Claude Code, Codex, and opencode all support agent skills as directories of
+// SKILL.md files, so every harness gets real skills — loaded on demand, not
+// inlined into instruction files. The instruction file (CLAUDE.md/AGENTS.md)
+// only gets a short "## Feature Document Format" primer, and only when that
+// heading is absent, so user edits to it are never clobbered.
+//
+// Installs are idempotent: an existing install at the current version and
+// bundle root is reported "up to date"; anything else is upgraded in place.
 package install
 
 import (
@@ -18,147 +24,215 @@ import (
 // Version is stamped by the CLI (main.version) at dispatch time.
 var Version = "0.2.0-dev"
 
-var skillNames = []string{"fdf-brainstorm", "fdf-plan", "fdf-execute"}
-var blockRe = regexp.MustCompile(`(?s)<!-- fdf:begin v[^>]*-->.*?<!-- fdf:end -->\n?`)
+// defaultRoot is the bundle root the skill texts are written against; a
+// different install root rewrites every occurrence in the skill bodies.
+const defaultRoot = "docs/features"
 
-func Run(harness, home string, out io.Writer) int {
+var skillNames = []string{"fdf-help", "fdf-init", "fdf-brainstorm", "fdf-plan", "fdf-execute"}
+
+// legacyBlockRe matches the pre-0.3 managed block that inlined full skills
+// into AGENTS.md; upgrades remove it in favor of real skills + the primer.
+var legacyBlockRe = regexp.MustCompile(`(?s)<!-- fdf:begin v[^>]*-->.*?<!-- fdf:end -->\n?`)
+
+const primerHeading = "## Feature Document Format"
+
+type harness struct {
+	skillsDir []string // path segments under home
+	instrFile []string // path segments under home
+	commands  bool     // claude-code slash commands
+}
+
+var harnesses = map[string]harness{
+	"claude-code": {skillsDir: []string{".claude", "skills"}, instrFile: []string{".claude", "CLAUDE.md"}, commands: true},
+	"codex":       {skillsDir: []string{".codex", "skills"}, instrFile: []string{".codex", "AGENTS.md"}},
+	"opencode":    {skillsDir: []string{".config", "opencode", "skills"}, instrFile: []string{".config", "opencode", "AGENTS.md"}},
+}
+
+// Run installs the skills and instruction-file primer for a harness. root is
+// the bundle root to bake into the installed skills ("" means the default
+// docs/features); pass it as the user wrote it (project-relative preferred).
+func Run(harnessName, home, root string, out io.Writer) int {
 	if home == "" {
 		home, _ = os.UserHomeDir()
 	}
-	switch harness {
-	case "claude-code":
-		return claudeCode(home, out)
-	case "codex":
-		return managedBlock(filepath.Join(home, ".codex", "AGENTS.md"), out)
-	case "opencode":
-		return managedBlock(filepath.Join(home, ".config", "opencode", "AGENTS.md"), out)
-	default:
-		fmt.Fprintf(out, "unknown harness %q\n\nusage: fdf install <claude-code|codex|opencode>\n", harness)
+	if root == "" {
+		root = defaultRoot
+	}
+	h, ok := harnesses[harnessName]
+	if !ok {
+		fmt.Fprintf(out, "unknown harness %q\n\nusage: fdf install <claude-code|codex|opencode> [--root <dir>]\n", harnessName)
 		return 2
 	}
-}
 
-func claudeCode(home string, out io.Writer) int {
+	skillsDir := filepath.Join(append([]string{home}, h.skillsDir...)...)
+	marker := Version + " root=" + root
+
 	upToDate := true
 	for _, name := range skillNames {
-		marker := filepath.Join(home, ".claude", "skills", name, ".fdf-version")
-		if v, err := os.ReadFile(marker); err != nil || string(v) != Version {
+		if v, err := os.ReadFile(filepath.Join(skillsDir, name, ".fdf-version")); err != nil || string(v) != marker {
 			upToDate = false
 		}
 	}
-	if upToDate {
-		fmt.Fprintf(out, "fdf skills for claude-code are up to date (v%s)\n", Version)
-		return 0
-	}
+
 	hadAny := false
-	for _, name := range skillNames {
-		if _, err := os.Stat(filepath.Join(home, ".claude", "skills", name)); err == nil {
-			hadAny = true
+	if !upToDate {
+		for _, name := range skillNames {
+			if _, err := os.Stat(filepath.Join(skillsDir, name)); err == nil {
+				hadAny = true
+			}
+			raw, err := fs.ReadFile(fdf.Assets, "skills/"+name+"/SKILL.md")
+			if err != nil {
+				fmt.Fprintf(out, "error: embedded skills/%s/SKILL.md: %v\n", name, err)
+				return 1
+			}
+			body := string(raw)
+			if root != defaultRoot {
+				body = strings.ReplaceAll(body, defaultRoot, root)
+			}
+			dir := filepath.Join(skillsDir, name)
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				fmt.Fprintln(out, "error:", err)
+				return 1
+			}
+			if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(body), 0o644); err != nil {
+				fmt.Fprintln(out, "error:", err)
+				return 1
+			}
+			// The marker is written only after SKILL.md landed, so a failed
+			// install can never masquerade as "up to date" on the next run.
+			if err := os.WriteFile(filepath.Join(dir, ".fdf-version"), []byte(marker), 0o644); err != nil {
+				fmt.Fprintln(out, "error:", err)
+				return 1
+			}
 		}
-		src := "skills/" + name + "/SKILL.md"
-		raw, err := fs.ReadFile(fdf.Assets, src)
+	}
+
+	cmdCount := 0
+	if h.commands && !upToDate {
+		cmds, err := fs.ReadDir(fdf.Assets, "harness/claude-code/commands")
 		if err != nil {
-			fmt.Fprintf(out, "error: embedded %s: %v\n", src, err)
+			fmt.Fprintf(out, "error: embedded harness/claude-code/commands: %v\n", err)
 			return 1
 		}
-		dir := filepath.Join(home, ".claude", "skills", name)
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		cmdDir := filepath.Join(home, ".claude", "commands")
+		if err := os.MkdirAll(cmdDir, 0o755); err != nil {
 			fmt.Fprintln(out, "error:", err)
 			return 1
 		}
-		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), raw, 0o644); err != nil {
-			fmt.Fprintln(out, "error:", err)
-			return 1
-		}
-		// The marker is written only after SKILL.md landed, so a failed
-		// install can never masquerade as "up to date" on the next run.
-		if err := os.WriteFile(filepath.Join(dir, ".fdf-version"), []byte(Version), 0o644); err != nil {
-			fmt.Fprintln(out, "error:", err)
-			return 1
+		for _, e := range cmds {
+			raw, err := fs.ReadFile(fdf.Assets, "harness/claude-code/commands/"+e.Name())
+			if err != nil {
+				fmt.Fprintf(out, "error: embedded command %s: %v\n", e.Name(), err)
+				return 1
+			}
+			if err := os.WriteFile(filepath.Join(cmdDir, e.Name()), raw, 0o644); err != nil {
+				fmt.Fprintln(out, "error:", err)
+				return 1
+			}
+			cmdCount++
 		}
 	}
-	cmds, err := fs.ReadDir(fdf.Assets, "harness/claude-code/commands")
-	if err != nil {
-		fmt.Fprintf(out, "error: embedded harness/claude-code/commands: %v\n", err)
-		return 1
+
+	instrPath := filepath.Join(append([]string{home}, h.instrFile...)...)
+	instrVerb, code := ensurePrimer(instrPath, root, out)
+	if code != 0 {
+		return code
 	}
-	cmdDir := filepath.Join(home, ".claude", "commands")
-	if err := os.MkdirAll(cmdDir, 0o755); err != nil {
-		fmt.Fprintln(out, "error:", err)
-		return 1
-	}
-	for _, e := range cmds {
-		raw, err := fs.ReadFile(fdf.Assets, "harness/claude-code/commands/"+e.Name())
-		if err != nil {
-			fmt.Fprintf(out, "error: embedded command %s: %v\n", e.Name(), err)
-			return 1
+
+	if upToDate {
+		if instrVerb == "unchanged" {
+			fmt.Fprintf(out, "fdf skills for %s are up to date (v%s)\n", harnessName, Version)
+		} else {
+			fmt.Fprintf(out, "fdf skills for %s are up to date (v%s); %s primer %s in %s\n", harnessName, Version, primerHeading, instrVerb, instrPath)
 		}
-		if err := os.WriteFile(filepath.Join(cmdDir, e.Name()), raw, 0o644); err != nil {
-			fmt.Fprintln(out, "error:", err)
-			return 1
-		}
+		return 0
 	}
 	verb := "installed"
 	if hadAny {
 		verb = "upgraded"
 	}
-	fmt.Fprintf(out, "%s fdf skills for claude-code (v%s): %s + %d command(s)\n",
-		verb, Version, strings.Join(skillNames, ", "), len(cmds))
+	fmt.Fprintf(out, "%s fdf skills for %s (v%s, root %s): %s", verb, harnessName, Version, root, strings.Join(skillNames, ", "))
+	if cmdCount > 0 {
+		fmt.Fprintf(out, " + %d command(s)", cmdCount)
+	}
+	fmt.Fprintf(out, "; %s primer %s in %s\n", primerHeading, instrVerb, instrPath)
 	return 0
 }
 
-func managedBlock(path string, out io.Writer) int {
-	var b strings.Builder
-	fmt.Fprintf(&b, "<!-- fdf:begin v%s (managed by `fdf install` — do not edit) -->\n", Version)
-	b.WriteString("# FDF workflow\n\nThis machine uses FDF (https://github.com/GiteshDalal/fdf) for feature\ndocumentation. Bundle at docs/features (or FDF_ROOT_DIR). Validate with\n`fdf validate`; scaffold with `fdf new <group>/<slug>`.\n\n")
-	for _, name := range skillNames {
-		raw, err := fs.ReadFile(fdf.Assets, "skills/"+name+"/SKILL.md")
-		if err != nil {
-			fmt.Fprintf(out, "error: embedded skill %s: %v\n", name, err)
-			return 1
-		}
-		body := string(raw)
-		if i := strings.Index(body, "\n---\n"); i >= 0 && strings.HasPrefix(body, "---\n") {
-			body = body[i+5:] // strip frontmatter for instruction-file consumers
-		}
-		b.WriteString(body)
-		b.WriteString("\n")
-	}
-	b.WriteString("<!-- fdf:end -->\n")
+// primer is the instruction-file section teaching an agent what FDF is and
+// where the full rules live. It assumes no prior FDF knowledge.
+func primer(root string) string {
+	return primerHeading + `
 
-	block := b.String()
+Projects on this machine may document software features with FDF (Feature
+Document Format): the directory ` + "`" + root + "/`" + ` in a project is an FDF
+**bundle** — every feature is a Markdown + Gherkin document, and its design
+spec, implementation plan, acceptance tests, tasks, and decision log live in a
+paired directory beside it. Feature frontmatter carries a status
+(draft → specified → planned → implementing → done) that must always reflect
+reality; the ` + "`fdf validate`" + ` CLI gates consistency and must exit 0 after any
+bundle edit. The full format rules ship inside the bundle at
+` + "`" + root + "/SPEC.md`" + ` — read that file when you need exact frontmatter
+fields, casing, or validation semantics.
+
+Three bundle-root **Context documents** — ` + "`" + root + "/STACK.md`" + `,
+` + "`ARCHITECTURE.md`" + `, ` + "`INFRA.md`" + ` — are the project's current stack,
+architecture, and build/deployment infrastructure. They are **critical**:
+filled once by the fdf-init interview, then changed only with explicit human
+approval and a logged reason. Accurate context here is what makes this agentic
+engineering rather than vibe coding — read them before designing, and keep
+them true. Their upkeep is the human's responsibility.
+
+Working in an FDF project:
+
+- First run: after ` + "`fdf init`" + `, use the fdf-init skill to fill the three
+  Context docs. Feature work is blocked (rule F9) while they're unfilled.
+- Before writing code, route by feature status using the fdf-help skill:
+  no feature/draft → fdf-brainstorm, specified → fdf-plan,
+  planned/implementing → fdf-execute.
+- Scaffold with ` + "`fdf new <group>/<slug>`" + `; validate with ` + "`fdf validate`" + `.
+- Code that changes behavior without touching the bundle makes the bundle
+  lie — record the feature first, then implement.
+- After a feature, propose any needed Context-doc update and apply it only on
+  approval, logging the change.
+`
+}
+
+// ensurePrimer appends the primer to the instruction file unless its heading
+// is already present (the section is user-editable after install). Legacy
+// managed blocks from pre-0.3 installs are removed. Returns a verb for
+// reporting: "added", "updated" (legacy block replaced), or "unchanged".
+func ensurePrimer(path, root string, out io.Writer) (string, int) {
 	existing, _ := os.ReadFile(path)
-	var content string
-	verb := "installed"
-	if blockRe.MatchString(string(existing)) {
-		// Replace the existing block in place so user content before and
-		// after it keeps its position. ReplaceAllStringFunc avoids `$`
-		// expansion in the replacement text; any duplicate blocks collapse
-		// into the first.
-		verb = "upgraded"
-		replaced := false
-		content = blockRe.ReplaceAllStringFunc(string(existing), func(string) string {
-			if replaced {
-				return ""
-			}
-			replaced = true
-			return block
-		})
-	} else {
-		content = string(existing)
+	content := string(existing)
+	verb := "unchanged"
+
+	if legacyBlockRe.MatchString(content) {
+		content = legacyBlockRe.ReplaceAllString(content, "")
+		verb = "updated"
+	}
+	if !regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(primerHeading) + `\s*$`).MatchString(content) {
 		if content != "" && !strings.HasSuffix(content, "\n") {
 			content += "\n"
 		}
-		content += block
+		if content != "" {
+			content += "\n"
+		}
+		content += primer(root)
+		if verb == "unchanged" {
+			verb = "added"
+		}
+	}
+	if verb == "unchanged" {
+		return verb, 0
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		fmt.Fprintln(out, "error:", err)
-		return 1
+		return verb, 1
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		fmt.Fprintln(out, "error:", err)
-		return 1
+		return verb, 1
 	}
-	fmt.Fprintf(out, "%s fdf instructions block in %s (v%s)\n", verb, path, Version)
-	return 0
+	return verb, 0
 }
