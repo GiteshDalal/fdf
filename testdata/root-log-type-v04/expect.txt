@@ -1,0 +1,3 @@
+exit: 1
+contains: `type: Log` documents cannot live at the bundle root
+contains: (F3)

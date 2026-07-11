@@ -28,13 +28,16 @@ var (
 	trailNames   = map[string]string{"SPEC.md": "Spec", "PLAN.md": "Plan", "TEST.md": "Test"}
 	contextNames = map[string]bool{"STACK.md": true, "ARCHITECTURE.md": true, "INFRA.md": true, "SURFACES.md": true}
 	// structural types are rejected at the bundle root (position is fixed).
-	structural  = map[string]bool{"Feature": true, "Spec": true, "Plan": true, "Task": true, "Test": true, "Release": true, "Surface": true, "Log": true}
-	recommended = []string{"title", "description", "timestamp"}
-	linkRe      = regexp.MustCompile(`\[[^\]]*\]\(([^)]+)\)`)
-	isoDateRe   = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
-	taskFileRe  = regexp.MustCompile(`^\d{2}-[a-z0-9][a-z0-9-]*\.md$`)
-	lowerFileRe = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]*\.md$`)
-	lowerDirRe  = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+	// Surface and Log exist only under v0.4 and are gated at the check site,
+	// so v0.2/v0.3 bundles keep accepting them as ordinary root doc types.
+	structural   = map[string]bool{"Feature": true, "Spec": true, "Plan": true, "Task": true, "Test": true, "Release": true}
+	structuralV4 = map[string]bool{"Surface": true, "Log": true}
+	recommended  = []string{"title", "description", "timestamp"}
+	linkRe       = regexp.MustCompile(`\[[^\]]*\]\(([^)]+)\)`)
+	isoDateRe    = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+	taskFileRe   = regexp.MustCompile(`^\d{2}-[a-z0-9][a-z0-9-]*\.md$`)
+	lowerFileRe  = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]*\.md$`)
+	lowerDirRe   = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 	// trailRoleRe matches known v0.4 stem-qualified trail siblings.
 	trailRoleRe = regexp.MustCompile(`^([a-z0-9][a-z0-9-]*)\.(spec|plan|test|surface|log)\.md$`)
 	// anyTrailAttemptRe matches any group-level dotted basename (slug.something.md).
@@ -287,7 +290,7 @@ func Validate(root string, opts Options) int {
 				contextDocs[name] = strings.Contains(text, stubSentinel)
 			case docType == "Context":
 				errs = append(errs, fmt.Sprintf("%s: `type: Context` is reserved for %s at the bundle root (F3)", rel, contextList))
-			case structural[docType]:
+			case structural[docType] || (specV4 && structuralV4[docType]):
 				errs = append(errs, fmt.Sprintf("%s: `type: %s` documents cannot live at the bundle root — move it to its FDF position (F3)", rel, docType))
 			}
 		case parts[0] == "releases" && len(parts) == 2:
@@ -301,11 +304,11 @@ func Validate(root string, opts Options) int {
 				warns = append(warns, fmt.Sprintf("%s: missing recommended `date`", rel))
 			}
 			releases[strings.TrimSuffix(parts[1], ".md")] = &releaseInfo{rel, status, body}
-		case len(parts) == 2 && parts[0] != "releases":
+		case len(parts) == 2:
+			// v0.4 group-level dotted basenames are stem-qualified trail files.
+			// Trap 14: detect any dotted basename before the feature checks so
+			// unknown roles don't fall through as features named "slug.notes".
 			if specV4 {
-				// v0.4 group-level: Feature slug.md or stem-qualified trail.
-				// Trap 14: detect any dotted basename first so unknown roles
-				// don't fall through as features named "slug.notes".
 				if m := anyTrailAttemptRe.FindStringSubmatch(name); m != nil {
 					stem, rolePart := m[1], m[2]
 					if rm := trailRoleRe.FindStringSubmatch(name); rm != nil {
@@ -333,63 +336,21 @@ func Validate(root string, opts Options) int {
 					}
 					return nil
 				}
-				// Plain feature: group/slug.md (no extra dots).
-				if docType != "Feature" {
-					errs = append(errs, fmt.Sprintf("%s: expected `type: Feature`, got %q (F3)", rel, docType))
-				}
-				if !in(featureStatuses, status) {
-					errs = append(errs, fmt.Sprintf("%s: Feature `status` must be one of %s, got %q (F2)", rel, strings.Join(featureStatuses, "|"), status))
-				}
-				version, _ := data["version"].(string)
-				features[strings.TrimSuffix(filepath.ToSlash(rel), ".md")] = &featureInfo{rel, status, version, body}
-				checkFeatureBody(rel, body, &errs)
-			} else {
-				// v0.2 / v0.3: group-level files are features only.
-				if docType != "Feature" {
-					errs = append(errs, fmt.Sprintf("%s: expected `type: Feature`, got %q (F3)", rel, docType))
-				}
-				if !in(featureStatuses, status) {
-					errs = append(errs, fmt.Sprintf("%s: Feature `status` must be one of %s, got %q (F2)", rel, strings.Join(featureStatuses, "|"), status))
-				}
-				version, _ := data["version"].(string)
-				features[strings.TrimSuffix(filepath.ToSlash(rel), ".md")] = &featureInfo{rel, status, version, body}
-				checkFeatureBody(rel, body, &errs)
 			}
+			// Feature: group/slug.md (all versions; v0.4 slugs carry no dots).
+			if docType != "Feature" {
+				errs = append(errs, fmt.Sprintf("%s: expected `type: Feature`, got %q (F3)", rel, docType))
+			}
+			if !in(featureStatuses, status) {
+				errs = append(errs, fmt.Sprintf("%s: Feature `status` must be one of %s, got %q (F2)", rel, strings.Join(featureStatuses, "|"), status))
+			}
+			version, _ := data["version"].(string)
+			features[strings.TrimSuffix(filepath.ToSlash(rel), ".md")] = &featureInfo{rel, status, version, body}
+			checkFeatureBody(rel, body, &errs)
 		case len(parts) == 3:
 			fid := parts[0] + "/" + parts[1]
-			if specV4 {
-				// v0.4 task dir: only NN-slug.md tasks (no nested trail docs).
-				if taskFileRe.MatchString(parts[2]) {
-					if docType != "Task" {
-						errs = append(errs, fmt.Sprintf("%s: expected `type: Task`, got %q (F3)", rel, docType))
-					}
-					if !in(taskStatuses, status) {
-						errs = append(errs, fmt.Sprintf("%s: Task `status` must be one of %s, got %q (F2)", rel, strings.Join(taskStatuses, "|"), status))
-					}
-					p := pair(fid)
-					p.tasks[parts[2]] = status
-					p.deps[parts[2]] = asList(data["depends-on"])
-					p.depRels[parts[2]] = rel
-					for _, res := range asList(data["resource"]) {
-						resources = append(resources, struct{ rel, path string }{rel, res})
-					}
-				} else {
-					errs = append(errs, fmt.Sprintf("%s: task directories may contain only NN-slug.md tasks (F3)", rel))
-				}
-			} else if want, isTrail := trailNames[parts[2]]; isTrail {
-				if docType != want {
-					errs = append(errs, fmt.Sprintf("%s: expected `type: %s`, got %q (F3)", rel, want, docType))
-				}
-				p := pair(fid)
-				switch parts[2] {
-				case "SPEC.md":
-					p.spec = true
-				case "PLAN.md":
-					p.plan, p.planRel, p.planBody = true, rel, body
-				case "TEST.md":
-					p.test, p.testBody = true, body
-				}
-			} else if taskFileRe.MatchString(parts[2]) {
+			switch {
+			case taskFileRe.MatchString(parts[2]): // tasks: all versions
 				if docType != "Task" {
 					errs = append(errs, fmt.Sprintf("%s: expected `type: Task`, got %q (F3)", rel, docType))
 				}
@@ -403,7 +364,23 @@ func Validate(root string, opts Options) int {
 				for _, res := range asList(data["resource"]) {
 					resources = append(resources, struct{ rel, path string }{rel, res})
 				}
-			} else {
+			case !specV4 && trailNames[parts[2]] != "": // nested trail: pre-v0.4 only
+				want := trailNames[parts[2]]
+				if docType != want {
+					errs = append(errs, fmt.Sprintf("%s: expected `type: %s`, got %q (F3)", rel, want, docType))
+				}
+				p := pair(fid)
+				switch parts[2] {
+				case "SPEC.md":
+					p.spec = true
+				case "PLAN.md":
+					p.plan, p.planRel, p.planBody = true, rel, body
+				case "TEST.md":
+					p.test, p.testBody = true, body
+				}
+			case specV4: // v0.4 task dir: only NN-slug.md tasks (no nested trail docs)
+				errs = append(errs, fmt.Sprintf("%s: task directories may contain only NN-slug.md tasks (F3)", rel))
+			default:
 				errs = append(errs, fmt.Sprintf("%s: paired directories may contain only SPEC.md, PLAN.md, TEST.md, and NN-slug.md tasks (F3)", rel))
 			}
 		default:
