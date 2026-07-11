@@ -43,7 +43,7 @@ go run ./cli/cmd/fdf new payments/instant-refunds
 
 CI (`.github/workflows/ci.yml`, ubuntu + macos, Go 1.26) runs `go vet`, `go test`, the
 `gofmt -l` cleanliness check, and a shell lint that every `skills/*/SKILL.md` starts with `---`
-and has `name:`/`description:` frontmatter. Match all five before pushing. Releases are built by
+and has `name:`/`description:` frontmatter. Match all four before pushing. Releases are built by
 goreleaser (`.goreleaser.yaml`) on tag push.
 
 ## Architecture
