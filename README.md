@@ -33,6 +33,10 @@ context is what makes this agentic engineering, not vibe coding.
 
 ## Install
 
+- One-liner (macOS/Linux, no Go needed):
+```bash
+curl -fsSL https://raw.githubusercontent.com/GiteshDalal/fdf/main/install.sh | bash
+```
 - Binaries on the [releases page](https://github.com/GiteshDalal/fdf/releases)
 - With [mise](https://mise.jdx.dev)
 ```
