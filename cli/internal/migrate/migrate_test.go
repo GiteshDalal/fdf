@@ -282,3 +282,56 @@ func TestMigrateAlready04IsNoop(t *testing.T) {
 		t.Fatalf("pin changed unexpectedly:\n%s", idx)
 	}
 }
+
+// Half-migrated or hand-mixed layout: nested trail still present AND the
+// stem destination already exists. collectTrailMoves must abort before any
+// rename so migrate never partially applies destructive moves.
+func TestMigrateAbortsWhenStemTrailExists(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "features")
+	buildV03Bundle(t, root)
+	// Conflict: nested SPEC still present, stem sibling already there.
+	write(t, root, "wdise/example.spec.md", "---\ntype: Spec\ntitle: Conflict\ndescription: Pre-existing stem trail.\ntimestamp: 2026-07-06T00:00:00Z\n---\n\n# Design\n\nSTALE STEM.\n")
+
+	nestedSpec := filepath.Join(root, "wdise", "example", "SPEC.md")
+	nestedBody, err := os.ReadFile(nestedSpec)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	code := Run(root, "", &out)
+	if code == 0 {
+		t.Fatalf("expected non-zero exit when stem destination exists; output:\n%s", out.String())
+	}
+	msg := out.String()
+	if !strings.Contains(msg, "already exists") && !strings.Contains(msg, "cannot move") {
+		t.Fatalf("error should mention destination conflict (already exists / cannot move):\n%s", msg)
+	}
+	// No trail moves applied.
+	if strings.Contains(msg, "moved ") {
+		t.Fatalf("must not apply trail moves after destination conflict:\n%s", msg)
+	}
+	// Nested trail still present (no partial destructive apply).
+	for _, p := range []string{
+		"wdise/example/SPEC.md",
+		"wdise/example/PLAN.md",
+		"wdise/example/TEST.md",
+		"wdise/example/LOG.md",
+	} {
+		if _, err := os.Stat(filepath.Join(root, p)); err != nil {
+			t.Fatalf("nested %s must remain after aborted migrate: %v", p, err)
+		}
+	}
+	after, err := os.ReadFile(nestedSpec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(nestedBody) {
+		t.Fatalf("nested SPEC.md content changed on abort:\n%s", after)
+	}
+	// Pin must not advance past the conflict abort (steps after lift must not run).
+	idx, _ := os.ReadFile(filepath.Join(root, "INDEX.md"))
+	if !strings.Contains(string(idx), `fdf_version: "0.3"`) {
+		t.Fatalf("pin must remain 0.3 when trail lift aborts:\n%s", idx)
+	}
+}
