@@ -8,7 +8,7 @@ import (
 )
 
 // version is set by goreleaser via -ldflags "-X main.version=...".
-var version = "0.2.0-dev"
+var version = "0.3.0-dev"
 
 var commands = map[string]func(args []string, stdout io.Writer) int{
 	"validate": runValidate,
@@ -19,12 +19,12 @@ var commands = map[string]func(args []string, stdout io.Writer) int{
 	"migrate":  runMigrate,
 }
 
-const usage = `fdf — Feature Document Format tooling (SPEC v0.2)
+const usage = `fdf — Feature Document Format tooling (SPEC v0.3)
 
 Usage: fdf <command> [flags]
 
 Commands:
-  validate   Check the bundle against SPEC v0.2 (F1-F8 + R1)
+  validate   Check the bundle against SPEC v0.3 (F1-F9 + R1)
   init       Scaffold a bundle at the resolved root
   new        Scaffold a draft feature: fdf new <group>/<slug>
   install    Install/upgrade the FDF skills for an AI harness (claude-code|codex|opencode)
