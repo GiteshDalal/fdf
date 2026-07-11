@@ -42,7 +42,9 @@ func runInstall(args []string, stdout io.Writer) int {
 			fmt.Fprintln(stdout, "error:", err)
 			return 1
 		}
-		projRoot, standalone := fdfroot.ProjectRoot(cwd)
+		// Nearest .git wins: "the current git project" is the repo the user
+		// is standing in, not the superproject R1's ProjectRoot resolves to.
+		projRoot, standalone := fdfroot.NearestProjectRoot(cwd)
 		if standalone {
 			fmt.Fprintln(stdout, "fdf install --project requires a git project (no .git found above the current directory)")
 			return 2

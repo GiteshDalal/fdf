@@ -35,6 +35,29 @@ func ProjectRoot(start string) (string, bool) {
 	return abs, true
 }
 
+// NearestProjectRoot walks up from start to the NEAREST enclosing git working
+// tree — the first .git (directory or file) wins. This is what "the current
+// git project" means to a user standing in a nested repo, a git worktree
+// (whose root holds a .git file), or a submodule: that tree, not its
+// superproject. Contrast with ProjectRoot, whose topmost-wins contract exists
+// for R1 resource verification. standalone is true when no .git exists
+// anywhere above.
+func NearestProjectRoot(start string) (string, bool) {
+	cur, _ := filepath.Abs(start)
+	for {
+		if _, err := os.Stat(filepath.Join(cur, ".git")); err == nil {
+			return cur, false
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			break
+		}
+		cur = parent
+	}
+	abs, _ := filepath.Abs(start)
+	return abs, true
+}
+
 // BundleRoot applies the uniform root-resolution precedence.
 func BundleRoot(flagRoot, cwd string) (string, error) {
 	val := flagRoot

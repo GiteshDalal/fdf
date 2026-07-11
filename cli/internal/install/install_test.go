@@ -215,3 +215,56 @@ func TestInstallProjectCodexAndOpencode(t *testing.T) {
 		}
 	}
 }
+
+func TestUpgradeRefreshesStaleShippedPrimer(t *testing.T) {
+	home := t.TempDir()
+	// Seed the exact v0.3-era primer (untouched managed content).
+	path := filepath.Join(home, ".claude", "CLAUDE.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("# My notes\n\n"+primerV03("docs/features")+"\n## Other section\n\nkeep me\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if code := Run("claude-code", home, "", false, &out); code != 0 {
+		t.Fatalf("install: %d\n%s", code, out.String())
+	}
+	got, _ := os.ReadFile(path)
+	s := string(got)
+	if strings.Contains(s, "paired directory beside it") {
+		t.Fatalf("stale v0.3 primer text must be replaced:\n%s", s)
+	}
+	if !strings.Contains(s, "slug.spec.md") || !strings.Contains(s, "SURFACES.md") {
+		t.Fatalf("refreshed primer must teach the v0.4 layout:\n%s", s)
+	}
+	if !strings.Contains(s, "# My notes") || !strings.Contains(s, "## Other section\n\nkeep me") {
+		t.Fatalf("content around the managed section must survive:\n%s", s)
+	}
+	if !strings.Contains(out.String(), "updated") {
+		t.Fatalf("report should say the primer was updated:\n%s", out.String())
+	}
+}
+
+func TestUpgradeLeavesUserEditedPrimerWithNote(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, ".claude", "CLAUDE.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	custom := "## Feature Document Format\n\nMy own hand-tuned FDF notes.\n"
+	if err := os.WriteFile(path, []byte(custom), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if code := Run("claude-code", home, "", false, &out); code != 0 {
+		t.Fatalf("install: %d\n%s", code, out.String())
+	}
+	got, _ := os.ReadFile(path)
+	if !strings.Contains(string(got), "My own hand-tuned FDF notes.") {
+		t.Fatalf("user-edited primer must not be clobbered:\n%s", got)
+	}
+	if !strings.Contains(out.String(), "differs from the shipped primer") {
+		t.Fatalf("should warn about the outdated user-edited primer:\n%s", out.String())
+	}
+}
