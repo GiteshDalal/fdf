@@ -27,7 +27,7 @@ Commands:
   validate   Check the bundle against SPEC v0.4 (F1-F9 + R1)
   init       Scaffold a bundle at the resolved root
   new        Scaffold a draft feature: fdf new <group>/<slug>
-  install    Install/upgrade the FDF skills for an AI harness (claude-code|codex|opencode)
+  install    Install/upgrade FDF skills for an AI harness: fdf install [--project] [--root <dir>] <claude-code|codex|opencode>
   serve      Serve the bundle in a browser (wraps bun x mdts)
   migrate    Upgrade a bundle to the current spec version
   version    Print the CLI version

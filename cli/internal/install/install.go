@@ -7,6 +7,8 @@
 //
 // Installs are idempotent: an existing install at the current version and
 // bundle root is reported "up to date"; anything else is upgraded in place.
+// User-level and project-level installs coexist: each destination carries its
+// own .fdf-version markers and upgrades independently.
 package install
 
 import (
@@ -36,35 +38,68 @@ var legacyBlockRe = regexp.MustCompile(`(?s)<!-- fdf:begin v[^>]*-->.*?<!-- fdf:
 
 const primerHeading = "## Feature Document Format"
 
+// harness describes per-scope destination path segments under a base directory
+// (user home for user-level installs, project root for --project).
 type harness struct {
-	skillsDir []string // path segments under home
-	instrFile []string // path segments under home
-	commands  bool     // claude-code slash commands
+	skillsDir        []string // user-level skills path under home
+	instrFile        []string // user-level instruction file under home
+	projectSkillsDir []string // project-level skills path under project root
+	projectInstrFile []string // project-level instruction file under project root
+	commands         bool     // claude-code slash commands
 }
 
 var harnesses = map[string]harness{
-	"claude-code": {skillsDir: []string{".claude", "skills"}, instrFile: []string{".claude", "CLAUDE.md"}, commands: true},
-	"codex":       {skillsDir: []string{".codex", "skills"}, instrFile: []string{".codex", "AGENTS.md"}},
-	"opencode":    {skillsDir: []string{".config", "opencode", "skills"}, instrFile: []string{".config", "opencode", "AGENTS.md"}},
+	"claude-code": {
+		skillsDir:        []string{".claude", "skills"},
+		instrFile:        []string{".claude", "CLAUDE.md"},
+		projectSkillsDir: []string{".claude", "skills"},
+		projectInstrFile: []string{"CLAUDE.md"}, // repo-root memory file, not .claude/CLAUDE.md
+		commands:         true,
+	},
+	"codex": {
+		skillsDir:        []string{".codex", "skills"},
+		instrFile:        []string{".codex", "AGENTS.md"},
+		projectSkillsDir: []string{".codex", "skills"},
+		projectInstrFile: []string{"AGENTS.md"},
+	},
+	"opencode": {
+		skillsDir:        []string{".config", "opencode", "skills"},
+		instrFile:        []string{".config", "opencode", "AGENTS.md"},
+		projectSkillsDir: []string{".opencode", "skills"},
+		projectInstrFile: []string{"AGENTS.md"},
+	},
 }
 
-// Run installs the skills and instruction-file primer for a harness. root is
-// the bundle root to bake into the installed skills ("" means the default
-// docs/features); pass it as the user wrote it (project-relative preferred).
-func Run(harnessName, home, root string, out io.Writer) int {
-	if home == "" {
-		home, _ = os.UserHomeDir()
+// Run installs the skills and instruction-file primer for a harness. base is
+// the install root: the user home for user-level installs ("" → UserHomeDir),
+// or the project root when project is true. root is the bundle root to bake
+// into the installed skills ("" means the default docs/features); pass it as
+// the user wrote it (project-relative preferred).
+func Run(harnessName, base, root string, project bool, out io.Writer) int {
+	if base == "" {
+		if project {
+			fmt.Fprintln(out, "error: project install requires a project root base")
+			return 1
+		}
+		base, _ = os.UserHomeDir()
 	}
 	if root == "" {
 		root = defaultRoot
 	}
 	h, ok := harnesses[harnessName]
 	if !ok {
-		fmt.Fprintf(out, "unknown harness %q\n\nusage: fdf install <claude-code|codex|opencode> [--root <dir>]\n", harnessName)
+		fmt.Fprintf(out, "unknown harness %q\n\nusage: fdf install [--project] [--root <dir>] <claude-code|codex|opencode>\n", harnessName)
 		return 2
 	}
 
-	skillsDir := filepath.Join(append([]string{home}, h.skillsDir...)...)
+	skillsSeg := h.skillsDir
+	instrSeg := h.instrFile
+	if project {
+		skillsSeg = h.projectSkillsDir
+		instrSeg = h.projectInstrFile
+	}
+
+	skillsDir := filepath.Join(append([]string{base}, skillsSeg...)...)
 	marker := Version + " root=" + root
 
 	upToDate := true
@@ -114,7 +149,8 @@ func Run(harnessName, home, root string, out io.Writer) int {
 			fmt.Fprintf(out, "error: embedded harness/claude-code/commands: %v\n", err)
 			return 1
 		}
-		cmdDir := filepath.Join(home, ".claude", "commands")
+		// Commands sit beside skills under .claude/ for both user and project scopes.
+		cmdDir := filepath.Join(filepath.Dir(skillsDir), "commands")
 		if err := os.MkdirAll(cmdDir, 0o755); err != nil {
 			fmt.Fprintln(out, "error:", err)
 			return 1
@@ -133,7 +169,7 @@ func Run(harnessName, home, root string, out io.Writer) int {
 		}
 	}
 
-	instrPath := filepath.Join(append([]string{home}, h.instrFile...)...)
+	instrPath := filepath.Join(append([]string{base}, instrSeg...)...)
 	instrVerb, code := ensurePrimer(instrPath, root, out)
 	if code != 0 {
 		return code

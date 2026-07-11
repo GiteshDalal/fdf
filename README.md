@@ -58,16 +58,36 @@ fdf init                     # scaffold docs/features/ + SPEC.md + context stubs
 fdf new payments/instant-refunds
 fdf validate                 # F1-F9 + R1; exit 1 on any violation
 fdf serve                    # browse the bundle (bun x mdts)
-fdf install claude-code      # agent skills (fdf-help + brainstorm -> plan -> execute)
-fdf install codex            #   + a "## Feature Document Format" primer in the
-fdf install opencode         #   harness's CLAUDE.md/AGENTS.md (skipped if present)
+fdf install claude-code      # user-level skills + "## Feature Document Format" primer
+fdf install codex            #   (primer skipped if the heading is already present)
+fdf install opencode
+fdf install --project claude-code   # project-level: skills under .claude/, primer in ./CLAUDE.md
 fdf migrate                  # mechanical upgrade between adjacent spec versions (e.g. 0.3 → 0.4)
 ```
 
+`fdf install` defaults to **user-level** (under your home directory). Prefer
+`fdf install --project <harness>` for repos that actually carry an FDF bundle:
+skills and the primer stay out of unrelated projects, and a stale primer after
+`fdf migrate` is a per-repo refresh instead of a machine-global one. User-level
+and project-level installs coexist and upgrade independently (each destination
+has its own `.fdf-version` markers). A machine with both will carry two primers
+— harnesses merge memory files, so that is fine.
+
+| Scope | Harness | Skills | Instruction file | Commands |
+|---|---|---|---|---|
+| user | claude-code | `~/.claude/skills/` | `~/.claude/CLAUDE.md` | `~/.claude/commands/` |
+| user | codex | `~/.codex/skills/` | `~/.codex/AGENTS.md` | — |
+| user | opencode | `~/.config/opencode/skills/` | `~/.config/opencode/AGENTS.md` | — |
+| project | claude-code | `<proj>/.claude/skills/` | `<proj>/CLAUDE.md` | `<proj>/.claude/commands/` |
+| project | codex | `<proj>/.codex/skills/` | `<proj>/AGENTS.md` | — |
+| project | opencode | `<proj>/.opencode/skills/` | `<proj>/AGENTS.md` | — |
+
+`--project` outside a git working tree is a usage error (exit 2).
 `fdf install --root <dir>` (or `FDF_ROOT_DIR`) bakes a non-default bundle
 location into the installed skills, which otherwise reference
-`docs/features/`. Agents need no prior FDF knowledge: the spec copy at the
-bundle root is the reference the skills and primer point them to.
+`docs/features/`; it composes with `--project` unchanged. Agents need no prior
+FDF knowledge: the spec copy at the bundle root is the reference the skills
+and primer point them to.
 
 Works the same everywhere: the bundle may be a plain directory or a git
 submodule mounted at the same path — `resource:` paths always verify against
