@@ -10,27 +10,40 @@ description: Use when starting any conversation in a project with an FDF bundle 
 FDF (Feature Document Format) documents software features as a directory of
 markdown files — the **bundle**, at `docs/features/` in this project. Each
 feature is one Markdown + Gherkin file with a lifecycle `status` in its YAML
-frontmatter; its approved design (`SPEC.md`), implementation plan
-(`PLAN.md`), acceptance tests (`TEST.md`), tasks (`NN-slug.md`), and an
-optional decision `LOG.md` live in a paired directory beside it. Three
-bundle-root **Context documents** — `STACK.md`, `ARCHITECTURE.md`,
-`INFRA.md` — hold the project's current stack, architecture, and
-build/deployment infrastructure. The `fdf` CLI keeps it honest: `fdf validate`
-must exit 0 after any bundle edit, `fdf new <group>/<slug>` scaffolds a
-feature. You are not expected to know FDF — the complete format rules ship
-inside the bundle at `docs/features/SPEC.md`; read that file for exact
-frontmatter fields, casing and position rules, and the validation rules the
-fdf skills cite by number (F1–F9, R1).
+frontmatter. Its implementation trail lives as **stem-qualified siblings**
+beside it at the group level:
+
+| Role | Path | Required from |
+|---|---|---|
+| Spec | `<group>/<slug>.spec.md` | `specified` |
+| Plan | `<group>/<slug>.plan.md` | `planned` |
+| Test | `<group>/<slug>.test.md` | `planned` |
+| Surface | `<group>/<slug>.surface.md` | optional (`type: Surface`) |
+| Log | `<group>/<slug>.log.md` | optional |
+| Tasks | `<group>/<slug>/NN-….md` | task directory only |
+
+Position and stem are the link — no frontmatter pointers. The task directory
+holds **only** ordered task files; trail documents never nest inside it.
+
+Four bundle-root **Context documents** — `STACK.md`, `ARCHITECTURE.md`,
+`SURFACES.md`, `INFRA.md` — hold the project's current stack, architecture,
+interface principles for **all surfaces** (API/UI/CLI/events/inputs — not UI
+only), and build/deployment infrastructure. The `fdf` CLI keeps it honest:
+`fdf validate` must exit 0 after any bundle edit, `fdf new <group>/<slug>`
+scaffolds a feature. You are not expected to know FDF — the complete format
+rules ship inside the bundle at `docs/features/SPEC.md`; read that file for
+exact frontmatter fields, casing and position rules, and the validation rules
+the fdf skills cite by number (F1–F9, R1).
 
 The bundle is the source of truth for what the software does. Code that
 changes behavior without touching the bundle makes the bundle lie — that is
 the failure FDF exists to prevent, and tiny changes are where it happens.
 
-**Context documents are critical.** STACK/ARCHITECTURE/INFRA are the project's
-living context; accurate, they let you build the project's way instead of
-guessing — agentic engineering, not vibe coding. They are filled once by the
-fdf-init interview and changed only with explicit user approval (the
-post-feature step in fdf-execute), each change logged. Never edit them
+**Context documents are critical.** STACK/ARCHITECTURE/SURFACES/INFRA are the
+project's living context; accurate, they let you build the project's way
+instead of guessing — agentic engineering, not vibe coding. They are filled
+once by the fdf-init interview and changed only with explicit user approval
+(the post-feature step in fdf-execute), each change logged. Never edit them
 casually. Until filled they carry a `<!-- fdf:stub -->` stub marker, and F9
 blocks feature work while any stays a stub.
 
@@ -50,8 +63,8 @@ key: not the verb the user used, not the size of the change.
 | `done` | Shipped; changing it is a new feature → fdf-brainstorm |
 
 Check the Context docs first: if `fdf validate` warns or fails on unfilled
-STACK/ARCHITECTURE/INFRA stubs, route to fdf-init before any feature work —
-F9 will block it otherwise.
+STACK/ARCHITECTURE/SURFACES/INFRA stubs, route to fdf-init before any feature
+work — F9 will block it otherwise.
 
 Then announce: "Using fdf-<skill> — <feature> is <status>."
 
@@ -61,7 +74,7 @@ stage because the user named it.
 
 **Does this change need a feature document?** Test: does it change what the
 software does for a user (new capability, new flag, changed output, changed
-behavior)? Yes → feature document. No — pure refactor, bugfix restoring
+behavior)? Yes → feature document. No — pure refactor, bug fix restoring
 already-documented behavior, typo, tooling — work normally without one.
 
 ## "It's tiny, just do it"

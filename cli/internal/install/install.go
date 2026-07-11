@@ -167,25 +167,28 @@ func primer(root string) string {
 Projects on this machine may document software features with FDF (Feature
 Document Format): the directory ` + "`" + root + "/`" + ` in a project is an FDF
 **bundle** — every feature is a Markdown + Gherkin document, and its design
-spec, implementation plan, acceptance tests, tasks, and decision log live in a
-paired directory beside it. Feature frontmatter carries a status
-(draft → specified → planned → implementing → done) that must always reflect
-reality; the ` + "`fdf validate`" + ` CLI gates consistency and must exit 0 after any
-bundle edit. The full format rules ship inside the bundle at
+spec, implementation plan, acceptance tests, and decision log live as
+stem-qualified trail siblings (` + "`slug.spec.md`" + `, ` + "`slug.plan.md`" + `,
+` + "`slug.test.md`" + `, optional ` + "`slug.surface.md`" + `/` + "`slug.log.md`" + `);
+tasks live only under a ` + "`slug/`" + ` directory. Feature frontmatter carries a
+status (draft → specified → planned → implementing → done) that must always
+reflect reality; the ` + "`fdf validate`" + ` CLI gates consistency and must exit 0
+after any bundle edit. The full format rules ship inside the bundle at
 ` + "`" + root + "/SPEC.md`" + ` — read that file when you need exact frontmatter
 fields, casing, or validation semantics.
 
-Three bundle-root **Context documents** — ` + "`" + root + "/STACK.md`" + `,
-` + "`ARCHITECTURE.md`" + `, ` + "`INFRA.md`" + ` — are the project's current stack,
-architecture, and build/deployment infrastructure. They are **critical**:
-filled once by the fdf-init interview, then changed only with explicit human
-approval and a logged reason. Accurate context here is what makes this agentic
-engineering rather than vibe coding — read them before designing, and keep
-them true. Their upkeep is the human's responsibility.
+Four bundle-root **Context documents** — ` + "`" + root + "/STACK.md`" + `,
+` + "`ARCHITECTURE.md`" + `, ` + "`SURFACES.md`" + `, ` + "`INFRA.md`" + ` — are the project's
+current stack, architecture, surface (interface) principles for all surfaces,
+and build/deployment infrastructure. They are **critical**: filled once by
+the fdf-init interview, then changed only with explicit human approval and a
+logged reason. Accurate context here is what makes this agentic engineering
+rather than vibe coding — read them before designing, and keep them true.
+Their upkeep is the human's responsibility.
 
 Working in an FDF project:
 
-- First run: after ` + "`fdf init`" + `, use the fdf-init skill to fill the three
+- First run: after ` + "`fdf init`" + `, use the fdf-init skill to fill the four
   Context docs. Feature work is blocked (rule F9) while they're unfilled.
 - Before writing code, route by feature status using the fdf-help skill:
   no feature/draft → fdf-brainstorm, specified → fdf-plan,

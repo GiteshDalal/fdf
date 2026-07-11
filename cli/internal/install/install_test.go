@@ -29,6 +29,15 @@ func TestInstallClaudeCodePlacesSkillsPrimerAndUpgrades(t *testing.T) {
 	if !strings.Contains(string(claudeMd), "docs/features/SPEC.md") {
 		t.Fatalf("primer should point at the bundle spec copy:\n%s", claudeMd)
 	}
+	if !strings.Contains(string(claudeMd), "SURFACES.md") {
+		t.Fatalf("primer should mention SURFACES.md Context doc:\n%s", claudeMd)
+	}
+	if !strings.Contains(string(claudeMd), "slug.spec.md") {
+		t.Fatalf("primer should describe stem-qualified trail siblings:\n%s", claudeMd)
+	}
+	if !strings.Contains(string(claudeMd), "fill the four") {
+		t.Fatalf("primer should say fill the four Context docs:\n%s", claudeMd)
+	}
 	out.Reset()
 	if code := Run("claude-code", home, "", &out); code != 0 || !strings.Contains(out.String(), "up to date") {
 		t.Fatalf("re-install should be up to date: %d %q", code, out.String())
