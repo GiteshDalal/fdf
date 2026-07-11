@@ -1,0 +1,36 @@
+name: Feature request
+description: Propose a new capability for the CLI, the skills, or the FDF format
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What can't you do today?
+      description: The concrete situation this would improve — not the solution yet.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What you'd like fdf to do. Rough is fine.
+    validations:
+      required: true
+  - type: dropdown
+    id: spec-impact
+    attributes:
+      label: Does this change the FDF format itself?
+      description: >-
+        Format changes touch the normative spec (`spec/<version>.md`) and need a
+        version bump — they get extra scrutiny (see CONTRIBUTING.md).
+      options:
+        - "No — CLI/skills behavior only"
+        - "Yes — the bundle format or validation rules change"
+        - "Not sure"
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds you use today, or approaches you ruled out.
