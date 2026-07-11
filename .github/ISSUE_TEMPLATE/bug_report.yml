@@ -1,0 +1,47 @@
+name: Bug report
+description: fdf misbehaves — a wrong validation verdict, a crash, a bad scaffold
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: fdf version
+      description: Output of `fdf version`
+      placeholder: fdf 0.2.2
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: OS and architecture
+      placeholder: macOS 15 arm64 / Ubuntu 24.04 amd64 / Windows 11 amd64
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what did you expect?
+      description: If a validation verdict is wrong, quote the rule code (e.g. F4) from the error.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: >-
+        Commands you ran, plus the smallest bundle layout that triggers it
+        (a `tree docs/features/` snippet and the relevant file contents).
+      placeholder: |
+        fdf validate
+        ---
+        docs/features/
+        ├── INDEX.md
+        └── payments/instant-refunds.md
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Full output
+      description: Everything fdf printed, verbatim.
+      render: text
