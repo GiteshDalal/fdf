@@ -304,8 +304,9 @@ func TestMigrateAbortsWhenStemTrailExists(t *testing.T) {
 		t.Fatalf("expected non-zero exit when stem destination exists; output:\n%s", out.String())
 	}
 	msg := out.String()
-	if !strings.Contains(msg, "already exists") && !strings.Contains(msg, "cannot move") {
-		t.Fatalf("error should mention destination conflict (already exists / cannot move):\n%s", msg)
+	// The pre-flight scan catches the stem-named file before anything runs.
+	if !strings.Contains(msg, "cannot migrate") || !strings.Contains(msg, "wdise/example.spec.md") {
+		t.Fatalf("error should pre-flight the conflicting stem file (cannot migrate + path):\n%s", msg)
 	}
 	// No trail moves applied.
 	if strings.Contains(msg, "moved ") {
@@ -333,5 +334,96 @@ func TestMigrateAbortsWhenStemTrailExists(t *testing.T) {
 	idx, _ := os.ReadFile(filepath.Join(root, "INDEX.md"))
 	if !strings.Contains(string(idx), `fdf_version: "0.3"`) {
 		t.Fatalf("pin must remain 0.3 when trail lift aborts:\n%s", idx)
+	}
+}
+
+// requireUntouched asserts pre-flight aborts modified nothing: pin unchanged
+// and the given paths still present.
+func requireUntouched(t *testing.T, root, wantPin string, paths ...string) {
+	t.Helper()
+	idx, err := os.ReadFile(filepath.Join(root, "INDEX.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(idx), wantPin) {
+		t.Fatalf("pin must be unchanged (%s):\n%s", wantPin, idx)
+	}
+	for _, p := range paths {
+		if _, err := os.Stat(filepath.Join(root, p)); err != nil {
+			t.Fatalf("%s must remain after pre-flight abort: %v", p, err)
+		}
+	}
+}
+
+func TestMigratePreflightsDraftFeatureLog(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "features")
+	buildV03Bundle(t, root)
+	write(t, root, "wdise/pending.md", "---\ntype: Feature\ntitle: Pending\ndescription: A draft.\nstatus: draft\ntimestamp: 2026-07-06T00:00:00Z\n---\n\n# Feature\n\n```gherkin\nFeature: Pending\n```\n\n```gherkin\nScenario: Later\n  Given a\n  When b\n  Then c\n```\n")
+	write(t, root, "wdise/pending/LOG.md", "# Pending log\n\n## 2026-07-06\n* Sketched.\n")
+
+	var out bytes.Buffer
+	if code := Run(root, "", &out); code == 0 {
+		t.Fatalf("expected pre-flight abort for draft feature log:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "wdise/pending/LOG.md") || !strings.Contains(out.String(), "draft") {
+		t.Fatalf("abort should name the draft feature log:\n%s", out.String())
+	}
+	requireUntouched(t, root, `fdf_version: "0.3"`, "wdise/pending/LOG.md", "wdise/example/SPEC.md")
+}
+
+func TestMigratePreflightsDottedFeatureSlug(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "features")
+	buildV03Bundle(t, root)
+	write(t, root, "wdise/api.v2.md", "---\ntype: Feature\ntitle: API v2\ndescription: Dotted slug.\nstatus: draft\ntimestamp: 2026-07-06T00:00:00Z\n---\n\n# Feature\n\n```gherkin\nFeature: API v2\n```\n\n```gherkin\nScenario: One\n  Given a\n  When b\n  Then c\n```\n")
+
+	var out bytes.Buffer
+	if code := Run(root, "", &out); code == 0 {
+		t.Fatalf("expected pre-flight abort for dotted slug:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "wdise/api.v2.md") {
+		t.Fatalf("abort should name the dotted feature file:\n%s", out.String())
+	}
+	requireUntouched(t, root, `fdf_version: "0.3"`, "wdise/api.v2.md", "wdise/example/SPEC.md")
+}
+
+func TestMigratePreflightsStrayFileInFeatureDir(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "features")
+	buildV03Bundle(t, root)
+	write(t, root, "wdise/example/INDEX.md", "# stray index\n\n* [x](/wdise/example.md)\n")
+
+	var out bytes.Buffer
+	if code := Run(root, "", &out); code == 0 {
+		t.Fatalf("expected pre-flight abort for stray feature-dir file:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "wdise/example/INDEX.md") {
+		t.Fatalf("abort should name the stray file:\n%s", out.String())
+	}
+	requireUntouched(t, root, `fdf_version: "0.3"`, "wdise/example/INDEX.md", "wdise/example/SPEC.md")
+}
+
+func TestMigrateIsIdempotent(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "features")
+	buildV03Bundle(t, root)
+	var out1 bytes.Buffer
+	if code := Run(root, "", &out1); code != 0 {
+		t.Fatalf("first migrate exit %d\n%s", code, out1.String())
+	}
+	var out2 bytes.Buffer
+	if code := Run(root, "", &out2); code != 0 {
+		t.Fatalf("second migrate must stay exit 0 (idempotent), got %d\n%s", code, out2.String())
+	}
+}
+
+func TestMigrateReadsUnquotedPin(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "features")
+	write(t, root, "INDEX.md", "---\nfdf_version: 0.4\n---\n\n# Bundle\n\n* [log](/LOG.md) - history.\n")
+	write(t, root, "LOG.md", "# Bundle Update Log\n\n## 2026-07-06\n* Init.\n")
+
+	var out bytes.Buffer
+	if code := Run(root, "", &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
+	}
+	if !strings.Contains(out.String(), "already pins fdf_version 0.4") {
+		t.Fatalf("unquoted pin must hit the already-current path:\n%s", out.String())
 	}
 }

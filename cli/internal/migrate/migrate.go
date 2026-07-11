@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/GiteshDalal/fdf/cli/internal/bundle"
@@ -37,7 +38,12 @@ var trailBasenames = map[string]string{
 
 var linkRe = regexp.MustCompile(`(\]\()([^)]*)(\))`)
 var pinLineRe = regexp.MustCompile(`(?m)^fdf_version:.*$`)
-var pinValueRe = regexp.MustCompile(`fdf_version:\s*"([^"]+)"`)
+
+// pinValueRe tolerates unquoted pins (`fdf_version: 0.4`): the validator's
+// YAML-based readPin accepts them, and migrate must agree with the validator
+// about what version a bundle pins.
+var pinValueRe = regexp.MustCompile(`fdf_version:\s*"?([^"\s]+)"?`)
+var taskFileRe = regexp.MustCompile(`^\d{2}-[a-z0-9][a-z0-9-]*\.md$`)
 var statusRe = regexp.MustCompile(`(?m)^status:\s*(\S+)`)
 var scenarioRe = regexp.MustCompile(`(?m)^\s*Scenario(?: Outline)?:\s*(\S[^\n]*)`)
 var timestampRe = regexp.MustCompile(`(?m)^timestamp:\s*(\S+)`)
@@ -54,9 +60,30 @@ func Run(root, repoRoot string, out io.Writer) int {
 
 	pin := readPin(root)
 	if pin == currentVersion {
-		fmt.Fprintf(out, "bundle already pins fdf_version %s; nothing to migrate\n", currentVersion)
+		// Idempotent repair path: a re-run (or a hand-pinned bundle) still
+		// gets the spec copy and any missing Context stubs, and validates
+		// with the same stub leniency as a fresh migration — so running
+		// migrate twice in a row cannot flip from success to failure.
+		fmt.Fprintf(out, "bundle already pins fdf_version %s; ensuring spec copy and context stubs\n", currentVersion)
+		if code := scaffold.RefreshSpec(root, out); code != 0 {
+			return code
+		}
+		if code := scaffold.EnsureContextStubs(root, out); code != 0 {
+			return code
+		}
 		fmt.Fprintln(out, "\nvalidating bundle:")
-		return bundle.Validate(root, bundle.Options{RepoRoot: repoRoot, Out: out})
+		return bundle.Validate(root, bundle.Options{RepoRoot: repoRoot, Out: out, FreshStubsAdvisory: true})
+	}
+
+	// 0. Pre-flight: refuse to start on content the v0.4 layout cannot hold.
+	// Nothing has been modified when this fails, so the bundle stays valid
+	// under its current pin and re-running after fixes is safe.
+	if problems := preflightV4(root); len(problems) > 0 {
+		fmt.Fprintln(out, "cannot migrate — fix these first (bundle left unchanged):")
+		for _, p := range problems {
+			fmt.Fprintln(out, "  "+p)
+		}
+		return 1
 	}
 
 	// 1. Two-step case renames (v0.1 → uppercase). All files are collected
@@ -150,6 +177,62 @@ func Run(root, repoRoot string, out io.Writer) int {
 		fmt.Fprintln(out, "warning: the next plain `fdf validate` will fail F9 until those stubs are filled (migrate passes only because FreshStubsAdvisory treats freshly scaffolded stubs as warnings).")
 	}
 	return code
+}
+
+// preflightV4 scans for content the v0.4 layout cannot represent and that
+// this migration cannot mechanically fix: dotted group-level filenames
+// (v0.4 reserves the dot for trail roles), non-trail non-task files inside
+// feature directories (v0.4 task dirs hold only NN-slug.md tasks), and
+// draft features with a feature-dir LOG.md (lifting it would create a trail
+// sibling, which v0.4 forbids on drafts). Basenames are normalized through
+// the v0.1 rename map so pre-rename bundles are screened too.
+func preflightV4(root string) []string {
+	var problems []string
+	filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".md") {
+			return nil
+		}
+		relPath := filepath.ToSlash(rel(root, p))
+		parts := strings.Split(relPath, "/")
+		base := filepath.Base(p)
+		if to, ok := renames[base]; ok {
+			base = to
+		}
+		switch len(parts) {
+		case 2:
+			if parts[0] == "releases" || base == "INDEX.md" || base == "LOG.md" {
+				return nil
+			}
+			if strings.Contains(strings.TrimSuffix(base, ".md"), ".") {
+				problems = append(problems, fmt.Sprintf("%s: filename contains a dot, which v0.4 reserves for trail roles (slug.spec.md) — rename it before migrating", relPath))
+			}
+		case 3:
+			if _, liftable := trailBasenames[base]; liftable {
+				if base == "LOG.md" && featureIsDraft(root, parts[0], parts[1]) {
+					problems = append(problems, fmt.Sprintf("%s: draft features may not have trail files under v0.4 — fold this log into the root LOG.md (or advance the feature) before migrating", relPath))
+				}
+				return nil
+			}
+			if taskFileRe.MatchString(base) {
+				return nil
+			}
+			problems = append(problems, fmt.Sprintf("%s: v0.4 task directories may contain only NN-slug.md tasks — move or remove this file before migrating", relPath))
+		}
+		return nil
+	})
+	sort.Strings(problems)
+	return problems
+}
+
+// featureIsDraft reports whether the sibling feature document of a paired
+// directory carries status: draft.
+func featureIsDraft(root, group, slug string) bool {
+	raw, err := os.ReadFile(filepath.Join(root, group, slug+".md"))
+	if err != nil {
+		return false
+	}
+	m := statusRe.FindSubmatch(raw)
+	return m != nil && string(m[1]) == "draft"
 }
 
 func readPin(root string) string {

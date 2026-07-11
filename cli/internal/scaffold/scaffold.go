@@ -126,7 +126,10 @@ func writeSpec(root string, force bool, out io.Writer) int {
 }
 
 var idRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*$`)
-var pinRe = regexp.MustCompile(`fdf_version:\s*"([^"]+)"`)
+
+// pinRe tolerates unquoted pins (`fdf_version: 0.4`), matching how the
+// validator and migrate read them.
+var pinRe = regexp.MustCompile(`fdf_version:\s*"?([^"\s]+)"?`)
 
 func Init(root string, out io.Writer) int {
 	idx := filepath.Join(root, "INDEX.md")
