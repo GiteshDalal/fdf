@@ -1,5 +1,5 @@
-// Package bundle validates an FDF bundle (spec v0.2 or v0.3). Rules F1-F9 are
-// format conformance; R1 is repo integrity. See SPEC.md.
+// Package bundle validates an FDF bundle (spec v0.2, v0.3, or v0.4). Rules
+// F1-F9 are format conformance; R1 is repo integrity. See SPEC.md.
 package bundle
 
 import (
@@ -24,16 +24,29 @@ type Options struct {
 }
 
 var (
-	reserved      = map[string]bool{"INDEX.md": true, "LOG.md": true}
-	trailNames    = map[string]string{"SPEC.md": "Spec", "PLAN.md": "Plan", "TEST.md": "Test"}
-	contextNames  = map[string]bool{"STACK.md": true, "ARCHITECTURE.md": true, "INFRA.md": true}
-	structural    = map[string]bool{"Feature": true, "Spec": true, "Plan": true, "Task": true, "Test": true, "Release": true}
-	recommended   = []string{"title", "description", "timestamp"}
-	linkRe        = regexp.MustCompile(`\[[^\]]*\]\(([^)]+)\)`)
-	isoDateRe     = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
-	taskFileRe    = regexp.MustCompile(`^\d{2}-[a-z0-9][a-z0-9-]*\.md$`)
-	lowerFileRe   = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]*\.md$`)
-	lowerDirRe    = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+	reserved     = map[string]bool{"INDEX.md": true, "LOG.md": true}
+	trailNames   = map[string]string{"SPEC.md": "Spec", "PLAN.md": "Plan", "TEST.md": "Test"}
+	contextNames = map[string]bool{"STACK.md": true, "ARCHITECTURE.md": true, "INFRA.md": true, "SURFACES.md": true}
+	// structural types are rejected at the bundle root (position is fixed).
+	structural  = map[string]bool{"Feature": true, "Spec": true, "Plan": true, "Task": true, "Test": true, "Release": true, "Surface": true, "Log": true}
+	recommended = []string{"title", "description", "timestamp"}
+	linkRe      = regexp.MustCompile(`\[[^\]]*\]\(([^)]+)\)`)
+	isoDateRe   = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+	taskFileRe  = regexp.MustCompile(`^\d{2}-[a-z0-9][a-z0-9-]*\.md$`)
+	lowerFileRe = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]*\.md$`)
+	lowerDirRe  = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+	// trailRoleRe matches known v0.4 stem-qualified trail siblings.
+	trailRoleRe = regexp.MustCompile(`^([a-z0-9][a-z0-9-]*)\.(spec|plan|test|surface|log)\.md$`)
+	// anyTrailAttemptRe matches any group-level dotted basename (slug.something.md).
+	// Feature slugs are [a-z0-9-], so an extra dot implies a trail-role attempt.
+	anyTrailAttemptRe = regexp.MustCompile(`^([a-z0-9][a-z0-9-]*)\.(.+)\.md$`)
+	trailRoleType     = map[string]string{
+		"spec":    "Spec",
+		"plan":    "Plan",
+		"test":    "Test",
+		"surface": "Surface",
+		"log":     "Log",
+	}
 	fenceRe       = regexp.MustCompile("(?s)```gherkin[ \t]*\r?\n(.*?)```")
 	gherkinStart  = regexp.MustCompile(`^\s*(Feature:|Scenario:|Scenario Outline:|Background:|Rule:|@)`)
 	featureDeclRe = regexp.MustCompile(`(?m)^\s*Feature:`)
@@ -48,7 +61,26 @@ var releaseStatuses = []string{"planned", "shipped"}
 
 // supportedVersions are the spec versions this validator understands; a pin
 // outside this set is an F1 error directing the user to `fdf migrate`.
-var supportedVersions = map[string]bool{"0.2": true, "0.3": true}
+var supportedVersions = map[string]bool{"0.2": true, "0.3": true, "0.4": true}
+
+// checkLogBody validates ISO-8601 ## date headings and newest-first order
+// for reserved LOG.md and v0.4 slug.log.md files.
+func checkLogBody(rel, text string, errs, warns *[]string) {
+	var dates []string
+	for _, line := range strings.Split(text, "\n") {
+		if m := logDateRe.FindStringSubmatch(line); m != nil {
+			h := strings.TrimSpace(m[1])
+			if isoDateRe.MatchString(h) {
+				dates = append(dates, h)
+			} else {
+				*errs = append(*errs, fmt.Sprintf("%s: log date heading '## %s' is not ISO-8601 (F1)", rel, h))
+			}
+		}
+	}
+	if !sort.SliceIsSorted(dates, func(i, j int) bool { return dates[i] > dates[j] }) {
+		*warns = append(*warns, fmt.Sprintf("%s: log entries are not in newest-first order", rel))
+	}
+}
 
 const stubSentinel = "<!-- fdf:stub -->"
 
@@ -114,11 +146,11 @@ func Validate(root string, opts Options) int {
 	releases := map[string]*releaseInfo{}
 	documents := 0
 
-	// Version gate: v0.3 rules (Context documents, feature-directory LOG.md,
-	// F9) apply only when the bundle pins 0.3. Anything else validates under
-	// the v0.2 rules, unchanged.
+	// Version gate: Context docs / F9 apply on v0.3+; stem-trail layout and
+	// SURFACES.md on v0.4 only. Anything else validates under v0.2 rules.
 	pinnedVer := readPin(rootAbs)
-	specV3 := pinnedVer == "0.3"
+	specV4 := pinnedVer == "0.4"
+	specHasContext := pinnedVer == "0.3" || pinnedVer == "0.4"
 	// contextDocs[name] records a seen root Context document and whether it is
 	// still an unfilled stub, for F9.
 	contextDocs := map[string]bool{} // name -> isStub
@@ -145,6 +177,7 @@ func Validate(root string, opts Options) int {
 			return nil // non-markdown files are outside FDF's rules
 		}
 		rel := relTo(rootAbs, path)
+		parts := strings.Split(filepath.ToSlash(rel), "/")
 		raw, rerr := os.ReadFile(path)
 		if rerr != nil {
 			warns = append(warns, fmt.Sprintf("%s: could not read file (%v)", rel, rerr))
@@ -161,6 +194,12 @@ func Validate(root string, opts Options) int {
 		}
 
 		if reserved[name] {
+			// Trap 12: v0.4 task directories may contain only NN-slug.md tasks —
+			// reject INDEX.md/LOG.md here (reserved returns before len==3 case).
+			if specV4 && len(parts) == 3 {
+				errs = append(errs, fmt.Sprintf("%s: task directories may contain only NN-slug.md tasks (F3)", rel))
+				return nil
+			}
 			block, delimited, _ := splitFrontmatter(text)
 			if name == "INDEX.md" {
 				if delimited {
@@ -168,7 +207,7 @@ func Validate(root string, opts Options) int {
 					if rel != "INDEX.md" || data == nil || data["fdf_version"] == nil {
 						warns = append(warns, fmt.Sprintf("%s: index file should not carry frontmatter", rel))
 					} else if v, _ := data["fdf_version"].(string); !supportedVersions[v] {
-						errs = append(errs, fmt.Sprintf("INDEX.md: fdf_version %q is not a supported version (0.2, 0.3) — run `fdf migrate` (F1)", v))
+						errs = append(errs, fmt.Sprintf("INDEX.md: fdf_version %q is not a supported version (0.2, 0.3, 0.4) — run `fdf migrate` (F1)", v))
 					}
 				} else if rel == "INDEX.md" {
 					warns = append(warns, "INDEX.md: root index should pin fdf_version")
@@ -177,34 +216,34 @@ func Validate(root string, opts Options) int {
 					warns = append(warns, fmt.Sprintf("%s: index file has no bulleted listing", rel))
 				}
 			} else { // LOG.md
-				var dates []string
-				for _, line := range strings.Split(text, "\n") {
-					if m := logDateRe.FindStringSubmatch(line); m != nil {
-						h := strings.TrimSpace(m[1])
-						if isoDateRe.MatchString(h) {
-							dates = append(dates, h)
-						} else {
-							errs = append(errs, fmt.Sprintf("%s: log date heading '## %s' is not ISO-8601 (F1)", rel, h))
-						}
-					}
-				}
-				if !sort.SliceIsSorted(dates, func(i, j int) bool { return dates[i] > dates[j] }) {
-					warns = append(warns, fmt.Sprintf("%s: log entries are not in newest-first order", rel))
-				}
+				checkLogBody(rel, text, &errs, &warns)
 			}
 			return nil
 		}
 
-		// isContext: a bundle-root context document, recognized only under v0.3.
-		isContext := specV3 && contextNames[name]
+		// isContext: bundle-root Context docs. SURFACES.md is v0.4-only;
+		// STACK/ARCHITECTURE/INFRA are recognized under any Context pin.
+		isContext := false
+		if len(parts) == 1 && contextNames[name] {
+			if name == "SURFACES.md" {
+				isContext = specV4
+			} else {
+				isContext = specHasContext
+			}
+		}
 
-		// Casing gate for everything non-reserved (trail and context docs are
-		// legitimately uppercase).
-		_, isTrail := trailNames[name]
-		if !isTrail && !isContext {
+		// Casing gate for everything non-reserved. Root SPEC.md is always
+		// legal (type: Reference). Nested SPEC/PLAN/TEST.md uppercase trail
+		// names remain legal only under pre-v0.4 (trap 13).
+		_, isLegacyTrail := trailNames[name]
+		isRootSpec := rel == "SPEC.md"
+		if !isRootSpec && !isContext && !(!specV4 && isLegacyTrail) {
 			if !lowerFileRe.MatchString(name) && !taskFileRe.MatchString(name) {
 				allowed := "INDEX/LOG/SPEC/PLAN/TEST.md"
-				if specV3 {
+				switch {
+				case specV4:
+					allowed = "INDEX/LOG/SPEC/STACK/ARCHITECTURE/SURFACES/INFRA.md"
+				case specHasContext:
 					allowed = "INDEX/LOG/SPEC/PLAN/TEST/STACK/ARCHITECTURE/INFRA.md"
 				}
 				errs = append(errs, fmt.Sprintf("%s: filenames are lowercase; uppercase is reserved for %s (F3)", rel, allowed))
@@ -234,9 +273,12 @@ func Validate(root string, opts Options) int {
 		}
 		status, _ := data["status"].(string)
 
-		parts := strings.Split(filepath.ToSlash(rel), "/")
 		switch {
 		case len(parts) == 1: // bundle root
+			contextList := "STACK/ARCHITECTURE/INFRA.md"
+			if specV4 {
+				contextList = "STACK/ARCHITECTURE/SURFACES/INFRA.md"
+			}
 			switch {
 			case isContext:
 				if docType != "Context" {
@@ -244,7 +286,7 @@ func Validate(root string, opts Options) int {
 				}
 				contextDocs[name] = strings.Contains(text, stubSentinel)
 			case docType == "Context":
-				errs = append(errs, fmt.Sprintf("%s: `type: Context` is reserved for STACK/ARCHITECTURE/INFRA.md at the bundle root (F3)", rel))
+				errs = append(errs, fmt.Sprintf("%s: `type: Context` is reserved for %s at the bundle root (F3)", rel, contextList))
 			case structural[docType]:
 				errs = append(errs, fmt.Sprintf("%s: `type: %s` documents cannot live at the bundle root — move it to its FDF position (F3)", rel, docType))
 			}
@@ -259,19 +301,82 @@ func Validate(root string, opts Options) int {
 				warns = append(warns, fmt.Sprintf("%s: missing recommended `date`", rel))
 			}
 			releases[strings.TrimSuffix(parts[1], ".md")] = &releaseInfo{rel, status, body}
-		case len(parts) == 2: // feature
-			if docType != "Feature" {
-				errs = append(errs, fmt.Sprintf("%s: expected `type: Feature`, got %q (F3)", rel, docType))
+		case len(parts) == 2 && parts[0] != "releases":
+			if specV4 {
+				// v0.4 group-level: Feature slug.md or stem-qualified trail.
+				// Trap 14: detect any dotted basename first so unknown roles
+				// don't fall through as features named "slug.notes".
+				if m := anyTrailAttemptRe.FindStringSubmatch(name); m != nil {
+					stem, rolePart := m[1], m[2]
+					if rm := trailRoleRe.FindStringSubmatch(name); rm != nil {
+						role := rm[2]
+						want := trailRoleType[role]
+						if docType != want {
+							errs = append(errs, fmt.Sprintf("%s: expected `type: %s`, got %q (F3)", rel, want, docType))
+						}
+						fid := parts[0] + "/" + stem
+						p := pair(fid)
+						switch role {
+						case "spec":
+							p.spec = true
+						case "plan":
+							p.plan, p.planRel, p.planBody = true, rel, body
+						case "test":
+							p.test, p.testBody = true, body
+						case "log":
+							// Trap 17: same ISO-date / newest-first rules as LOG.md.
+							checkLogBody(rel, text, &errs, &warns)
+						}
+						// surface: optional; type checked above; no pair flag required for lifecycle.
+					} else {
+						errs = append(errs, fmt.Sprintf("%s: unknown trail role %q — allowed roles are spec, plan, test, surface, log (F3)", rel, rolePart))
+					}
+					return nil
+				}
+				// Plain feature: group/slug.md (no extra dots).
+				if docType != "Feature" {
+					errs = append(errs, fmt.Sprintf("%s: expected `type: Feature`, got %q (F3)", rel, docType))
+				}
+				if !in(featureStatuses, status) {
+					errs = append(errs, fmt.Sprintf("%s: Feature `status` must be one of %s, got %q (F2)", rel, strings.Join(featureStatuses, "|"), status))
+				}
+				version, _ := data["version"].(string)
+				features[strings.TrimSuffix(filepath.ToSlash(rel), ".md")] = &featureInfo{rel, status, version, body}
+				checkFeatureBody(rel, body, &errs)
+			} else {
+				// v0.2 / v0.3: group-level files are features only.
+				if docType != "Feature" {
+					errs = append(errs, fmt.Sprintf("%s: expected `type: Feature`, got %q (F3)", rel, docType))
+				}
+				if !in(featureStatuses, status) {
+					errs = append(errs, fmt.Sprintf("%s: Feature `status` must be one of %s, got %q (F2)", rel, strings.Join(featureStatuses, "|"), status))
+				}
+				version, _ := data["version"].(string)
+				features[strings.TrimSuffix(filepath.ToSlash(rel), ".md")] = &featureInfo{rel, status, version, body}
+				checkFeatureBody(rel, body, &errs)
 			}
-			if !in(featureStatuses, status) {
-				errs = append(errs, fmt.Sprintf("%s: Feature `status` must be one of %s, got %q (F2)", rel, strings.Join(featureStatuses, "|"), status))
-			}
-			version, _ := data["version"].(string)
-			features[strings.TrimSuffix(filepath.ToSlash(rel), ".md")] = &featureInfo{rel, status, version, body}
-			checkFeatureBody(rel, body, &errs)
 		case len(parts) == 3:
 			fid := parts[0] + "/" + parts[1]
-			if want, isTrail := trailNames[parts[2]]; isTrail {
+			if specV4 {
+				// v0.4 task dir: only NN-slug.md tasks (no nested trail docs).
+				if taskFileRe.MatchString(parts[2]) {
+					if docType != "Task" {
+						errs = append(errs, fmt.Sprintf("%s: expected `type: Task`, got %q (F3)", rel, docType))
+					}
+					if !in(taskStatuses, status) {
+						errs = append(errs, fmt.Sprintf("%s: Task `status` must be one of %s, got %q (F2)", rel, strings.Join(taskStatuses, "|"), status))
+					}
+					p := pair(fid)
+					p.tasks[parts[2]] = status
+					p.deps[parts[2]] = asList(data["depends-on"])
+					p.depRels[parts[2]] = rel
+					for _, res := range asList(data["resource"]) {
+						resources = append(resources, struct{ rel, path string }{rel, res})
+					}
+				} else {
+					errs = append(errs, fmt.Sprintf("%s: task directories may contain only NN-slug.md tasks (F3)", rel))
+				}
+			} else if want, isTrail := trailNames[parts[2]]; isTrail {
 				if docType != want {
 					errs = append(errs, fmt.Sprintf("%s: expected `type: %s`, got %q (F3)", rel, want, docType))
 				}
@@ -307,10 +412,15 @@ func Validate(root string, opts Options) int {
 		return nil
 	})
 
-	// F3: every paired directory has a sibling feature document.
+	// F3: every pair entry has a sibling feature document.
 	for fid := range pairs {
 		if features[fid] == nil {
-			errs = append(errs, fmt.Sprintf("%s/: paired directory has no sibling feature document %s.md (F3)", fid, fid))
+			if specV4 {
+				// Trap 15: trail-file wording (pairs may come from slug.spec.md alone).
+				errs = append(errs, fmt.Sprintf("%s: trail file or task directory has no sibling feature document %s.md (F3)", fid, fid))
+			} else {
+				errs = append(errs, fmt.Sprintf("%s/: paired directory has no sibling feature document %s.md (F3)", fid, fid))
+			}
 		}
 	}
 
@@ -320,7 +430,11 @@ func Validate(root string, opts Options) int {
 		switch {
 		case f.status == "draft":
 			if p != nil {
-				errs = append(errs, fmt.Sprintf("%s: status 'draft' but paired directory %s/ exists (F4)", f.rel, fid))
+				if specV4 {
+					errs = append(errs, fmt.Sprintf("%s: status 'draft' but trail siblings or task directory %s/ exist (F4)", f.rel, fid))
+				} else {
+					errs = append(errs, fmt.Sprintf("%s: status 'draft' but paired directory %s/ exists (F4)", f.rel, fid))
+				}
 			}
 			continue
 		case !in(featureStatuses, f.status):
@@ -333,21 +447,26 @@ func Validate(root string, opts Options) int {
 			// message that names nothing.
 			p = &pairInfo{tasks: map[string]string{}, deps: map[string][]string{}, depRels: map[string]string{}}
 		}
+		// Artifact path messages: nested trail (v0.2/0.3) vs stem trail (v0.4).
+		specPath, planPath, testPath := fid+"/SPEC.md", fid+"/PLAN.md", fid+"/TEST.md"
+		if specV4 {
+			specPath, planPath, testPath = fid+".spec.md", fid+".plan.md", fid+".test.md"
+		}
 		if !p.spec {
-			errs = append(errs, fmt.Sprintf("%s: status '%s' requires %s/SPEC.md (F4)", f.rel, f.status, fid))
+			errs = append(errs, fmt.Sprintf("%s: status '%s' requires %s (F4)", f.rel, f.status, specPath))
 		}
 		planned := in([]string{"planned", "implementing", "done"}, f.status)
 		if planned && !p.plan {
-			errs = append(errs, fmt.Sprintf("%s: status '%s' requires %s/PLAN.md (F4)", f.rel, f.status, fid))
+			errs = append(errs, fmt.Sprintf("%s: status '%s' requires %s (F4)", f.rel, f.status, planPath))
 		}
 		if planned { // F8
 			if !p.test {
-				errs = append(errs, fmt.Sprintf("%s: status '%s' requires %s/TEST.md (F8)", f.rel, f.status, fid))
+				errs = append(errs, fmt.Sprintf("%s: status '%s' requires %s (F8)", f.rel, f.status, testPath))
 			} else {
 				for _, m := range scenarioRe.FindAllStringSubmatch(f.body, -1) {
 					name := strings.TrimSpace(m[1])
 					if !strings.Contains(p.testBody, name) {
-						errs = append(errs, fmt.Sprintf("%s/TEST.md: scenario %q has no test case (F8)", fid, name))
+						errs = append(errs, fmt.Sprintf("%s: scenario %q has no test case (F8)", testPath, name))
 					}
 				}
 			}
@@ -376,11 +495,15 @@ func Validate(root string, opts Options) int {
 		}
 	}
 
-	// F9: from the first feature onward, the three bundle-root Context
-	// documents must exist and be past their stub state. Before any feature
-	// exists a missing-or-stub context doc is only a nudge (warning). v0.3+.
-	if specV3 {
-		for _, name := range []string{"STACK.md", "ARCHITECTURE.md", "INFRA.md"} {
+	// F9: from the first feature onward, Context documents must exist and be
+	// past their stub state. Before any feature exists a missing-or-stub
+	// context doc is only a nudge (warning). Three docs on v0.3; four on v0.4.
+	if specHasContext {
+		contextRequired := []string{"STACK.md", "ARCHITECTURE.md", "INFRA.md"}
+		if specV4 {
+			contextRequired = []string{"STACK.md", "ARCHITECTURE.md", "SURFACES.md", "INFRA.md"}
+		}
+		for _, name := range contextRequired {
 			stub, present := contextDocs[name]
 			switch {
 			case !present && len(features) > 0:
@@ -415,7 +538,11 @@ func Validate(root string, opts Options) int {
 				}
 			}
 		} else if len(p.tasks) > 0 {
-			errs = append(errs, fmt.Sprintf("%s/: tasks exist but PLAN.md is missing (F6)", fid))
+			if specV4 {
+				errs = append(errs, fmt.Sprintf("%s/: tasks exist but %s.plan.md is missing (F6)", fid, fid))
+			} else {
+				errs = append(errs, fmt.Sprintf("%s/: tasks exist but PLAN.md is missing (F6)", fid))
+			}
 		}
 		for name, deps := range p.deps {
 			for _, dep := range deps {
