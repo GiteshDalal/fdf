@@ -14,12 +14,33 @@ import (
 // real content so the stub sentinel is gone and F9 is satisfied.
 func fillContext(t *testing.T, root string) {
 	t.Helper()
-	for _, name := range []string{"STACK.md", "ARCHITECTURE.md", "INFRA.md"} {
+	for _, name := range []string{"STACK.md", "ARCHITECTURE.md", "SURFACES.md", "INFRA.md"} {
 		body := "---\ntype: Context\ntitle: " + name + "\ndescription: filled.\n" +
 			"timestamp: 2026-07-06T00:00:00Z\n---\n\n# " + name + "\n\nReal content.\n"
 		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+func TestInitWritesSurfacesStub(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, "docs", "features")
+	var buf bytes.Buffer
+	if code := Init(root, &buf); code != 0 {
+		t.Fatalf("init exit %d: %s", code, buf.String())
+	}
+	raw, err := os.ReadFile(filepath.Join(root, "SURFACES.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(raw)
+	if !strings.Contains(s, "type: Context") || !strings.Contains(s, "<!-- fdf:stub -->") {
+		t.Fatalf("SURFACES.md stub incomplete:\n%s", s)
+	}
+	idx, _ := os.ReadFile(filepath.Join(root, "INDEX.md"))
+	if !strings.Contains(string(idx), `fdf_version: "0.4"`) {
+		t.Fatalf("pin: %s", idx)
 	}
 }
 
@@ -29,13 +50,13 @@ func TestInitScaffoldsConformingBundle(t *testing.T) {
 	if code := Init(root, &out); code != 0 {
 		t.Fatalf("init: %d\n%s", code, out.String())
 	}
-	for _, f := range []string{"INDEX.md", "LOG.md", "STACK.md", "ARCHITECTURE.md", "INFRA.md"} {
+	for _, f := range []string{"INDEX.md", "LOG.md", "STACK.md", "ARCHITECTURE.md", "SURFACES.md", "INFRA.md"} {
 		if _, err := os.Stat(filepath.Join(root, f)); err != nil {
 			t.Fatalf("missing %s", f)
 		}
 	}
 	raw, _ := os.ReadFile(filepath.Join(root, "INDEX.md"))
-	if !strings.Contains(string(raw), `fdf_version: "0.3"`) ||
+	if !strings.Contains(string(raw), `fdf_version: "0.4"`) ||
 		!strings.Contains(string(raw), "/SPEC.md") {
 		t.Fatalf("INDEX.md missing pin or spec link:\n%s", raw)
 	}
@@ -57,7 +78,7 @@ func TestInitIdempotentAndMigrateHint(t *testing.T) {
 	// Simulate an older bundle: rewrite the pin.
 	idx := filepath.Join(root, "INDEX.md")
 	raw, _ := os.ReadFile(idx)
-	os.WriteFile(idx, bytes.Replace(raw, []byte(`"0.3"`), []byte(`"0.1"`), 1), 0o644)
+	os.WriteFile(idx, bytes.Replace(raw, []byte(`"0.4"`), []byte(`"0.1"`), 1), 0o644)
 	out.Reset()
 	if code := Init(root, &out); code != 1 || !strings.Contains(out.String(), "fdf migrate") {
 		t.Fatalf("older pin: code %d out %q", code, out.String())
