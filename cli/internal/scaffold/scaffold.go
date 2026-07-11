@@ -15,7 +15,7 @@ import (
 	fdf "github.com/GiteshDalal/fdf"
 )
 
-const currentVersion = "0.3"
+const currentVersion = "0.4"
 const specURL = "https://github.com/GiteshDalal/fdf/blob/main/spec/" + currentVersion + ".md"
 
 // contextDocs are the bundle-root Context documents fdf init scaffolds as
@@ -28,6 +28,9 @@ var contextDocs = []struct{ file, title, purpose, headings string }{
 	{"ARCHITECTURE.md", "Architecture & Principles",
 		"the architecture style, how code is organized, and the design principles contributors follow",
 		"## Style\n\n## Code organization\n\n## Design principles\n\n## Key decisions\n"},
+	{"SURFACES.md", "Surfaces & Interaction Design",
+		"how this project’s surfaces present themselves and are engaged with — APIs, UIs, CLIs, events, and inputs — plus links to assets and exemplars",
+		"## Purpose\n\n## Surfaces\n\n## Principles\n\n## Conventions by surface\n\n### API / machine interfaces\n\n### Human UI\n\n### CLI / operator surfaces\n\n### Inputs and processing\n\n## Assets and exemplars\n\n## Out of scope\n"},
 	{"INFRA.md", "Build & Deployment Infrastructure",
 		"how the project is built, tested, packaged, and deployed, and the environments and targets it runs on",
 		"## Build & test\n\n## Packaging\n\n## Environments & targets\n\n## Deployment\n"},
@@ -59,7 +62,7 @@ func EnsureSpec(root string, out io.Writer) int         { return writeSpec(root,
 func RefreshSpec(root string, out io.Writer) int        { return writeSpec(root, true, out) }
 func EnsureContextStubs(root string, out io.Writer) int { return writeContextStubs(root, out) }
 
-// writeContextStubs places the three Context stubs at the bundle root, each
+// writeContextStubs places the four Context stubs at the bundle root, each
 // only if absent. The fdf-init interview replaces the stub bodies later.
 func writeContextStubs(root string, out io.Writer) int {
 	now := time.Now().UTC().Format("2006-01-02T15:04:05Z")
@@ -123,7 +126,10 @@ func writeSpec(root string, force bool, out io.Writer) int {
 }
 
 var idRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*$`)
-var pinRe = regexp.MustCompile(`fdf_version:\s*"([^"]+)"`)
+
+// pinRe tolerates unquoted pins (`fdf_version: 0.4`), matching how the
+// validator and migrate read them.
+var pinRe = regexp.MustCompile(`fdf_version:\s*"?([^"\s]+)"?`)
 
 func Init(root string, out io.Writer) int {
 	idx := filepath.Join(root, "INDEX.md")
@@ -151,7 +157,7 @@ func Init(root string, out io.Writer) int {
 		return 1
 	}
 	today := time.Now().UTC().Format("2006-01-02")
-	index := fmt.Sprintf("---\nfdf_version: %q\n---\n\n# Feature Bundle\n\nThis bundle conforms to [FDF v%s](/SPEC.md): features in Markdown + Gherkin,\neach with its SPEC/PLAN/TEST/task trail in a paired directory.\n\n# Overview\n\n* [FDF spec](/SPEC.md) - the format this bundle pins ([upstream](%s)).\n\n# Conventions\n\n* Feature IDs are file paths minus `.md`.\n* Validate with `fdf validate`; see [`LOG.md`](/LOG.md) for change history.\n",
+	index := fmt.Sprintf("---\nfdf_version: %q\n---\n\n# Feature Bundle\n\nThis bundle conforms to [FDF v%s](/SPEC.md): features in Markdown + Gherkin,\neach with its spec/plan/test trail as stem-named siblings and tasks in a paired directory.\n\n# Overview\n\n* [FDF spec](/SPEC.md) - the format this bundle pins ([upstream](%s)).\n\n# Conventions\n\n* Feature IDs are file paths minus `.md`.\n* Validate with `fdf validate`; see [`LOG.md`](/LOG.md) for change history.\n",
 		currentVersion, currentVersion, specURL)
 	log := fmt.Sprintf("# Bundle Update Log\n\n## %s\n* **Initialization**: scaffolded by `fdf init` (FDF v%s).\n", today, currentVersion)
 	if err := os.WriteFile(idx, []byte(index), 0o644); err != nil {
@@ -169,7 +175,7 @@ func Init(root string, out io.Writer) int {
 		return code
 	}
 	fmt.Fprintf(out, "initialized FDF bundle at %s\n", root)
-	fmt.Fprintln(out, "next: run the fdf-init skill to fill STACK.md, ARCHITECTURE.md, and INFRA.md before adding features.")
+	fmt.Fprintln(out, "next: run the fdf-init skill to fill STACK.md, ARCHITECTURE.md, SURFACES.md, and INFRA.md before adding features.")
 	return 0
 }
 

@@ -1,0 +1,4 @@
+exit: 1
+contains: (F3)
+contains: example.surface.md
+contains: expected `type: Surface`

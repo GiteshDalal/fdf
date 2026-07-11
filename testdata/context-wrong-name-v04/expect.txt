@@ -1,0 +1,2 @@
+exit: 1
+contains: `type: Context` is reserved for STACK/ARCHITECTURE/SURFACES/INFRA.md at the bundle root (F3)

@@ -1,0 +1,2 @@
+exit: 1
+contains: log date heading '## someday' is not ISO-8601 (F1)

@@ -7,6 +7,8 @@
 //
 // Installs are idempotent: an existing install at the current version and
 // bundle root is reported "up to date"; anything else is upgraded in place.
+// User-level and project-level installs coexist: each destination carries its
+// own .fdf-version markers and upgrades independently.
 package install
 
 import (
@@ -22,7 +24,7 @@ import (
 )
 
 // Version is stamped by the CLI (main.version) at dispatch time.
-var Version = "0.2.0-dev"
+var Version = "0.4.0-dev"
 
 // defaultRoot is the bundle root the skill texts are written against; a
 // different install root rewrites every occurrence in the skill bodies.
@@ -36,35 +38,68 @@ var legacyBlockRe = regexp.MustCompile(`(?s)<!-- fdf:begin v[^>]*-->.*?<!-- fdf:
 
 const primerHeading = "## Feature Document Format"
 
+// harness describes per-scope destination path segments under a base directory
+// (user home for user-level installs, project root for --project).
 type harness struct {
-	skillsDir []string // path segments under home
-	instrFile []string // path segments under home
-	commands  bool     // claude-code slash commands
+	skillsDir        []string // user-level skills path under home
+	instrFile        []string // user-level instruction file under home
+	projectSkillsDir []string // project-level skills path under project root
+	projectInstrFile []string // project-level instruction file under project root
+	commands         bool     // claude-code slash commands
 }
 
 var harnesses = map[string]harness{
-	"claude-code": {skillsDir: []string{".claude", "skills"}, instrFile: []string{".claude", "CLAUDE.md"}, commands: true},
-	"codex":       {skillsDir: []string{".codex", "skills"}, instrFile: []string{".codex", "AGENTS.md"}},
-	"opencode":    {skillsDir: []string{".config", "opencode", "skills"}, instrFile: []string{".config", "opencode", "AGENTS.md"}},
+	"claude-code": {
+		skillsDir:        []string{".claude", "skills"},
+		instrFile:        []string{".claude", "CLAUDE.md"},
+		projectSkillsDir: []string{".claude", "skills"},
+		projectInstrFile: []string{"CLAUDE.md"}, // repo-root memory file, not .claude/CLAUDE.md
+		commands:         true,
+	},
+	"codex": {
+		skillsDir:        []string{".codex", "skills"},
+		instrFile:        []string{".codex", "AGENTS.md"},
+		projectSkillsDir: []string{".codex", "skills"},
+		projectInstrFile: []string{"AGENTS.md"},
+	},
+	"opencode": {
+		skillsDir:        []string{".config", "opencode", "skills"},
+		instrFile:        []string{".config", "opencode", "AGENTS.md"},
+		projectSkillsDir: []string{".opencode", "skills"},
+		projectInstrFile: []string{"AGENTS.md"},
+	},
 }
 
-// Run installs the skills and instruction-file primer for a harness. root is
-// the bundle root to bake into the installed skills ("" means the default
-// docs/features); pass it as the user wrote it (project-relative preferred).
-func Run(harnessName, home, root string, out io.Writer) int {
-	if home == "" {
-		home, _ = os.UserHomeDir()
+// Run installs the skills and instruction-file primer for a harness. base is
+// the install root: the user home for user-level installs ("" → UserHomeDir),
+// or the project root when project is true. root is the bundle root to bake
+// into the installed skills ("" means the default docs/features); pass it as
+// the user wrote it (project-relative preferred).
+func Run(harnessName, base, root string, project bool, out io.Writer) int {
+	if base == "" {
+		if project {
+			fmt.Fprintln(out, "error: project install requires a project root base")
+			return 1
+		}
+		base, _ = os.UserHomeDir()
 	}
 	if root == "" {
 		root = defaultRoot
 	}
 	h, ok := harnesses[harnessName]
 	if !ok {
-		fmt.Fprintf(out, "unknown harness %q\n\nusage: fdf install <claude-code|codex|opencode> [--root <dir>]\n", harnessName)
+		fmt.Fprintf(out, "unknown harness %q\n\nusage: fdf install [--project] [--root <dir>] <claude-code|codex|opencode>\n", harnessName)
 		return 2
 	}
 
-	skillsDir := filepath.Join(append([]string{home}, h.skillsDir...)...)
+	skillsSeg := h.skillsDir
+	instrSeg := h.instrFile
+	if project {
+		skillsSeg = h.projectSkillsDir
+		instrSeg = h.projectInstrFile
+	}
+
+	skillsDir := filepath.Join(append([]string{base}, skillsSeg...)...)
 	marker := Version + " root=" + root
 
 	upToDate := true
@@ -114,7 +149,8 @@ func Run(harnessName, home, root string, out io.Writer) int {
 			fmt.Fprintf(out, "error: embedded harness/claude-code/commands: %v\n", err)
 			return 1
 		}
-		cmdDir := filepath.Join(home, ".claude", "commands")
+		// Commands sit beside skills under .claude/ for both user and project scopes.
+		cmdDir := filepath.Join(filepath.Dir(skillsDir), "commands")
 		if err := os.MkdirAll(cmdDir, 0o755); err != nil {
 			fmt.Fprintln(out, "error:", err)
 			return 1
@@ -133,7 +169,7 @@ func Run(harnessName, home, root string, out io.Writer) int {
 		}
 	}
 
-	instrPath := filepath.Join(append([]string{home}, h.instrFile...)...)
+	instrPath := filepath.Join(append([]string{base}, instrSeg...)...)
 	instrVerb, code := ensurePrimer(instrPath, root, out)
 	if code != 0 {
 		return code
@@ -162,6 +198,55 @@ func Run(harnessName, home, root string, out io.Writer) int {
 // primer is the instruction-file section teaching an agent what FDF is and
 // where the full rules live. It assumes no prior FDF knowledge.
 func primer(root string) string {
+	return primerHeading + `
+
+Projects on this machine may document software features with FDF (Feature
+Document Format): the directory ` + "`" + root + "/`" + ` in a project is an FDF
+**bundle** — every feature is a Markdown + Gherkin document, and its design
+spec, implementation plan, acceptance tests, and decision log live as
+stem-qualified trail siblings (` + "`slug.spec.md`" + `, ` + "`slug.plan.md`" + `,
+` + "`slug.test.md`" + `, optional ` + "`slug.surface.md`" + `/` + "`slug.log.md`" + `);
+tasks live only under a ` + "`slug/`" + ` directory. Feature frontmatter carries a
+status (draft → specified → planned → implementing → done) that must always
+reflect reality; the ` + "`fdf validate`" + ` CLI gates consistency and must exit 0
+after any bundle edit. The full format rules ship inside the bundle at
+` + "`" + root + "/SPEC.md`" + ` — read that file when you need exact frontmatter
+fields, casing, or validation semantics.
+
+Four bundle-root **Context documents** — ` + "`" + root + "/STACK.md`" + `,
+` + "`ARCHITECTURE.md`" + `, ` + "`SURFACES.md`" + `, ` + "`INFRA.md`" + ` — are the project's
+current stack, architecture, surface (interface) principles for all surfaces,
+and build/deployment infrastructure. They are **critical**: filled once by
+the fdf-init interview, then changed only with explicit human approval and a
+logged reason. Accurate context here is what makes this agentic engineering
+rather than vibe coding — read them before designing, and keep them true.
+Their upkeep is the human's responsibility.
+
+Working in an FDF project:
+
+- First run: after ` + "`fdf init`" + `, use the fdf-init skill to fill the four
+  Context docs. Feature work is blocked (rule F9) while they're unfilled.
+- Before writing code, route by feature status using the fdf-help skill:
+  no feature/draft → fdf-brainstorm, specified → fdf-plan,
+  planned/implementing → fdf-execute.
+- Scaffold with ` + "`fdf new <group>/<slug>`" + `; validate with ` + "`fdf validate`" + `.
+- Code that changes behavior without touching the bundle makes the bundle
+  lie — record the feature first, then implement.
+- After a feature, propose any needed Context-doc update and apply it only on
+  approval, logging the change.
+`
+}
+
+// legacyPrimers reproduces the primer text earlier CLI versions wrote, so an
+// upgrade can recognize an untouched managed section and refresh it in place.
+// Every release that changes primer() must append the superseded text here —
+// otherwise re-running `fdf install` upgrades the skills but leaves the
+// instruction file teaching the old format.
+var legacyPrimers = []func(root string) string{primerV03}
+
+// primerV03 is the primer shipped by the v0.3-era CLI (paired-directory
+// layout, three Context docs). Kept verbatim for upgrade detection.
+func primerV03(root string) string {
 	return primerHeading + `
 
 Projects on this machine may document software features with FDF (Feature
@@ -198,10 +283,39 @@ Working in an FDF project:
 `
 }
 
-// ensurePrimer appends the primer to the instruction file unless its heading
-// is already present (the section is user-editable after install). Legacy
-// managed blocks from pre-0.3 installs are removed. Returns a verb for
-// reporting: "added", "updated" (legacy block replaced), or "unchanged".
+var primerHeadingRe = regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(primerHeading) + `\s*$`)
+var nextH2Re = regexp.MustCompile(`(?m)^## `)
+
+// primerSection locates the managed primer section: from the start of the
+// heading line to the start of the next `## ` heading (or EOF).
+func primerSection(content string) (start, end int, ok bool) {
+	loc := primerHeadingRe.FindStringIndex(content)
+	if loc == nil {
+		return 0, 0, false
+	}
+	if next := nextH2Re.FindStringIndex(content[loc[1]:]); next != nil {
+		return loc[0], loc[1] + next[0], true
+	}
+	return loc[0], len(content), true
+}
+
+// sectionMatchesLegacy reports whether an existing primer section is exactly
+// a superseded shipped primer (rendered with this install's root).
+func sectionMatchesLegacy(section, root string) bool {
+	for _, legacy := range legacyPrimers {
+		if section == strings.TrimRight(legacy(root), "\n") {
+			return true
+		}
+	}
+	return false
+}
+
+// ensurePrimer places or refreshes the instruction-file primer. A missing
+// section is appended. An existing section that matches a primer some CLI
+// version shipped (current → no-op; superseded → replaced in place) is
+// managed content; anything else was user-edited and is left untouched with
+// a warning. Legacy pre-0.3 managed blocks are removed. Returns a verb for
+// reporting: "added", "updated", or "unchanged".
 func ensurePrimer(path, root string, out io.Writer) (string, int) {
 	existing, _ := os.ReadFile(path)
 	content := string(existing)
@@ -211,7 +325,22 @@ func ensurePrimer(path, root string, out io.Writer) (string, int) {
 		content = legacyBlockRe.ReplaceAllString(content, "")
 		verb = "updated"
 	}
-	if !regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(primerHeading) + `\s*$`).MatchString(content) {
+	if s, e, ok := primerSection(content); ok {
+		section := strings.TrimRight(content[s:e], "\n")
+		switch {
+		case section == strings.TrimRight(primer(root), "\n"):
+			// Current text; nothing to do.
+		case sectionMatchesLegacy(section, root):
+			repl := strings.TrimRight(primer(root), "\n") + "\n"
+			if e < len(content) {
+				repl += "\n"
+			}
+			content = content[:s] + repl + content[e:]
+			verb = "updated"
+		default:
+			fmt.Fprintf(out, "note: %s section in %s differs from the shipped primer (user-edited?) — left as-is; delete the section and re-run `fdf install` to refresh it\n", primerHeading, path)
+		}
+	} else {
 		if content != "" && !strings.HasSuffix(content, "\n") {
 			content += "\n"
 		}

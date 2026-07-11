@@ -1,0 +1,4 @@
+exit: 1
+contains: (F3)
+contains: notes.md
+contains: task directories may contain only NN-slug.md tasks

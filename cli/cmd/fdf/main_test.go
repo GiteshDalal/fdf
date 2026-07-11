@@ -26,6 +26,51 @@ func writeMinimalBundle(t *testing.T, dir string) {
 	}
 }
 
+func TestInstallProjectOutsideGitExits2(t *testing.T) {
+	tmp := t.TempDir()
+	old, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(old)
+	// Temp dirs have no .git ancestor; --project must refuse.
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if exit := runInstall([]string{"--project", "claude-code"}, &out); exit != 2 {
+		t.Fatalf("expected exit 2 outside git project, got %d\n%s", exit, out.String())
+	}
+	if !strings.Contains(out.String(), "git") {
+		t.Fatalf("error should mention git project requirement:\n%s", out.String())
+	}
+}
+
+func TestInstallProjectClaudeCodeCLI(t *testing.T) {
+	tmp := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tmp, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(old)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if exit := runInstall([]string{"--project", "claude-code"}, &out); exit != 0 {
+		t.Fatalf("project install: exit %d\n%s", exit, out.String())
+	}
+	if _, err := os.Stat(filepath.Join(tmp, ".claude", "skills", "fdf-help", "SKILL.md")); err != nil {
+		t.Fatalf("project skill missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(tmp, "CLAUDE.md")); err != nil {
+		t.Fatalf("repo-root CLAUDE.md missing: %v", err)
+	}
+}
+
 func TestValidateHonorsEnvAndFlagRoots(t *testing.T) {
 	tmp := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(tmp, ".git"), 0o755); err != nil {

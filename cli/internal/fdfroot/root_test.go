@@ -84,3 +84,38 @@ func TestBundleRootPrecedence(t *testing.T) {
 		t.Fatalf("default: got %q", got)
 	}
 }
+
+func TestNearestProjectRootPrefersInnerRepo(t *testing.T) {
+	dir := t.TempDir()
+	inner := filepath.Join(dir, "outer", "inner", "src")
+	if err := os.MkdirAll(filepath.Join(dir, "outer", ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "outer", "inner", ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(inner, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got, standalone := NearestProjectRoot(inner)
+	if standalone {
+		t.Fatal("nested repo must not be standalone")
+	}
+	if want := filepath.Join(dir, "outer", "inner"); got != want {
+		t.Fatalf("nearest root = %s, want inner repo %s", got, want)
+	}
+	// A .git FILE (worktree/submodule) also marks the nearest project.
+	wt := filepath.Join(dir, "outer", "wt")
+	if err := os.MkdirAll(wt, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: ../.git/worktrees/wt\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := NearestProjectRoot(wt); got != wt {
+		t.Fatalf("worktree root = %s, want %s", got, wt)
+	}
+	if _, standalone := NearestProjectRoot(t.TempDir()); !standalone {
+		t.Fatal("no .git above: must be standalone")
+	}
+}

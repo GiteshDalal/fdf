@@ -1,55 +1,65 @@
 ---
 name: fdf-init
-description: Use right after `fdf init` on a new FDF bundle, or whenever STACK.md / ARCHITECTURE.md / INFRA.md are still unfilled stubs — runs the project-context interview that fills the three critical Context documents before any feature work.
+description: Use right after `fdf init` on a new FDF bundle, or whenever STACK.md / ARCHITECTURE.md / SURFACES.md / INFRA.md are still unfilled stubs — runs the project-context interview that fills the four critical Context documents before any feature work.
 ---
 
 # FDF Init
 
-Interview the user about the project, then write the three bundle-root
-**Context documents** — `STACK.md`, `ARCHITECTURE.md`, `INFRA.md` — that every
-later feature relies on. This is the difference between agentic engineering
-and vibe coding: with accurate context an agent builds *this* project's way;
-without it, it guesses. Do this thoroughly and slowly. It is the most
-leveraged conversation in the whole workflow.
+Interview the user about the project, then write the four bundle-root
+**Context documents** — `STACK.md`, `ARCHITECTURE.md`, `SURFACES.md`,
+`INFRA.md` — that every later feature relies on. This is the difference
+between agentic engineering and vibe coding: with accurate context an agent
+builds *this* project's way; without it, it guesses. Do this thoroughly and
+slowly. It is the most leveraged conversation in the whole workflow.
 
 New to FDF? The format is defined in the bundle at `docs/features/SPEC.md`.
-The three Context docs live at the bundle root beside it; `fdf init` writes
+The four Context docs live at the bundle root beside it; `fdf init` writes
 them as stubs carrying `<!-- fdf:stub -->` and a ⚠️ banner. Your job is to
 replace each stub with real content. Validation rule F9 rejects any bundle
 that has features while a Context doc is still a stub — so this interview
 comes first.
 
-## The three documents
+## The four documents
 
 | File | Captures |
 |---|---|
 | `STACK.md` | Languages, runtimes, frameworks, libraries, data stores — and their versions. What the code is written in and with. |
 | `ARCHITECTURE.md` | The architecture style, how code is organized, the design principles and conventions contributors follow, and the load-bearing decisions behind them. |
+| `SURFACES.md` | Interface and interaction principles for **all surfaces** through which people or systems engage the project — APIs, human UIs, CLIs, events/webhooks, file formats, and other inputs (not “UI only”). Naming, errors, versioning, UX principles, CLI conventions, assets/exemplars. |
 | `INFRA.md` | How the project is built, tested, packaged, deployed; its environments and runtime targets; the operational dependencies (CI, hosting, queues, caches, secrets). |
 
 Each is a **current snapshot**, not a roadmap and not a changelog. Write only
 what is true now (or true for the project being started).
 
+A **surface** is any interface through which people or systems engage the
+project (API surface, UI, CLI, events). FDF deliberately avoids “design”/“UX”
+as document names — both are GUI-connoted, and “design doc” collides with
+Spec/Architecture territory.
+
 ## Process
 
 1. **Locate the bundle and read the stubs.** Run `fdf validate` (respects
-   `--root`/`FDF_ROOT_DIR`). Read the three stub files so you match their
+   `--root`/`FDF_ROOT_DIR`). Read the four stub files so you match their
    heading structure. If they don't exist yet, run `fdf init` first.
 2. **Survey what already exists.** If there's code, read enough to ground your
    questions — `README`, manifests (`package.json`, `go.mod`, `Cargo.toml`,
-   `pyproject.toml`, `pom.xml`), lockfiles, CI config, Dockerfiles, IaC. Come
-   to the interview with informed guesses to confirm, not a blank slate. For a
-   greenfield project there's nothing to read — the interview *is* the design.
+   `pyproject.toml`, `pom.xml`), lockfiles, CI config, Dockerfiles, IaC, OpenAPI
+   or route trees, UI entry points, CLI command trees. Come to the interview
+   with informed guesses to confirm, not a blank slate. For a greenfield
+   project there's nothing to read — the interview *is* the design.
 3. **Interview — one question at a time.** Prefer multiple-choice with a
    recommended default; let the user redirect. Do not dump a questionnaire.
    Cover the areas below, skipping what genuinely doesn't apply (and say why
    you're skipping). Chase vague answers ("scalable", "modern", "cloud") into
    specifics. Ask follow-ups when an answer implies more (chose microservices
    → how do services communicate? chose a SPA → what backend serves it?).
+   **Start with surfaces** when the project is interface-heavy: who/what
+   talks to this system, through which APIs/UIs/CLIs/events, and what those
+   interactions must feel like — then stack and architecture that serve them.
 4. **Draft each document and get approval section by section.** Present a
    draft, take edits, confirm. These become immutable-without-approval the
    moment they're written — so the user must genuinely agree now.
-5. **Write the three files.** Replace the entire stub (remove the
+5. **Write the four files.** Replace the entire stub (remove the
    `<!-- fdf:stub -->` sentinel and the ⚠️ banner — their presence is what
    F9 treats as "unfilled"). Keep `type: Context` and the frontmatter; update
    `timestamp`.
@@ -64,6 +74,19 @@ what is true now (or true for the project being started).
 - What are the primary use cases? What is explicitly out of scope?
 - Greenfield or existing? Any hard constraints (compliance, offline, latency,
   budget, team size/skills)?
+
+**Surfaces first → SURFACES.md**
+- Which surfaces exist or will exist: HTTP APIs, human UIs (web/mobile/
+  desktop), CLIs, events/webhooks, file formats / import-export, other
+  inputs?
+- For each: who is the audience (end user, operator, another service)?
+- API: naming, versioning, error envelope, pagination, auth presentation.
+- Human UI: structure, UX principles, brand, accessibility baseline, links
+  to design systems or exemplars.
+- CLI: command shape, flags, output formats, exit codes.
+- Events / inputs: shapes, validation philosophy, operator-facing feedback.
+- Assets and exemplars to point agents at; what is explicitly out of scope
+  for surface work.
 
 **Stack → STACK.md**
 - Primary language(s) and runtime/version. Why these?
@@ -100,14 +123,14 @@ what is true now (or true for the project being started).
 
 Tell the user, in your own words:
 
-> STACK.md, ARCHITECTURE.md, and INFRA.md are written and validated. Treat
-> them as **critical, living documents**: from here on I will not change them
-> without your explicit approval, and after each feature I'll ask whether any
-> of them needs updating (a new dependency, a new pattern, new infrastructure)
-> and only edit on your say-so, logging the change. Keeping them accurate is
-> what makes this agentic engineering rather than vibe coding — stale context
-> produces confidently wrong work. They're yours to own; I'll help maintain
-> them.
+> STACK.md, ARCHITECTURE.md, SURFACES.md, and INFRA.md are written and
+> validated. Treat them as **critical, living documents**: from here on I
+> will not change them without your explicit approval, and after each feature
+> I'll ask whether any of them needs updating (a new dependency, a new
+> pattern, a new surface convention, new infrastructure) and only edit on
+> your say-so, logging the change. Keeping them accurate is what makes this
+> agentic engineering rather than vibe coding — stale context produces
+> confidently wrong work. They're yours to own; I'll help maintain them.
 
 ## Rules
 
@@ -116,6 +139,6 @@ Tell the user, in your own words:
 - Removing the stub sentinel/banner is required; a Context doc that still
   contains `<!-- fdf:stub -->` counts as unfilled and fails F9 once features
   exist.
-- These three files are edited ONLY here and, later, via the post-feature
+- These four files are edited ONLY here and, later, via the post-feature
   update step in fdf-execute — always with explicit user approval, always
   logged. Never edit them casually mid-implementation.

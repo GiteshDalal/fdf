@@ -1,0 +1,3 @@
+exit: 1
+contains: (F8)
+contains: .test.md
