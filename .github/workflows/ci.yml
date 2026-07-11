@@ -16,6 +16,7 @@ jobs:
       - run: go test ./...
       - run: test -z "$(gofmt -l .)"
       - run: shellcheck install.sh
+        if: runner.os == 'Linux'  # not preinstalled on macos runners; output is platform-independent
       - name: lint skill frontmatter
         run: |
           for f in skills/*/SKILL.md; do
