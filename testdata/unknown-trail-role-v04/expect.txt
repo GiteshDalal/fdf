@@ -1,0 +1,4 @@
+exit: 1
+contains: (F3)
+contains: unknown trail role
+contains: notes

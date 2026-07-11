@@ -1,0 +1,4 @@
+exit: 1
+contains: (F3)
+contains: orphan
+contains: trail file or task directory has no sibling feature document
