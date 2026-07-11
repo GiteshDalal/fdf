@@ -8,7 +8,7 @@ import (
 )
 
 // version is set by goreleaser via -ldflags "-X main.version=...".
-var version = "0.3.0-dev"
+var version = "0.4.0-dev"
 
 var commands = map[string]func(args []string, stdout io.Writer) int{
 	"validate": runValidate,

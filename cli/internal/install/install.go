@@ -24,7 +24,7 @@ import (
 )
 
 // Version is stamped by the CLI (main.version) at dispatch time.
-var Version = "0.2.0-dev"
+var Version = "0.4.0-dev"
 
 // defaultRoot is the bundle root the skill texts are written against; a
 // different install root rewrites every occurrence in the skill bodies.

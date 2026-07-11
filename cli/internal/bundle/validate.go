@@ -539,7 +539,7 @@ func Validate(root string, opts Options) int {
 			}
 		} else if len(p.tasks) > 0 {
 			if specV4 {
-				errs = append(errs, fmt.Sprintf("%s/: tasks exist but %s.plan.md is missing (F6)", fid, fid))
+				errs = append(errs, fmt.Sprintf("tasks exist under %s/ but %s.plan.md is missing (F6)", fid, fid))
 			} else {
 				errs = append(errs, fmt.Sprintf("%s/: tasks exist but PLAN.md is missing (F6)", fid))
 			}
