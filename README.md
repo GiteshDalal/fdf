@@ -31,8 +31,27 @@ are the project's living stack / architecture / infrastructure snapshot.
 They are critical and change only with explicit human approval — accurate
 context is what makes this agentic engineering, not vibe coding.
 
+## Why
+
+Agents made writing code cheap. What broke is the record of *why* the code
+exists: the design lived in a chat scrollback that is gone, the plan was
+never written down, and the tests prove whatever the code happens to do.
+That is vibe coding, and it compounds — every future change starts from
+archaeology.
+
+FDF is the opposite bet: the documentation is the interface between humans
+and agents. Intent, design, plan, and proof live in the repo beside the
+code; a feature's status must say what is actually true of it; and
+`fdf validate` turns drift into a failing build instead of a discovery six
+months later. Humans approve specs and context; agents do the mechanical
+work in between. Built for **agentic engineering, not vibe coding**.
+
 ## Install
 
+- One-liner (macOS/Linux, no Go needed):
+```bash
+curl -fsSL https://raw.githubusercontent.com/GiteshDalal/fdf/main/install.sh | bash
+```
 - Binaries on the [releases page](https://github.com/GiteshDalal/fdf/releases)
 - With [mise](https://mise.jdx.dev)
 ```
