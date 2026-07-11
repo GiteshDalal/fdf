@@ -15,6 +15,7 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
       - run: test -z "$(gofmt -l .)"
+      - run: shellcheck install.sh
       - name: lint skill frontmatter
         run: |
           for f in skills/*/SKILL.md; do
