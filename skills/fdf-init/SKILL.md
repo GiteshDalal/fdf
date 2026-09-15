@@ -64,7 +64,8 @@ Spec/Architecture territory.
    F9 treats as "unfilled"). Keep `type: Context` and the frontmatter; update
    `timestamp`.
 6. **Log and gate.** Add a LOG.md entry noting the interview and key decisions.
-   Run `fdf validate` — exit 0 (F9 now satisfied) before you're done.
+   Run `fdf validate` — exit 0 (F9 now satisfied) before you're done. If it
+   fails on anything else, use fdf-validate.
 7. **Hand off the responsibility.** Tell the user plainly (see Closing).
 
 ## What to ask
