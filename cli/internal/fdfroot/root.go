@@ -60,16 +60,25 @@ func NearestProjectRoot(start string) (string, bool) {
 
 // BundleRoot applies the uniform root-resolution precedence.
 func BundleRoot(flagRoot, cwd string) (string, error) {
-	val := flagRoot
+	root, _, err := BundleRootWithSource(flagRoot, cwd)
+	return root, err
+}
+
+// BundleRootWithSource resolves the bundle root and reports WHICH input chose
+// it ("--root", "FDF_ROOT_DIR", or "default docs/features"). Commands print
+// that alongside the path: when a tool silently looks somewhere other than
+// where the user expects, the resolved path alone rarely explains why.
+func BundleRootWithSource(flagRoot, cwd string) (root, source string, err error) {
+	val, source := flagRoot, "--root"
 	if val == "" {
-		val = os.Getenv("FDF_ROOT_DIR")
+		val, source = os.Getenv("FDF_ROOT_DIR"), "FDF_ROOT_DIR"
 	}
 	if val == "" {
-		val = filepath.Join("docs", "features")
+		val, source = filepath.Join("docs", "features"), "default docs/features"
 	}
 	if filepath.IsAbs(val) {
-		return filepath.Clean(val), nil
+		return filepath.Clean(val), source, nil
 	}
-	root, _ := ProjectRoot(cwd)
-	return filepath.Join(root, val), nil
+	pr, _ := ProjectRoot(cwd)
+	return filepath.Join(pr, val), source, nil
 }

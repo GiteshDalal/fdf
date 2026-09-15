@@ -3,7 +3,8 @@
 //
 //	v0.1 → case renames, vendored-spec removal, link rewrites, TEST stubs
 //	v0.2/v0.3 → lift nested trail to stem-qualified siblings, rewrite links
-//	any → pin current, RefreshSpec, EnsureContextStubs, validate
+//	v0.4 → nothing structural: 0.4→0.5 is purely additive
+//	any → pin current, RefreshSpec, EnsureContextStubs, changes/INDEX.md, validate
 //
 // Ends by validating the result with FreshStubsAdvisory so unfilled Context
 // stubs do not fail the migration (plain `fdf validate` will still enforce F9).
@@ -23,7 +24,21 @@ import (
 )
 
 const specURL = "https://github.com/GiteshDalal/fdf/blob/main/SPEC.md"
-const currentVersion = "0.4"
+const currentVersion = "0.5"
+
+// Version is the CLI version, set by the command wrapper. A migrate that
+// finds the pin already current is indistinguishable from a migrate that has
+// nothing to do — unless the message names the binary doing the looking. An
+// old fdf held in place by a version shim reports "already current" about a
+// spec several versions behind, which reads as the command being broken.
+var Version string
+
+func binaryName() string {
+	if Version == "" {
+		return "this binary"
+	}
+	return "fdf " + Version
+}
 
 // renames: v0.1 lowercase reserved basenames → uppercase.
 var renames = map[string]string{"index.md": "INDEX.md", "log.md": "LOG.md", "spec.md": "SPEC.md", "plan.md": "PLAN.md"}
@@ -64,7 +79,9 @@ func Run(root, repoRoot string, out io.Writer) int {
 		// gets the spec copy and any missing Context stubs, and validates
 		// with the same stub leniency as a fresh migration — so running
 		// migrate twice in a row cannot flip from success to failure.
-		fmt.Fprintf(out, "bundle already pins fdf_version %s; ensuring spec copy and context stubs\n", currentVersion)
+		fmt.Fprintf(out, "nothing to migrate: the bundle already pins fdf_version %s, the newest spec %s knows.\n", currentVersion, binaryName())
+		fmt.Fprintln(out, "if a newer spec version exists, upgrade fdf and re-run — a version-pinned shim (mise, asdf) can hold an older fdf in this directory.")
+		fmt.Fprintln(out, "ensuring spec copy and context stubs:")
 		if code := scaffold.RefreshSpec(root, out); code != 0 {
 			return code
 		}
@@ -75,76 +92,87 @@ func Run(root, repoRoot string, out io.Writer) int {
 		return bundle.Validate(root, bundle.Options{RepoRoot: repoRoot, Out: out, FreshStubsAdvisory: true})
 	}
 
-	// 0. Pre-flight: refuse to start on content the v0.4 layout cannot hold.
-	// Nothing has been modified when this fails, so the bundle stays valid
-	// under its current pin and re-running after fixes is safe.
-	if problems := preflightV4(root); len(problems) > 0 {
-		fmt.Fprintln(out, "cannot migrate — fix these first (bundle left unchanged):")
-		for _, p := range problems {
-			fmt.Fprintln(out, "  "+p)
-		}
-		return 1
-	}
+	// A bundle already in the stem-qualified layout (v0.4) needs no structural
+	// work: 0.4 → 0.5 only adds changes/ and moves the pin. Running the
+	// pre-0.4 chain over it would be actively wrong — pre-flight reads every
+	// `slug.spec.md` as an illegal dotted basename.
+	stem := pin == "0.4"
+	var moves map[string]string
+	if !stem {
 
-	// 1. Two-step case renames (v0.1 → uppercase). All files are collected
-	// before any rename so every collected path stays valid throughout.
-	var files []string
-	filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
-		if err == nil && !d.IsDir() {
-			files = append(files, p)
-		}
-		return nil
-	})
-	renameFailed := false
-	for _, p := range files {
-		if to, ok := renames[filepath.Base(p)]; ok {
-			tmp := p + ".migrating"
-			final := filepath.Join(filepath.Dir(p), to)
-			if err := os.Rename(p, tmp); err != nil {
-				fmt.Fprintf(out, "error: renaming %s: %v\n", rel(root, p), err)
-				renameFailed = true
-				continue
+		// 0. Pre-flight: refuse to start on content the v0.4 layout cannot hold.
+		// Nothing has been modified when this fails, so the bundle stays valid
+		// under its current pin and re-running after fixes is safe.
+		if problems := preflightV4(root); len(problems) > 0 {
+			fmt.Fprintln(out, "cannot migrate — fix these first (bundle left unchanged):")
+			for _, p := range problems {
+				fmt.Fprintln(out, "  "+p)
 			}
-			if err := os.Rename(tmp, final); err != nil {
-				fmt.Fprintf(out, "error: renaming %s: %v\n", rel(root, p), err)
-				renameFailed = true
-				continue
-			}
-			fmt.Fprintf(out, "renamed %s -> %s\n", rel(root, p), to)
+			return 1
 		}
-	}
-	if renameFailed {
-		return 1
-	}
 
-	// 2. Delete the vendored v0.1 spec.
-	if vend := filepath.Join(root, "fdf-spec.md"); exists(vend) {
-		os.Remove(vend)
-		fmt.Fprintln(out, "removed vendored fdf-spec.md (spec is pinned by URL now)")
-	}
+		// 1. Two-step case renames (v0.1 → uppercase). All files are collected
+		// before any rename so every collected path stays valid throughout.
+		var files []string
+		filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+			if err == nil && !d.IsDir() {
+				files = append(files, p)
+			}
+			return nil
+		})
+		renameFailed := false
+		for _, p := range files {
+			if to, ok := renames[filepath.Base(p)]; ok {
+				tmp := p + ".migrating"
+				final := filepath.Join(filepath.Dir(p), to)
+				if err := os.Rename(p, tmp); err != nil {
+					fmt.Fprintf(out, "error: renaming %s: %v\n", rel(root, p), err)
+					renameFailed = true
+					continue
+				}
+				if err := os.Rename(tmp, final); err != nil {
+					fmt.Fprintf(out, "error: renaming %s: %v\n", rel(root, p), err)
+					renameFailed = true
+					continue
+				}
+				fmt.Fprintf(out, "renamed %s -> %s\n", rel(root, p), to)
+			}
+		}
+		if renameFailed {
+			return 1
+		}
 
-	// 3. Rewrite casing / fdf-spec.md links in every markdown file.
-	rewriteCasingLinks(root, rootAbs)
+		// 2. Delete the vendored v0.1 spec.
+		if vend := filepath.Join(root, "fdf-spec.md"); exists(vend) {
+			os.Remove(vend)
+			fmt.Fprintln(out, "removed vendored fdf-spec.md (spec is pinned by URL now)")
+		}
 
-	// 4. TEST.md stubs for planned+ features (nested path; lifted in step 5).
-	stubMissingTests(root, out)
+		// 3. Rewrite casing / fdf-spec.md links in every markdown file.
+		rewriteCasingLinks(root, rootAbs)
 
-	// 5. Lift nested trail files to stem-qualified siblings (0.3 → 0.4 layout).
-	moves, err := collectTrailMoves(root)
-	if err != nil {
-		fmt.Fprintf(out, "error: %v\n", err)
-		return 1
-	}
-	if err := applyTrailMoves(root, moves, out); err != nil {
-		fmt.Fprintf(out, "error: %v\n", err)
-		return 1
-	}
+		// 4. TEST.md stubs for planned+ features (nested path; lifted in step 5).
+		stubMissingTests(root, out)
 
-	// 6. Rewrite all in-bundle links so resolved destinations stay correct
-	// after the layout lift (feature → stem trail, plan → tasks, etc.).
-	if len(moves) > 0 {
-		rewriteLinksAfterMoves(root, rootAbs, moves)
-	}
+		// 5. Lift nested trail files to stem-qualified siblings (0.3 → 0.4 layout).
+		var err error
+		moves, err = collectTrailMoves(root)
+		if err != nil {
+			fmt.Fprintf(out, "error: %v\n", err)
+			return 1
+		}
+		if err := applyTrailMoves(root, moves, out); err != nil {
+			fmt.Fprintf(out, "error: %v\n", err)
+			return 1
+		}
+
+		// 6. Rewrite all in-bundle links so resolved destinations stay correct
+		// after the layout lift (feature → stem trail, plan → tasks, etc.).
+		if len(moves) > 0 {
+			rewriteLinksAfterMoves(root, rootAbs, moves)
+		}
+
+	} // end of the pre-stem layout transform
 
 	// 7. Upgrade the root pin to the current version.
 	idx := filepath.Join(root, "INDEX.md")
@@ -167,9 +195,26 @@ func Run(root, repoRoot string, out io.Writer) int {
 	if code := scaffold.EnsureContextStubs(root, out); code != 0 {
 		return code
 	}
+	if code := scaffold.EnsureChangesIndex(root, out); code != 0 {
+		return code
+	}
 
-	// 9. Validate. Freshly scaffolded Context stubs are advisory here —
-	// migration succeeded; filling them is the human's next step via fdf-init.
+	// 9. Report what actually changed, then validate. Without this the only
+	// evidence of a migration is a scroll of per-file lines, and a migration
+	// that moved nothing is indistinguishable from one that did.
+	from := pin
+	if from == "" {
+		from = "unpinned"
+	}
+	fmt.Fprintf(out, "\ndone: migrated bundle at %s\n", rootAbs)
+	fmt.Fprintf(out, "  fdf_version %s -> %s\n", from, currentVersion)
+	fmt.Fprintf(out, "  %d trail file(s) lifted to stem-qualified siblings\n", len(moves))
+	if len(moves) == 0 {
+		fmt.Fprintln(out, "  (no nested trail files were present — layout already matched)")
+	}
+
+	// Freshly scaffolded Context stubs are advisory here — migration
+	// succeeded; filling them is the human's next step via fdf-init.
 	fmt.Fprintln(out, "\nvalidating migrated bundle:")
 	code := bundle.Validate(root, bundle.Options{RepoRoot: repoRoot, Out: out, FreshStubsAdvisory: true})
 	if code == 0 {

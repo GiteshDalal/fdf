@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/GiteshDalal/fdf/cli/internal/scaffold"
 )
 
 // writeMinimalBundle creates the valid-minimal bundle files under dir.
@@ -94,5 +96,142 @@ func TestValidateHonorsEnvAndFlagRoots(t *testing.T) {
 	out.Reset()
 	if exit := runValidate([]string{"--root", "documents/features"}, &out); exit != 0 {
 		t.Fatalf("--root must beat env: exit %d\n%s", exit, out.String())
+	}
+}
+
+func TestSpecPrintsCurrentVersionByDefault(t *testing.T) {
+	var out bytes.Buffer
+	if exit := runSpec(nil, &out); exit != 0 {
+		t.Fatalf("expected exit 0, got %d\n%s", exit, out.String())
+	}
+	if !strings.HasPrefix(out.String(), "# Feature Document Format (FDF) — v"+scaffold.CurrentVersion()) {
+		t.Fatalf("expected the current spec text, got:\n%.200s", out.String())
+	}
+}
+
+func TestSpecVFlagPrintsOlderVersion(t *testing.T) {
+	var out bytes.Buffer
+	if exit := runSpec([]string{"-v=0.3"}, &out); exit != 0 {
+		t.Fatalf("expected exit 0, got %d\n%s", exit, out.String())
+	}
+	if !strings.HasPrefix(out.String(), "# Feature Document Format (FDF) — v0.3") {
+		t.Fatalf("expected the v0.3 spec text, got:\n%.200s", out.String())
+	}
+}
+
+func TestSpecUnknownVersionExits2(t *testing.T) {
+	var out bytes.Buffer
+	if exit := runSpec([]string{"-v", "9.9"}, &out); exit != 2 {
+		t.Fatalf("expected exit 2 for an unembedded version, got %d\n%s", exit, out.String())
+	}
+	if !strings.Contains(out.String(), "available:") {
+		t.Fatalf("error should list the embedded versions:\n%s", out.String())
+	}
+}
+
+func TestSpecListMarksCurrent(t *testing.T) {
+	var out bytes.Buffer
+	if exit := runSpec([]string{"--list"}, &out); exit != 0 {
+		t.Fatalf("expected exit 0, got %d\n%s", exit, out.String())
+	}
+	if !strings.Contains(out.String(), scaffold.CurrentVersion()+"  (current)") {
+		t.Fatalf("--list should mark the current version:\n%s", out.String())
+	}
+}
+
+// A bare path is the natural thing to type. Before these guards, commands
+// discarded it and ran against the DEFAULT root, so `fdf migrate docs/features`
+// reported an error about a path the user never typed — it looked like the
+// command did nothing.
+func TestCommandsRejectPositionalRootWithSuggestion(t *testing.T) {
+	for _, tc := range []struct {
+		cmd  string
+		run  func([]string, *bytes.Buffer) int
+		flag string
+		arg  string
+	}{
+		{"migrate", func(a []string, o *bytes.Buffer) int { return runMigrate(a, o) }, "--root", "mydocs"},
+		{"validate", func(a []string, o *bytes.Buffer) int { return runValidate(a, o) }, "--root", "mydocs"},
+		{"init", func(a []string, o *bytes.Buffer) int { return runInit(a, o) }, "--root", "mydocs"},
+		{"serve", func(a []string, o *bytes.Buffer) int { return runServe(a, o) }, "--root", "mydocs"},
+		{"spec", func(a []string, o *bytes.Buffer) int { return runSpec(a, o) }, "-v", "0.3"},
+	} {
+		var out bytes.Buffer
+		if exit := tc.run([]string{tc.arg}, &out); exit != 2 {
+			t.Errorf("%s: expected exit 2 for a stray positional, got %d\n%s", tc.cmd, exit, out.String())
+		}
+		want := "fdf " + tc.cmd + " " + tc.flag + " " + tc.arg
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("%s: error should suggest %q, got:\n%s", tc.cmd, want, out.String())
+		}
+	}
+}
+
+func TestHelpListsEveryCommand(t *testing.T) {
+	var out bytes.Buffer
+	if exit := runHelp(nil, &out); exit != 0 {
+		t.Fatalf("expected exit 0, got %d\n%s", exit, out.String())
+	}
+	for name := range commands {
+		if !strings.Contains(out.String(), "fdf "+name) {
+			t.Errorf("fdf help omits the %q command", name)
+		}
+	}
+	for _, section := range []string{"BUNDLE ROOT", "TYPICAL FLOW", "EXIT CODES", "COMMANDS", "$ fdf validate"} {
+		if !strings.Contains(out.String(), section) {
+			t.Errorf("fdf help is missing the %q section", section)
+		}
+	}
+}
+
+func TestHelpForOneCommandIsScoped(t *testing.T) {
+	var out bytes.Buffer
+	if exit := runHelp([]string{"migrate"}, &out); exit != 0 {
+		t.Fatalf("expected exit 0, got %d\n%s", exit, out.String())
+	}
+	if !strings.Contains(out.String(), "fdf migrate [--root <dir>]") {
+		t.Fatalf("expected the migrate entry:\n%s", out.String())
+	}
+	// migrate's body legitimately mentions `fdf install`; assert no OTHER
+	// command's usage line is rendered.
+	if strings.Contains(out.String(), "fdf install [--project]") {
+		t.Fatalf("fdf help migrate should print only that entry:\n%s", out.String())
+	}
+}
+
+func TestHelpUnknownCommandExits2(t *testing.T) {
+	var out bytes.Buffer
+	if exit := runHelp([]string{"nope"}, &out); exit != 2 {
+		t.Fatalf("expected exit 2, got %d\n%s", exit, out.String())
+	}
+	if !strings.Contains(out.String(), "commands:") {
+		t.Fatalf("should list the known commands:\n%s", out.String())
+	}
+}
+
+// Every bundle command states which binary ran and which root it chose, and
+// why. Those are the two facts that explain a command that appears to do
+// nothing (a stale shim-pinned fdf, or a root resolved somewhere else).
+func TestBundleCommandsAnnounceVersionAndRoot(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("FDF_ROOT_DIR", tmp)
+	for _, tc := range []struct {
+		cmd  string
+		run  func([]string, *bytes.Buffer) int
+		args []string
+	}{
+		{"validate", func(a []string, o *bytes.Buffer) int { return runValidate(a, o) }, nil},
+		{"init", func(a []string, o *bytes.Buffer) int { return runInit(a, o) }, nil},
+		{"new", func(a []string, o *bytes.Buffer) int { return runNew(a, o) }, []string{"g/s"}},
+		{"migrate", func(a []string, o *bytes.Buffer) int { return runMigrate(a, o) }, nil},
+	} {
+		var out bytes.Buffer
+		tc.run(tc.args, &out)
+		first := strings.SplitN(out.String(), "\n", 2)[0]
+		for _, want := range []string{"fdf " + version, tc.cmd, tmp, "FDF_ROOT_DIR"} {
+			if !strings.Contains(first, want) {
+				t.Errorf("%s: banner %q missing %q", tc.cmd, first, want)
+			}
+		}
 	}
 }

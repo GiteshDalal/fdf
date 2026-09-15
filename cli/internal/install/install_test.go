@@ -14,7 +14,7 @@ func TestInstallClaudeCodePlacesSkillsPrimerAndUpgrades(t *testing.T) {
 	if code := Run("claude-code", home, "", false, &out); code != 0 {
 		t.Fatalf("install: %d\n%s", code, out.String())
 	}
-	for _, skill := range []string{"fdf-help", "fdf-init", "fdf-brainstorm", "fdf-plan", "fdf-execute", "fdf-validate"} {
+	for _, skill := range []string{"fdf-help", "fdf-init", "fdf-brainstorm", "fdf-plan", "fdf-execute", "fdf-change", "fdf-validate"} {
 		if _, err := os.Stat(filepath.Join(home, ".claude", "skills", skill, "SKILL.md")); err != nil {
 			t.Fatalf("missing skill %s", skill)
 		}

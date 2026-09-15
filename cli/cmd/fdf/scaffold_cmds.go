@@ -11,31 +11,42 @@ import (
 )
 
 func resolveRoot(fs *flag.FlagSet, args []string, stdout io.Writer) (string, []string, bool) {
+	r, _, rest, ok := resolveRootSource(fs, args, stdout)
+	return r, rest, ok
+}
+
+// resolveRootSource additionally reports which input chose the root, so a
+// command can print it (see announce).
+func resolveRootSource(fs *flag.FlagSet, args []string, stdout io.Writer) (string, string, []string, bool) {
 	root := rootFlag(fs)
 	if err := fs.Parse(args); err != nil {
-		return "", nil, false
+		return "", "", nil, false
 	}
 	cwd, _ := os.Getwd()
-	r, err := fdfroot.BundleRoot(*root, cwd)
+	r, source, err := fdfroot.BundleRootWithSource(*root, cwd)
 	if err != nil {
 		fmt.Fprintln(stdout, "error:", err)
-		return "", nil, false
+		return "", "", nil, false
 	}
-	return r, fs.Args(), true
+	return r, source, fs.Args(), true
 }
 
 func runInit(args []string, stdout io.Writer) int {
 	fs := newFlagSet("init", stdout)
-	root, _, ok := resolveRoot(fs, args, stdout)
+	root, source, rest, ok := resolveRootSource(fs, args, stdout)
 	if !ok {
 		return 2
 	}
+	if !rejectPositionals("init", "--root", rest, stdout) {
+		return 2
+	}
+	announce("init", root, source, stdout)
 	return scaffold.Init(root, stdout)
 }
 
 func runNew(args []string, stdout io.Writer) int {
 	fs := newFlagSet("new", stdout)
-	root, rest, ok := resolveRoot(fs, args, stdout)
+	root, source, rest, ok := resolveRootSource(fs, args, stdout)
 	if !ok {
 		return 2
 	}
@@ -43,5 +54,6 @@ func runNew(args []string, stdout io.Writer) int {
 		fmt.Fprintln(stdout, "usage: fdf new <group>/<slug>")
 		return 2
 	}
+	announce("new", root, source, stdout)
 	return scaffold.New(root, rest[0], stdout)
 }

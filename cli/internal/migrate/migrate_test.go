@@ -109,7 +109,7 @@ func TestMigrateChainsToCurrentVersion(t *testing.T) {
 		t.Fatal("vendored fdf-spec.md must be deleted")
 	}
 	idx, _ := os.ReadFile(filepath.Join(root, "INDEX.md"))
-	if !strings.Contains(string(idx), `fdf_version: "0.4"`) {
+	if !strings.Contains(string(idx), `fdf_version: "`+currentVersion+`"`) {
 		t.Fatalf("pin not upgraded to current version:\n%s", idx)
 	}
 	// v0.4: migration scaffolds the spec copy and the four Context stubs.
@@ -120,8 +120,8 @@ func TestMigrateChainsToCurrentVersion(t *testing.T) {
 	}
 	// The vendored spec must match the target version, not a stale one.
 	spec, _ := os.ReadFile(filepath.Join(root, "SPEC.md"))
-	if !strings.Contains(string(spec), "FDF v0.4") && !strings.Contains(string(spec), "— v0.4") && !strings.Contains(string(spec), "v0.4") {
-		t.Fatalf("vendored SPEC.md not the v0.4 spec:\n%.200s", spec)
+	if !strings.Contains(string(spec), "v"+currentVersion) {
+		t.Fatalf("vendored SPEC.md not the v%s spec:\n%.200s", currentVersion, spec)
 	}
 	// Unfilled stubs are advisory during migrate, so it still exits 0 and
 	// points the user at the fdf-init interview — and warns about plain validate.
@@ -177,8 +177,8 @@ func TestMigrateRefreshesStaleVendoredSpec(t *testing.T) {
 	if strings.Contains(string(spec), "OLD VENDORED TEXT") {
 		t.Fatalf("stale vendored spec was not refreshed:\n%.200s", spec)
 	}
-	if !strings.Contains(string(spec), "v0.4") {
-		t.Fatalf("refreshed spec is not v0.4:\n%.200s", spec)
+	if !strings.Contains(string(spec), "v"+currentVersion) {
+		t.Fatalf("refreshed spec is not v%s:\n%.200s", currentVersion, spec)
 	}
 }
 
@@ -191,8 +191,8 @@ func TestMigrateV03ToV04StemLayout(t *testing.T) {
 	}
 
 	idx, _ := os.ReadFile(filepath.Join(root, "INDEX.md"))
-	if !strings.Contains(string(idx), `fdf_version: "0.4"`) {
-		t.Fatalf("pin not upgraded to 0.4:\n%s", idx)
+	if !strings.Contains(string(idx), `fdf_version: "`+currentVersion+`"`) {
+		t.Fatalf("pin not upgraded to %s:\n%s", currentVersion, idx)
 	}
 
 	// Stem trail present; nested trail gone.
@@ -262,9 +262,9 @@ func TestMigrateV03ToV04StemLayout(t *testing.T) {
 
 func TestMigrateAlready04IsNoop(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "features")
-	// Minimal already-0.4 draft-only bundle (no features → no F9 hard fail).
-	write(t, root, "INDEX.md", "---\nfdf_version: \"0.4\"\n---\n\n# Bundle\n\n* [Log](/LOG.md) - log.\n")
-	write(t, root, "LOG.md", "# Bundle Update Log\n\n## 2026-07-06\n* Already on 0.4.\n")
+	// Minimal already-current draft-only bundle (no features → no F9 hard fail).
+	write(t, root, "INDEX.md", "---\nfdf_version: \""+currentVersion+"\"\n---\n\n# Bundle\n\n* [Log](/LOG.md) - log.\n")
+	write(t, root, "LOG.md", "# Bundle Update Log\n\n## 2026-07-06\n* Already current.\n")
 	var out bytes.Buffer
 	if code := Run(root, "", &out); code != 0 {
 		t.Fatalf("migrate exit %d\n%s", code, out.String())
@@ -275,10 +275,10 @@ func TestMigrateAlready04IsNoop(t *testing.T) {
 	}
 	// Must not re-scaffold as if migrating (no "moved" trail messages).
 	if strings.Contains(msg, "moved ") {
-		t.Fatalf("already-0.4 must not run layout transform:\n%s", msg)
+		t.Fatalf("already-current must not run layout transform:\n%s", msg)
 	}
 	idx, _ := os.ReadFile(filepath.Join(root, "INDEX.md"))
-	if !strings.Contains(string(idx), `fdf_version: "0.4"`) {
+	if !strings.Contains(string(idx), `fdf_version: "`+currentVersion+`"`) {
 		t.Fatalf("pin changed unexpectedly:\n%s", idx)
 	}
 }
@@ -416,14 +416,63 @@ func TestMigrateIsIdempotent(t *testing.T) {
 
 func TestMigrateReadsUnquotedPin(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "features")
-	write(t, root, "INDEX.md", "---\nfdf_version: 0.4\n---\n\n# Bundle\n\n* [log](/LOG.md) - history.\n")
+	write(t, root, "INDEX.md", "---\nfdf_version: "+currentVersion+"\n---\n\n# Bundle\n\n* [log](/LOG.md) - history.\n")
 	write(t, root, "LOG.md", "# Bundle Update Log\n\n## 2026-07-06\n* Init.\n")
 
 	var out bytes.Buffer
 	if code := Run(root, "", &out); code != 0 {
 		t.Fatalf("migrate exit %d\n%s", code, out.String())
 	}
-	if !strings.Contains(out.String(), "already pins fdf_version 0.4") {
+	if !strings.Contains(out.String(), "already pins fdf_version "+currentVersion) {
 		t.Fatalf("unquoted pin must hit the already-current path:\n%s", out.String())
+	}
+}
+
+// A migrate that finds the pin already current looks identical to a migrate
+// that is simply too old to know about newer versions — which is what happens
+// when a version shim (mise, asdf) holds an old fdf in a directory. The
+// message must name the binary so the user can tell those apart.
+func TestNoOpMigrateNamesTheBinaryVersion(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "INDEX.md", "---\nfdf_version: \""+currentVersion+"\"\n---\n\n# Bundle\n")
+	write(t, root, "LOG.md", "# Log\n\n## 2026-09-15\n* init.\n")
+	Version = "9.9.9-test"
+	defer func() { Version = "" }()
+
+	var out bytes.Buffer
+	if code := Run(root, "", &out); code != 0 {
+		t.Fatalf("expected exit 0, got %d\n%s", code, out.String())
+	}
+	msg := out.String()
+	if !strings.Contains(msg, "nothing to migrate") {
+		t.Errorf("should say plainly that nothing was migrated:\n%s", msg)
+	}
+	if !strings.Contains(msg, "fdf 9.9.9-test") {
+		t.Errorf("should name the binary doing the looking:\n%s", msg)
+	}
+	if !strings.Contains(msg, "upgrade fdf") {
+		t.Errorf("should point at upgrading when a newer spec exists:\n%s", msg)
+	}
+	if strings.Contains(msg, "validating migrated bundle") {
+		t.Errorf("nothing was migrated; must not claim it was:\n%s", msg)
+	}
+}
+
+// A migration's only evidence used to be a scroll of per-file lines. The
+// summary states the version transition and how much moved, so "it did
+// nothing" is distinguishable from "it did a lot".
+func TestMigrateSummaryReportsTransitionAndCount(t *testing.T) {
+	root := t.TempDir()
+	buildV03Bundle(t, root)
+	var out bytes.Buffer
+	if code := Run(root, "", &out); code != 0 {
+		t.Fatalf("expected exit 0, got %d\n%s", code, out.String())
+	}
+	msg := out.String()
+	if !strings.Contains(msg, "fdf_version 0.3 -> "+currentVersion) {
+		t.Errorf("summary should state the version transition:\n%s", msg)
+	}
+	if !strings.Contains(msg, "trail file(s) lifted to stem-qualified siblings") {
+		t.Errorf("summary should count lifted trail files:\n%s", msg)
 	}
 }

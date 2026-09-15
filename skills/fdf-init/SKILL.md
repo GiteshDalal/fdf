@@ -13,6 +13,8 @@ builds *this* project's way; without it, it guesses. Do this thoroughly and
 slowly. It is the most leveraged conversation in the whole workflow.
 
 New to FDF? The format is defined in the bundle at `docs/features/SPEC.md`.
+`fdf spec` prints the format rules and `fdf help` documents every command.
+
 The four Context docs live at the bundle root beside it; `fdf init` writes
 them as stubs carrying `<!-- fdf:stub -->` and a ⚠️ banner. Your job is to
 replace each stub with real content. Validation rule F9 rejects any bundle

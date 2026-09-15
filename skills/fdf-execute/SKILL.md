@@ -7,10 +7,13 @@ description: Use when an FDF feature is planned or implementing and its tasks ne
 
 Implement a planned feature task by task, statuses always truthful.
 
-New to FDF? The format is defined in the bundle itself at
-`docs/features/SPEC.md` — exact frontmatter fields, casing and position
-rules, and the F/R validation rules this skill cites. The fdf-help skill
-explains how the fdf skills fit together.
+New to FDF? Run `fdf spec` for the format rules and `fdf help` for the CLI.
+The fdf-help skill explains how the fdf skills fit together.
+
+This skill executes a **feature**. Tasks belonging to a post-delivery
+`Change` live under `changes/<id>/` and are worked exactly the same way, but
+the surrounding workflow — declaring effects, amending the affected feature's
+living documents — is fdf-change's.
 
 Stem paths for a feature `<group>/<slug>`:
 
@@ -101,6 +104,13 @@ changed, say so in one line. Never edit a Context doc silently, and never
 edit one the user didn't approve. Remind the user, briefly, that keeping
 these accurate is what keeps the work grounded — agentic engineering, not
 vibe coding.
+
+## After a feature is done
+
+It is delivered. From here its behavior never changes in place: a later
+alteration is a `Change` and a later bug is a `Fix`, both under `changes/`,
+both driven by fdf-change. Do not fork a second feature document for the same
+capability, and do not edit a delivered feature's Gherkin directly.
 
 ## Rules
 

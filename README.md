@@ -3,8 +3,9 @@
 **Documentation-as-a-directory for software features.** Each feature is a
 Markdown + Gherkin document; its design spec, plan, acceptance tests, and
 optional surface/log trail live as **stem-qualified siblings** beside it;
-tasks live only under a paired `slug/` directory; an opinionated CLI
-validates the whole bundle so it can never silently drift.
+tasks live only under a paired `slug/` directory; post-delivery change
+requests and bug fixes live under `changes/`; an opinionated CLI validates
+the whole bundle so it can never silently drift.
 
 ```
 docs/features/
@@ -15,6 +16,9 @@ docs/features/
 ├── ARCHITECTURE.md               # Context: architecture & principles
 ├── SURFACES.md                   # Context: interface principles (all surfaces)
 ├── INFRA.md                      # Context: build & deployment infra
+├── changes/                      # post-delivery work (flat or grouped)
+│   ├── INDEX.md
+│   └── refund-rounding.md        # type: Fix — the code drifted from the doc
 └── payments/
     ├── INDEX.md
     ├── instant-refunds.md        # Feature: Gherkin scenarios + status
@@ -27,6 +31,24 @@ docs/features/
         ├── 01-refund-api.md
         └── 02-refund-ui.md
 ```
+
+**Documents are living or episodic**, and that decides what happens when the
+software changes. Living documents describe the system *today* — the feature's
+Gherkin, `slug.test.md`, `slug.surface.md`, the Context docs — and are amended
+in place. Episodic documents are frozen records of one piece of work —
+`slug.spec.md`, `slug.plan.md`, tasks, changes, log entries — and are never
+rewritten. So a delivered feature that changes keeps **one** feature document,
+whose Gherkin is edited, and gains a **new** episode under `changes/`. Its
+original spec and plan stay untouched: they record how it was first built,
+which is the context you need to judge the change.
+
+A `Change` alters what a delivered feature does; a `Fix` restores behavior the
+feature document already describes. Both name the features they touch in
+`affects:` — so one bug spanning several features, or one request spanning
+them, is a single document. Both declare the effects they will have, and rule
+**F10** refuses to let one reach `done` while the features it claims to alter
+still describe the old behavior. That is the drift FDF exists to prevent,
+enforced rather than hoped for.
 
 The four **Context documents** (`STACK.md`, `ARCHITECTURE.md`,
 `SURFACES.md`, `INFRA.md`) are the project's living stack / architecture /
@@ -75,13 +97,21 @@ go install github.com/GiteshDalal/fdf/cli/cmd/fdf@latest
 fdf init                     # scaffold docs/features/ + SPEC.md + context stubs (or FDF_ROOT_DIR / --root)
                              #   then run the fdf-init skill to fill STACK/ARCHITECTURE/SURFACES/INFRA
 fdf new payments/instant-refunds
-fdf validate                 # F1-F9 + R1; exit 1 on any violation
+fdf validate                 # F1-F10 + R1; exit 1 on any violation
+fdf spec                     # print the format spec (-v 0.4 for an older one)
+fdf help                     # every command with examples
 fdf serve                    # browse the bundle (bun x mdts)
+
+# after a feature ships
+fdf change --affects payments/instant-refunds refund-window   # behavior should differ
+fdf fix    --affects payments/instant-refunds refund-rounding # code drifted from the doc
+fdf history payments/instant-refunds                          # what happened since it shipped
+fdf release 1.2.0            # derive the release doc from `version:` fields; --ship to close it
 fdf install claude-code      # user-level skills + "## Feature Document Format" primer
 fdf install codex            #   (primer skipped if the heading is already present)
 fdf install opencode
 fdf install --project claude-code   # project-level: skills under .claude/, primer in ./CLAUDE.md
-fdf migrate                  # mechanical upgrade between adjacent spec versions (e.g. 0.3 → 0.4)
+fdf migrate                  # mechanical upgrade to the current spec version
 ```
 
 `fdf install` defaults to **user-level** (under your home directory). Prefer
@@ -101,9 +131,9 @@ has its own `.fdf-version` markers). A machine with both will carry two primers
 | project | codex | `<proj>/.codex/skills/` | `<proj>/AGENTS.md` |
 | project | opencode | `<proj>/.opencode/skills/` | `<proj>/AGENTS.md` |
 
-The agent-facing surface is **skills only** — six of them (`fdf-help`,
-`fdf-init`, `fdf-brainstorm`, `fdf-plan`, `fdf-execute`, `fdf-validate`),
-identical across harnesses. Earlier versions also shipped Claude Code slash
+The agent-facing surface is **skills only** — seven of them (`fdf-help`,
+`fdf-init`, `fdf-brainstorm`, `fdf-plan`, `fdf-execute`, `fdf-change`,
+`fdf-validate`), identical across harnesses. Earlier versions also shipped Claude Code slash
 commands; those wrapped skills the model can reach directly, so `fdf install`
 now removes them (leaving any commands you wrote yourself alone).
 
@@ -118,22 +148,25 @@ Works the same everywhere: the bundle may be a plain directory or a git
 submodule mounted at the same path — `resource:` paths always verify against
 the **project** root.
 
-### Upgrading from v0.3
+### Upgrading to v0.5
 
-1. Run `fdf migrate` on the bundle (rewrites the pin, moves nested trail
-   files to stem-qualified siblings, scaffolds `SURFACES.md` if missing).
-2. **Re-run `fdf install`** for each harness you use. Primers and skills
-   written under 0.3 describe the paired-directory model (`slug/SPEC.md`,
-   three Context docs) and stay stale in global CLAUDE.md/AGENTS.md until
+1. Run `fdf migrate` on the bundle. From **v0.4** this is purely additive —
+   the pin moves, `SPEC.md` is re-vendored and `changes/INDEX.md` appears;
+   nothing else moves or changes shape, and a bundle that never records a
+   change validates identically. From **v0.2/v0.3** it also lifts nested
+   trail files to stem-qualified siblings and scaffolds `SURFACES.md`.
+2. **Re-run `fdf install`** for each harness you use. Skills and primers
+   written under an older version do not know about `changes/`, the `Change`
+   and `Fix` types, or `retired`, and stay stale in CLAUDE.md/AGENTS.md until
    refreshed. `fdf install` upgrades skills automatically when the version
    marker changes; if your primer heading already exists with old wording,
-   edit or replace that section so agents see stem trails and four Context
-   docs.
+   edit or replace that section.
 
 ## Spec
 
 FDF is defined by versioned specs under [`spec/`](spec/) — current
-[v0.4](spec/0.4.md), prior [v0.3](spec/0.3.md) / [v0.2](spec/0.2.md);
+[v0.5](spec/0.5.md), prior [v0.4](spec/0.4.md) / [v0.3](spec/0.3.md) /
+[v0.2](spec/0.2.md);
 [SPEC.md](SPEC.md) indexes them. Each is normative for the bundles pinning
 its version, and every bundle vendors its pinned version's spec at
 `docs/features/SPEC.md`. `testdata/` fixtures are the executable conformance

@@ -1,0 +1,3 @@
+exit: 1
+contains: (F3)
+contains: allowed roles are spec, plan, log
