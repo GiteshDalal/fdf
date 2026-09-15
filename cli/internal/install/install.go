@@ -30,7 +30,13 @@ var Version = "0.4.0-dev"
 // different install root rewrites every occurrence in the skill bodies.
 const defaultRoot = "docs/features"
 
-var skillNames = []string{"fdf-help", "fdf-init", "fdf-brainstorm", "fdf-plan", "fdf-execute"}
+var skillNames = []string{"fdf-help", "fdf-init", "fdf-brainstorm", "fdf-plan", "fdf-execute", "fdf-validate"}
+
+// legacyCommands are the Claude Code slash commands shipped before the
+// surface became skills-only. They wrapped skills the model can now reach
+// directly, so an install removes them — by exact name, never the whole
+// commands directory, which also holds the user's own commands.
+var legacyCommands = []string{"fdf-init.md", "fdf-new.md", "fdf-validate.md"}
 
 // legacyBlockRe matches the pre-0.3 managed block that inlined full skills
 // into AGENTS.md; upgrades remove it in favor of real skills + the primer.
@@ -45,7 +51,7 @@ type harness struct {
 	instrFile        []string // user-level instruction file under home
 	projectSkillsDir []string // project-level skills path under project root
 	projectInstrFile []string // project-level instruction file under project root
-	commands         bool     // claude-code slash commands
+	hadCommands      bool     // shipped slash commands before the skills-only surface
 }
 
 var harnesses = map[string]harness{
@@ -54,7 +60,7 @@ var harnesses = map[string]harness{
 		instrFile:        []string{".claude", "CLAUDE.md"},
 		projectSkillsDir: []string{".claude", "skills"},
 		projectInstrFile: []string{"CLAUDE.md"}, // repo-root memory file, not .claude/CLAUDE.md
-		commands:         true,
+		hadCommands:      true,
 	},
 	"codex": {
 		skillsDir:        []string{".codex", "skills"},
@@ -142,31 +148,10 @@ func Run(harnessName, base, root string, project bool, out io.Writer) int {
 		}
 	}
 
-	cmdCount := 0
-	if h.commands && !upToDate {
-		cmds, err := fs.ReadDir(fdf.Assets, "harness/claude-code/commands")
-		if err != nil {
-			fmt.Fprintf(out, "error: embedded harness/claude-code/commands: %v\n", err)
-			return 1
-		}
-		// Commands sit beside skills under .claude/ for both user and project scopes.
-		cmdDir := filepath.Join(filepath.Dir(skillsDir), "commands")
-		if err := os.MkdirAll(cmdDir, 0o755); err != nil {
-			fmt.Fprintln(out, "error:", err)
-			return 1
-		}
-		for _, e := range cmds {
-			raw, err := fs.ReadFile(fdf.Assets, "harness/claude-code/commands/"+e.Name())
-			if err != nil {
-				fmt.Fprintf(out, "error: embedded command %s: %v\n", e.Name(), err)
-				return 1
-			}
-			if err := os.WriteFile(filepath.Join(cmdDir, e.Name()), raw, 0o644); err != nil {
-				fmt.Fprintln(out, "error:", err)
-				return 1
-			}
-			cmdCount++
-		}
+	// Commands sat beside skills under .claude/ in both scopes.
+	removed := 0
+	if h.hadCommands {
+		removed = removeLegacyCommands(filepath.Join(filepath.Dir(skillsDir), "commands"))
 	}
 
 	instrPath := filepath.Join(append([]string{base}, instrSeg...)...)
@@ -175,7 +160,7 @@ func Run(harnessName, base, root string, project bool, out io.Writer) int {
 		return code
 	}
 
-	if upToDate {
+	if upToDate && removed == 0 {
 		if instrVerb == "unchanged" {
 			fmt.Fprintf(out, "fdf skills for %s are up to date (v%s)\n", harnessName, Version)
 		} else {
@@ -183,16 +168,38 @@ func Run(harnessName, base, root string, project bool, out io.Writer) int {
 		}
 		return 0
 	}
-	verb := "installed"
-	if hadAny {
-		verb = "upgraded"
+	if upToDate {
+		fmt.Fprintf(out, "fdf skills for %s are up to date (v%s)", harnessName, Version)
+	} else {
+		verb := "installed"
+		if hadAny {
+			verb = "upgraded"
+		}
+		fmt.Fprintf(out, "%s fdf skills for %s (v%s, root %s): %s", verb, harnessName, Version, root, strings.Join(skillNames, ", "))
 	}
-	fmt.Fprintf(out, "%s fdf skills for %s (v%s, root %s): %s", verb, harnessName, Version, root, strings.Join(skillNames, ", "))
-	if cmdCount > 0 {
-		fmt.Fprintf(out, " + %d command(s)", cmdCount)
+	if removed > 0 {
+		fmt.Fprintf(out, "; removed %d superseded slash command(s)", removed)
 	}
 	fmt.Fprintf(out, "; %s primer %s in %s\n", primerHeading, instrVerb, instrPath)
 	return 0
+}
+
+// removeLegacyCommands deletes the superseded fdf slash commands from dir and
+// reports how many were removed. It touches only the names fdf shipped, and
+// prunes dir only when fdf's removals left it empty.
+func removeLegacyCommands(dir string) int {
+	n := 0
+	for _, name := range legacyCommands {
+		if err := os.Remove(filepath.Join(dir, name)); err == nil {
+			n++
+		}
+	}
+	if n > 0 {
+		if entries, err := os.ReadDir(dir); err == nil && len(entries) == 0 {
+			os.Remove(dir)
+		}
+	}
+	return n
 }
 
 // primer is the instruction-file section teaching an agent what FDF is and

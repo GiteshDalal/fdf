@@ -18,8 +18,10 @@ bundle-root Context docs (`STACK.md`, `ARCHITECTURE.md`, `SURFACES.md`, `INFRA.m
 project context. This repo ships:
 
 1. A Go CLI (`cli/cmd/fdf`) that scaffolds and **validates** those bundles.
-2. Harness-neutral **skills** (`skills/`) and per-harness **adapters** (`harness/`) that teach
-   AI agents the brainstorm → plan → execute workflow.
+2. Harness-neutral **skills** (`skills/`) that teach AI agents the brainstorm → plan →
+   execute workflow, plus `fdf-help` (routing) and `fdf-validate` (the post-edit gate).
+   Skills are the *only* agent-facing surface — there are deliberately no slash commands
+   or per-harness adapters, since a command is user-typed and cannot be a reliable gate.
 3. **Versioned specs** (`spec/`) that are normative for the bundles pinning each version.
 
 Assets 2 and 3 are compiled into the binary via `//go:embed` (see `embed.go`) so `fdf install`
@@ -73,8 +75,9 @@ everything, and flags must precede positional args (`ContinueOnError` FlagSets).
     Gherkin scenario; `done` requires all tasks done). `Options.FreshStubsAdvisory`
     downgrades F9 (unfilled Context stub) from error to warning — only `fdf migrate` sets it.
 
-- **`cli/internal/scaffold`** (`init`, `new`), **`cli/internal/install`** (harness adapters +
-  a `## Feature Document Format` primer, idempotent, never clobbers user edits), and
+- **`cli/internal/scaffold`** (`init`, `new`), **`cli/internal/install`** (skills +
+  a `## Feature Document Format` primer, idempotent, never clobbers user edits; also
+  removes the superseded slash commands by exact name), and
   **`cli/internal/migrate`** (mechanical upgrades between adjacent spec versions; 0.3→0.4
   rewrites nested trail files to stem siblings and scaffolds `SURFACES.md`).
 

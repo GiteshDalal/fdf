@@ -92,14 +92,20 @@ and project-level installs coexist and upgrade independently (each destination
 has its own `.fdf-version` markers). A machine with both will carry two primers
 — harnesses merge memory files, so that is fine.
 
-| Scope | Harness | Skills | Instruction file | Commands |
-|---|---|---|---|---|
-| user | claude-code | `~/.claude/skills/` | `~/.claude/CLAUDE.md` | `~/.claude/commands/` |
-| user | codex | `~/.codex/skills/` | `~/.codex/AGENTS.md` | — |
-| user | opencode | `~/.config/opencode/skills/` | `~/.config/opencode/AGENTS.md` | — |
-| project | claude-code | `<proj>/.claude/skills/` | `<proj>/CLAUDE.md` | `<proj>/.claude/commands/` |
-| project | codex | `<proj>/.codex/skills/` | `<proj>/AGENTS.md` | — |
-| project | opencode | `<proj>/.opencode/skills/` | `<proj>/AGENTS.md` | — |
+| Scope | Harness | Skills | Instruction file |
+|---|---|---|---|
+| user | claude-code | `~/.claude/skills/` | `~/.claude/CLAUDE.md` |
+| user | codex | `~/.codex/skills/` | `~/.codex/AGENTS.md` |
+| user | opencode | `~/.config/opencode/skills/` | `~/.config/opencode/AGENTS.md` |
+| project | claude-code | `<proj>/.claude/skills/` | `<proj>/CLAUDE.md` |
+| project | codex | `<proj>/.codex/skills/` | `<proj>/AGENTS.md` |
+| project | opencode | `<proj>/.opencode/skills/` | `<proj>/AGENTS.md` |
+
+The agent-facing surface is **skills only** — six of them (`fdf-help`,
+`fdf-init`, `fdf-brainstorm`, `fdf-plan`, `fdf-execute`, `fdf-validate`),
+identical across harnesses. Earlier versions also shipped Claude Code slash
+commands; those wrapped skills the model can reach directly, so `fdf install`
+now removes them (leaving any commands you wrote yourself alone).
 
 `--project` outside a git working tree is a usage error (exit 2).
 `fdf install --root <dir>` (or `FDF_ROOT_DIR`) bakes a non-default bundle
