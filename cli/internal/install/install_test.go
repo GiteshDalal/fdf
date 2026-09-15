@@ -14,13 +14,13 @@ func TestInstallClaudeCodePlacesSkillsPrimerAndUpgrades(t *testing.T) {
 	if code := Run("claude-code", home, "", false, &out); code != 0 {
 		t.Fatalf("install: %d\n%s", code, out.String())
 	}
-	for _, skill := range []string{"fdf-help", "fdf-init", "fdf-brainstorm", "fdf-plan", "fdf-execute", "fdf-change"} {
+	for _, skill := range []string{"fdf-help", "fdf-init", "fdf-brainstorm", "fdf-plan", "fdf-execute", "fdf-change", "fdf-validate"} {
 		if _, err := os.Stat(filepath.Join(home, ".claude", "skills", skill, "SKILL.md")); err != nil {
 			t.Fatalf("missing skill %s", skill)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(home, ".claude", "commands", "fdf-validate.md")); err != nil {
-		t.Fatal("missing slash command")
+	if _, err := os.Stat(filepath.Join(home, ".claude", "commands")); !os.IsNotExist(err) {
+		t.Fatalf("skills-only install must not create a commands dir: %v", err)
 	}
 	claudeMd, err := os.ReadFile(filepath.Join(home, ".claude", "CLAUDE.md"))
 	if err != nil || !strings.Contains(string(claudeMd), "## Feature Document Format") {
@@ -175,8 +175,8 @@ func TestInstallProjectClaudeCode(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(proj, ".claude", "skills", "fdf-help", "SKILL.md")); err != nil {
 		t.Fatalf("project skill missing: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(proj, ".claude", "commands", "fdf-validate.md")); err != nil {
-		t.Fatal("project slash command missing")
+	if _, err := os.Stat(filepath.Join(proj, ".claude", "commands")); !os.IsNotExist(err) {
+		t.Fatalf("skills-only project install must not create a commands dir: %v", err)
 	}
 	claudeMd, err := os.ReadFile(filepath.Join(proj, "CLAUDE.md"))
 	if err != nil || !strings.Contains(string(claudeMd), "## Feature Document Format") {
@@ -266,5 +266,65 @@ func TestUpgradeLeavesUserEditedPrimerWithNote(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "differs from the shipped primer") {
 		t.Fatalf("should warn about the outdated user-edited primer:\n%s", out.String())
+	}
+}
+
+// The pre-skills-only surface shipped three slash commands wrapping skills the
+// model can now reach directly. An install must clear them so agents stop
+// seeing stale wrappers, without touching commands the user wrote themselves.
+func TestInstallRemovesSupersededSlashCommands(t *testing.T) {
+	home := t.TempDir()
+	cmds := filepath.Join(home, ".claude", "commands")
+	if err := os.MkdirAll(cmds, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"fdf-init.md", "fdf-new.md", "fdf-validate.md", "my-own.md"} {
+		if err := os.WriteFile(filepath.Join(cmds, name), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var out bytes.Buffer
+	if code := Run("claude-code", home, "", false, &out); code != 0 {
+		t.Fatalf("install: %d\n%s", code, out.String())
+	}
+	for _, name := range []string{"fdf-init.md", "fdf-new.md", "fdf-validate.md"} {
+		if _, err := os.Stat(filepath.Join(cmds, name)); !os.IsNotExist(err) {
+			t.Fatalf("superseded command %s still present: %v", name, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(cmds, "my-own.md")); err != nil {
+		t.Fatalf("user's own command must survive: %v", err)
+	}
+	if !strings.Contains(out.String(), "removed 3 superseded slash command(s)") {
+		t.Fatalf("removal should be reported: %q", out.String())
+	}
+
+	// Second run: nothing left to remove, and the dir the user still owns stays.
+	out.Reset()
+	if code := Run("claude-code", home, "", false, &out); code != 0 || !strings.Contains(out.String(), "up to date") {
+		t.Fatalf("re-install: %d %q", code, out.String())
+	}
+	if strings.Contains(out.String(), "superseded") {
+		t.Fatalf("nothing left to remove, should not report: %q", out.String())
+	}
+}
+
+// A commands dir that held only fdf's own commands is pruned, since leaving an
+// empty directory behind is just litter.
+func TestInstallPrunesCommandsDirItEmptied(t *testing.T) {
+	home := t.TempDir()
+	cmds := filepath.Join(home, ".claude", "commands")
+	if err := os.MkdirAll(cmds, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cmds, "fdf-new.md"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if code := Run("claude-code", home, "", false, &out); code != 0 {
+		t.Fatalf("install: %d\n%s", code, out.String())
+	}
+	if _, err := os.Stat(cmds); !os.IsNotExist(err) {
+		t.Fatalf("emptied commands dir should be pruned: %v", err)
 	}
 }

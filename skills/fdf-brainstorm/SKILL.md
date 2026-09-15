@@ -79,7 +79,8 @@ fdf-init first.
    re-ask.
 9. **Flip status** to `specified`; update the feature's `timestamp`; add a
    bundle (or group) LOG.md entry, and optionally start `slug.log.md`
-   (date heading + one line). **Gate**: `fdf validate` exit 0.
+   (date heading + one line). **Gate**: `fdf validate` exit 0 — use
+   fdf-validate if it fails.
 
 Next: the feature is `specified` — fdf-plan is the next skill.
 

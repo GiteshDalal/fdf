@@ -87,10 +87,16 @@ key: not the verb the user used, not the size of the change.
 | `specified` | fdf-plan |
 | `planned` or `implementing` | fdf-execute |
 | `done` or `retired` | Delivered — post-delivery work → fdf-change |
+| *(any bundle file just edited, or `fdf validate` failing)* | fdf-validate |
 
 Check the Context docs first: if `fdf validate` warns or fails on unfilled
 STACK/ARCHITECTURE/SURFACES/INFRA stubs, route to fdf-init before any feature
 work — F9 will block it otherwise.
+
+fdf-validate is not a stage — it is the gate that closes every one of them.
+Use it after any edit to a bundle file, including edits made outside a
+workflow skill (a status flip, a ticked checkbox, a typo fix), and whenever
+`fdf validate` exits non-zero.
 
 Then announce: "Using fdf-<skill> — <feature> is <status>."
 
@@ -152,7 +158,8 @@ and so is the shortcut of doing it first and asking later.
 | "The full pipeline is process theater" | The trail is what the next agent trusts. Scale it down, don't skip it. |
 | "User said 'implement', so fdf-execute" | Verb ≠ status. Read the frontmatter, route by it. |
 | "I'll flip statuses in a batch at the end" | Statuses reflect reality *now* — `in-progress` before working, per task. |
-| "Skip validate just this once" | `fdf validate` exit 0 is the gate after every bundle edit. No exceptions. |
+| "Skip validate just this once" | `fdf validate` exit 0 is the gate after every bundle edit. No exceptions — use fdf-validate. |
+| "Validate failed, I'll just delete the scenario" | Never weaken content to silence a rule. fdf-validate has the honest fix for each code. |
 | "I'll add the back-link on the feature" | Don't. `affects:` is the whole link; `fdf history <feature>` computes the rest. A hand-written back-link drifts. |
 
 ## Precedence

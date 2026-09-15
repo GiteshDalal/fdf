@@ -98,7 +98,7 @@ and "similar to task 01" are plan failures.
    `instant-refunds/01-refund-api.md` → `slug/01-….md`). Plan order is the
    readable order; depends-on is execution truth.
 8. Flip feature status to `planned`; LOG entry (bundle/group LOG.md and/or
-   `slug.log.md`); `fdf validate` exit 0 (F8 enforces `slug.test.md`
+   `slug.log.md`); `fdf validate` exit 0 — fdf-validate on failure (F8 enforces `slug.test.md`
    scenario coverage).
 
 Next: the feature is `planned` — fdf-execute is the next skill.

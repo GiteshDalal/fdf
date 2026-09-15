@@ -1,8 +1,7 @@
 {
   "name": "fdf",
-  "description": "Feature Document Format: init \u2192 brainstorm \u2192 plan \u2192 execute \u2192 change skills that keep context docs (stack/architecture/surfaces/infra), feature docs, Gherkin scenarios, stem-trail spec/plan/test acceptance, post-delivery changes and fixes, and statuses in lockstep with the fdf CLI.",
+  "description": "Feature Document Format: init \u2192 brainstorm \u2192 plan \u2192 execute \u2192 change \u2192 validate skills that keep context docs (stack/architecture/surfaces/infra), feature docs, Gherkin scenarios, stem-trail spec/plan/test acceptance, post-delivery changes and fixes, and statuses in lockstep with the fdf CLI.",
   "version": "0.5.0",
-  "commands": "./harness/claude-code/commands",
   "author": {
     "name": "Gitesh Dalal"
   },

@@ -71,7 +71,8 @@ The implementer prompt contains, in order:
 - The final task (the `slug.test.md`-satisfying one) can only be `done` when
   every test case in `slug.test.md` passes — run the commands it names; UI
   cases are verified in a real browser (Playwright) when specified.
-- All tasks done → feature `status: done`, `fdf validate` exit 0. Never flip a
+- All tasks done → feature `status: done`, `fdf validate` exit 0 (fdf-validate
+  on failure). Never flip a
   feature to done with a failing or unrun `slug.test.md` case.
 - Log the completion in the feature's optional `slug.log.md` (stem sibling;
   not a nested `LOG.md` inside the task directory) — major decisions and
