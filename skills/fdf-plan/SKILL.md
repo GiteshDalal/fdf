@@ -10,7 +10,13 @@ Turn an approved `slug.spec.md` into an executable plan with provable acceptance
 New to FDF? The format is defined in the bundle itself at
 `docs/features/SPEC.md` — exact frontmatter fields, casing and position
 rules, and the F/R validation rules this skill cites. The fdf-help skill
-explains how the fdf skills fit together.
+explains how the fdf skills fit together. Run `fdf spec` for the format rules
+and `fdf help` for the CLI.
+
+This skill plans a **feature**. A post-delivery `Change` is planned the same
+way — `changes/<id>.plan.md` with `# Tasks` linking every task under
+`changes/<id>/` — but it is driven by fdf-change, and it has no `.test.md` of
+its own: the test obligation belongs to the feature it affects.
 
 Plan within the documented project context: `STACK.md`, `ARCHITECTURE.md`,
 `SURFACES.md`, and `INFRA.md` at the bundle root tell you the real

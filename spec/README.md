@@ -3,7 +3,12 @@
 One file per spec version; each is the normative text for bundles pinning that
 version. The current version is the highest-numbered file.
 
-- [`0.4.md`](0.4.md) — current. Stem-qualified trail layout
+- [`0.5.md`](0.5.md) — current. Adds post-delivery documents: `Change` and
+  `Fix` under `changes/` (flat or grouped), rule F10 (change integrity), the
+  `retired` feature status, feature `depends-on`, and releases that may list
+  changes. Purely additive over 0.4.
+- [`0.4.md`](0.4.md) — superseded. Still validated for back-compat.
+  Stem-qualified trail layout
   (`slug.spec.md` / `slug.plan.md` / `slug.test.md` beside the feature; tasks
   only under `slug/`), mandatory root `SURFACES.md` Context document, optional
   `slug.surface.md` (`type: Surface`) and `slug.log.md` (`type: Log`).

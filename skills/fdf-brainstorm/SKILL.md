@@ -7,10 +7,14 @@ description: Use when a feature idea has no Feature document yet, or a draft FDF
 
 Turn a feature idea into a validated FDF feature document and approved design.
 
-New to FDF? The format is defined in the bundle itself at
-`docs/features/SPEC.md` — exact frontmatter fields, casing and position
-rules, and the F/R validation rules this skill cites. The fdf-help skill
+New to FDF? Run `fdf spec` for the format rules (also vendored in the bundle
+at `docs/features/SPEC.md`) and `fdf help` for the CLI. The fdf-help skill
 explains how the fdf skills fit together.
+
+**This skill is for capabilities that do not exist yet.** If the capability is
+already delivered (`done` or `retired`) and needs to change or be fixed, stop
+and use fdf-change — a second feature document for one capability is the drift
+FDF exists to prevent.
 
 **Read the Context docs first.** `STACK.md`, `ARCHITECTURE.md`,
 `SURFACES.md`, and `INFRA.md` at the bundle root are the project's stack,
@@ -86,6 +90,9 @@ Next: the feature is `specified` — fdf-plan is the next skill.
   the design is approved — however simple the feature seems.
 - One feature per brainstorm. If the idea spans independent subsystems,
   decompose it into features first, then brainstorm one.
+- A feature that builds on a delivered one may record that with `depends-on`
+  (feature IDs, must exist, acyclic). Use it for lineage — not as a substitute
+  for a Change when you are really altering the existing capability.
 - Write `slug.spec.md` (and optional `slug.surface.md`) as stem siblings —
   never `slug/SPEC.md` or other nested trail paths (those are the v0.3
-  layout; v0.4 forbids trail files inside the task directory).
+  layout; the task directory holds only tasks).

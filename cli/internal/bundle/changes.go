@@ -128,6 +128,24 @@ func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*f
 
 	retiredBy := map[string][]string{}
 
+	// Scenario names retired from a feature by some landed Change. An episodic
+	// document is a frozen record: a Fix that proved scenario X, or an older
+	// Change that added it, was telling the truth when it was written, and a
+	// later Change removing X must not force those documents to be rewritten.
+	// Without this, F10 would contradict the very rule it enforces.
+	superseded := map[string]bool{}
+	for _, id := range ids {
+		c := changes[id]
+		if c.status != "done" || c.docType != "Change" {
+			continue
+		}
+		for fid, d := range parseDecls(c.body, scenarioChangesHeading, true) {
+			for _, nm := range d.removes {
+				superseded[fid+"\x00"+nm] = true
+			}
+		}
+	}
+
 	for _, id := range ids {
 		c := changes[id]
 		isFix := c.docType == "Fix"
@@ -208,7 +226,7 @@ func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*f
 			names := scenarioNames(f.body)
 			d := decls[fid]
 			for _, n := range append(append([]string{}, d.adds...), d.modifies...) {
-				if !names[n] {
+				if !names[n] && !superseded[fid+"\x00"+n] {
 					*errs = append(*errs, fmt.Sprintf("%s: done, but %s has no scenario %q (F10)", c.rel, fid, n))
 				}
 			}
@@ -218,7 +236,7 @@ func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*f
 				}
 			}
 			for _, n := range d.regressions {
-				if !names[n] {
+				if !names[n] && !superseded[fid+"\x00"+n] {
 					*errs = append(*errs, fmt.Sprintf("%s: done, but %s has no scenario %q — a fix proves scenarios that already exist (F10)", c.rel, fid, n))
 				}
 			}
@@ -228,6 +246,9 @@ func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*f
 			// The regression must be recorded where it lasts: the feature's test doc.
 			if p := pairs[fid]; p != nil && p.test {
 				for _, n := range d.regressions {
+					if superseded[fid+"\x00"+n] {
+						continue
+					}
 					if !strings.Contains(p.testBody, n) {
 						*errs = append(*errs, fmt.Sprintf("%s: done, but %s.test.md has no case for %q (F10)", c.rel, fid, n))
 					}
