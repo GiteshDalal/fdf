@@ -25,6 +25,20 @@ import (
 const specURL = "https://github.com/GiteshDalal/fdf/blob/main/SPEC.md"
 const currentVersion = "0.4"
 
+// Version is the CLI version, set by the command wrapper. A migrate that
+// finds the pin already current is indistinguishable from a migrate that has
+// nothing to do — unless the message names the binary doing the looking. An
+// old fdf held in place by a version shim reports "already current" about a
+// spec several versions behind, which reads as the command being broken.
+var Version string
+
+func binaryName() string {
+	if Version == "" {
+		return "this binary"
+	}
+	return "fdf " + Version
+}
+
 // renames: v0.1 lowercase reserved basenames → uppercase.
 var renames = map[string]string{"index.md": "INDEX.md", "log.md": "LOG.md", "spec.md": "SPEC.md", "plan.md": "PLAN.md"}
 
@@ -64,7 +78,9 @@ func Run(root, repoRoot string, out io.Writer) int {
 		// gets the spec copy and any missing Context stubs, and validates
 		// with the same stub leniency as a fresh migration — so running
 		// migrate twice in a row cannot flip from success to failure.
-		fmt.Fprintf(out, "bundle already pins fdf_version %s; ensuring spec copy and context stubs\n", currentVersion)
+		fmt.Fprintf(out, "nothing to migrate: the bundle already pins fdf_version %s, the newest spec %s knows.\n", currentVersion, binaryName())
+		fmt.Fprintln(out, "if a newer spec version exists, upgrade fdf and re-run — a version-pinned shim (mise, asdf) can hold an older fdf in this directory.")
+		fmt.Fprintln(out, "ensuring spec copy and context stubs:")
 		if code := scaffold.RefreshSpec(root, out); code != 0 {
 			return code
 		}
@@ -168,8 +184,22 @@ func Run(root, repoRoot string, out io.Writer) int {
 		return code
 	}
 
-	// 9. Validate. Freshly scaffolded Context stubs are advisory here —
-	// migration succeeded; filling them is the human's next step via fdf-init.
+	// 9. Report what actually changed, then validate. Without this the only
+	// evidence of a migration is a scroll of per-file lines, and a migration
+	// that moved nothing is indistinguishable from one that did.
+	from := pin
+	if from == "" {
+		from = "unpinned"
+	}
+	fmt.Fprintf(out, "\ndone: migrated bundle at %s\n", rootAbs)
+	fmt.Fprintf(out, "  fdf_version %s -> %s\n", from, currentVersion)
+	fmt.Fprintf(out, "  %d trail file(s) lifted to stem-qualified siblings\n", len(moves))
+	if len(moves) == 0 {
+		fmt.Fprintln(out, "  (no nested trail files were present — layout already matched)")
+	}
+
+	// Freshly scaffolded Context stubs are advisory here — migration
+	// succeeded; filling them is the human's next step via fdf-init.
 	fmt.Fprintln(out, "\nvalidating migrated bundle:")
 	code := bundle.Validate(root, bundle.Options{RepoRoot: repoRoot, Out: out, FreshStubsAdvisory: true})
 	if code == 0 {

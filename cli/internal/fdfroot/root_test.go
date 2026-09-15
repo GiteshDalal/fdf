@@ -119,3 +119,22 @@ func TestNearestProjectRootPrefersInnerRepo(t *testing.T) {
 		t.Fatal("no .git above: must be standalone")
 	}
 }
+
+func TestBundleRootWithSourceNamesTheChooser(t *testing.T) {
+	tmp := t.TempDir()
+	for _, tc := range []struct{ flag, env, want string }{
+		{"custom", "", "--root"},
+		{"", "envdir", "FDF_ROOT_DIR"},
+		{"", "", "default docs/features"},
+		{"flagwins", "envdir", "--root"},
+	} {
+		t.Setenv("FDF_ROOT_DIR", tc.env)
+		_, source, err := BundleRootWithSource(tc.flag, tmp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if source != tc.want {
+			t.Errorf("flag=%q env=%q: source %q, want %q", tc.flag, tc.env, source, tc.want)
+		}
+	}
+}

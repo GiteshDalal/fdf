@@ -52,15 +52,24 @@ func runInstall(args []string, stdout io.Writer) int {
 		base = projRoot
 	}
 	install.Version = version
+	target := "home directory"
+	if *project {
+		target = "project " + base
+	}
+	fmt.Fprintf(stdout, "fdf %s · install · harness: %s · target: %s\n\n", version, rest[0], target)
 	return install.Run(rest[0], base, root, *project, stdout)
 }
 
 func runServe(args []string, stdout io.Writer) int {
 	fs := newFlagSet("serve", stdout)
-	root, _, ok := resolveRoot(fs, args, stdout)
+	root, source, rest, ok := resolveRootSource(fs, args, stdout)
 	if !ok {
 		return 2
 	}
+	if !rejectPositionals("serve", "--root", rest, stdout) {
+		return 2
+	}
+	announce("serve", root, source, stdout)
 	if _, err := exec.LookPath("bun"); err != nil {
 		fmt.Fprintf(stdout, "fdf serve wraps `bun x mdts`. bun is not installed — install it (https://bun.sh) or run your own markdown server over %s\n", root)
 		return 1

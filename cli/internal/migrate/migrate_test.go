@@ -427,3 +427,52 @@ func TestMigrateReadsUnquotedPin(t *testing.T) {
 		t.Fatalf("unquoted pin must hit the already-current path:\n%s", out.String())
 	}
 }
+
+// A migrate that finds the pin already current looks identical to a migrate
+// that is simply too old to know about newer versions — which is what happens
+// when a version shim (mise, asdf) holds an old fdf in a directory. The
+// message must name the binary so the user can tell those apart.
+func TestNoOpMigrateNamesTheBinaryVersion(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "INDEX.md", "---\nfdf_version: \"0.4\"\n---\n\n# Bundle\n")
+	write(t, root, "LOG.md", "# Log\n\n## 2026-09-15\n* init.\n")
+	Version = "9.9.9-test"
+	defer func() { Version = "" }()
+
+	var out bytes.Buffer
+	if code := Run(root, "", &out); code != 0 {
+		t.Fatalf("expected exit 0, got %d\n%s", code, out.String())
+	}
+	msg := out.String()
+	if !strings.Contains(msg, "nothing to migrate") {
+		t.Errorf("should say plainly that nothing was migrated:\n%s", msg)
+	}
+	if !strings.Contains(msg, "fdf 9.9.9-test") {
+		t.Errorf("should name the binary doing the looking:\n%s", msg)
+	}
+	if !strings.Contains(msg, "upgrade fdf") {
+		t.Errorf("should point at upgrading when a newer spec exists:\n%s", msg)
+	}
+	if strings.Contains(msg, "validating migrated bundle") {
+		t.Errorf("nothing was migrated; must not claim it was:\n%s", msg)
+	}
+}
+
+// A migration's only evidence used to be a scroll of per-file lines. The
+// summary states the version transition and how much moved, so "it did
+// nothing" is distinguishable from "it did a lot".
+func TestMigrateSummaryReportsTransitionAndCount(t *testing.T) {
+	root := t.TempDir()
+	buildV03Bundle(t, root)
+	var out bytes.Buffer
+	if code := Run(root, "", &out); code != 0 {
+		t.Fatalf("expected exit 0, got %d\n%s", code, out.String())
+	}
+	msg := out.String()
+	if !strings.Contains(msg, "fdf_version 0.3 -> 0.4") {
+		t.Errorf("summary should state the version transition:\n%s", msg)
+	}
+	if !strings.Contains(msg, "trail file(s) lifted to stem-qualified siblings") {
+		t.Errorf("summary should count lifted trail files:\n%s", msg)
+	}
+}

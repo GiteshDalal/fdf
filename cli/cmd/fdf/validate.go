@@ -22,12 +22,16 @@ func runValidate(args []string, stdout io.Writer) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
+	if !rejectPositionals("validate", "--root", fs.Args(), stdout) {
+		return 2
+	}
 	cwd, _ := os.Getwd()
-	bundleRoot, err := fdfroot.BundleRoot(*root, cwd)
+	bundleRoot, source, err := fdfroot.BundleRootWithSource(*root, cwd)
 	if err != nil {
 		fmt.Fprintln(stdout, "error:", err)
 		return 2
 	}
+	announce("validate", bundleRoot, source, stdout)
 	rr := *repoRoot
 	if rr == "" {
 		if pr, standalone := fdfroot.ProjectRoot(bundleRoot); !standalone {

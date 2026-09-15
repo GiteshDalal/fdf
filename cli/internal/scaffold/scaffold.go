@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -62,6 +63,47 @@ func EnsureSpec(root string, out io.Writer) int         { return writeSpec(root,
 func RefreshSpec(root string, out io.Writer) int        { return writeSpec(root, true, out) }
 func EnsureContextStubs(root string, out io.Writer) int { return writeContextStubs(root, out) }
 
+// specVersionRe matches an embedded spec filename stem (spec/<MAJOR.MINOR>.md),
+// so spec/README.md is skipped when listing versions.
+var specVersionRe = regexp.MustCompile(`^\d+\.\d+$`)
+
+// CurrentVersion is the spec version `fdf init` pins into new bundles and the
+// version `fdf spec` prints when none is requested.
+func CurrentVersion() string { return currentVersion }
+
+// SpecVersions lists the spec versions embedded in the binary, ascending.
+func SpecVersions() []string {
+	entries, err := fs.ReadDir(fdf.Assets, "spec")
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		v := strings.TrimSuffix(e.Name(), ".md")
+		if v != e.Name() && specVersionRe.MatchString(v) {
+			out = append(out, v)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// SpecText returns the embedded normative text of a spec version, exactly as
+// published under spec/ — no bundle frontmatter (that is specDoc's job).
+func SpecText(version string) ([]byte, error) {
+	if !specVersionRe.MatchString(version) {
+		return nil, fmt.Errorf("%q is not a spec version (expected MAJOR.MINOR, e.g. %s)", version, currentVersion)
+	}
+	raw, err := fs.ReadFile(fdf.Assets, "spec/"+version+".md")
+	if err != nil {
+		return nil, fmt.Errorf("no embedded spec for version %s (available: %s)", version, strings.Join(SpecVersions(), ", "))
+	}
+	return raw, nil
+}
+
 // writeContextStubs places the four Context stubs at the bundle root, each
 // only if absent. The fdf-init interview replaces the stub bodies later.
 func writeContextStubs(root string, out io.Writer) int {
@@ -93,7 +135,7 @@ timestamp: %s
 			fmt.Fprintln(out, "error:", err)
 			return 1
 		}
-		fmt.Fprintf(out, "wrote %s (context stub — fill via the fdf-init skill)\n", path)
+		fmt.Fprintf(out, "wrote %s (context stub — fill via the fdf-init skill)\n", c.file)
 	}
 	return 0
 }
@@ -121,7 +163,7 @@ func writeSpec(root string, force bool, out io.Writer) int {
 	if existed {
 		verb = "refreshed"
 	}
-	fmt.Fprintf(out, "%s %s (FDF v%s spec copy)\n", verb, specPath, currentVersion)
+	fmt.Fprintf(out, "%s %s (FDF v%s spec copy)\n", verb, filepath.Base(specPath), currentVersion)
 	return 0
 }
 
@@ -143,7 +185,8 @@ func Init(root string, out io.Writer) int {
 			if code := writeContextStubs(root, out); code != 0 {
 				return code
 			}
-			fmt.Fprintf(out, "bundle at %s is already initialized and up to date (fdf_version %s)\n", root, currentVersion)
+			fmt.Fprintf(out, "\ndone: bundle at %s was already initialized and up to date (fdf_version %s)\n", root, currentVersion)
+			fmt.Fprintln(out, "  nothing was overwritten; only missing files above were added")
 			return 0
 		} else if m != nil {
 			fmt.Fprintf(out, "bundle at %s pins fdf_version %q; run `fdf migrate` to upgrade to %s\n", root, m[1], currentVersion)
@@ -174,8 +217,10 @@ func Init(root string, out io.Writer) int {
 	if code := writeContextStubs(root, out); code != 0 {
 		return code
 	}
-	fmt.Fprintf(out, "initialized FDF bundle at %s\n", root)
+	fmt.Fprintf(out, "\ndone: initialized FDF bundle at %s\n", root)
+	fmt.Fprintf(out, "  pinned fdf_version %s; wrote INDEX.md, LOG.md, SPEC.md and %d Context stub(s)\n", currentVersion, len(contextDocs))
 	fmt.Fprintln(out, "next: run the fdf-init skill to fill STACK.md, ARCHITECTURE.md, SURFACES.md, and INFRA.md before adding features.")
+	fmt.Fprintln(out, "      `fdf validate` fails F9 until those stubs are filled and a feature exists.")
 	return 0
 }
 
@@ -244,6 +289,9 @@ Scenario: Replace me
 		fmt.Fprintln(out, "error:", err)
 		return 1
 	}
-	fmt.Fprintf(out, "created %s (status: draft)\n", featurePath)
+	fmt.Fprintf(out, "created %s (status: draft)\n", filepath.Join(group, slug+".md"))
+	fmt.Fprintf(out, "updated %s (now lists %q)\n", filepath.Join(group, "INDEX.md"), title)
+	fmt.Fprintf(out, "\ndone: feature %s is a draft — one Feature: fence, one Scenario: fence, no trail siblings yet\n", id)
+	fmt.Fprintln(out, "next: write the Gherkin, then add "+slug+".spec.md to reach `specified` (the fdf-brainstorm skill drives this).")
 	return 0
 }
