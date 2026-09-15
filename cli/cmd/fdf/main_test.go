@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/GiteshDalal/fdf/cli/internal/install"
 	"github.com/GiteshDalal/fdf/cli/internal/scaffold"
 )
 
@@ -181,6 +182,41 @@ func TestHelpListsEveryCommand(t *testing.T) {
 		if !strings.Contains(out.String(), section) {
 			t.Errorf("fdf help is missing the %q section", section)
 		}
+	}
+}
+
+// TestBannersNameCurrentSpecVersion locks both product headers to the spec
+// version the binary actually scaffolds — `fdf help` once shipped a stale
+// v0.4 banner while the short usage already said v0.5.
+func TestBannersNameCurrentSpecVersion(t *testing.T) {
+	want := "(SPEC v" + scaffold.CurrentVersion() + ")"
+
+	var out bytes.Buffer
+	if exit := runHelp(nil, &out); exit != 0 {
+		t.Fatalf("expected exit 0, got %d\n%s", exit, out.String())
+	}
+	if !strings.Contains(out.String(), want) {
+		t.Errorf("fdf help banner does not name %s:\n%s", want, firstLine(out.String()))
+	}
+	if !strings.Contains(usage, want) {
+		t.Errorf("short usage banner does not name %s:\n%s", want, firstLine(usage))
+	}
+}
+
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return s[:i]
+	}
+	return s
+}
+
+// TestDevVersionDefaultsAgree keeps install's fallback in step with the CLI
+// version goreleaser stamps. install.Version is overwritten at dispatch, so a
+// drifted default is invisible until the package is driven directly — which is
+// how both defaults sat at 0.4.0-dev for a whole release.
+func TestDevVersionDefaultsAgree(t *testing.T) {
+	if install.Version != version {
+		t.Errorf("install.Version default %q does not match main.version %q", install.Version, version)
 	}
 }
 

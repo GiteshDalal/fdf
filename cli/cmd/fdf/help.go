@@ -16,7 +16,7 @@ type helpTopic struct {
 	examples []string
 }
 
-const helpPreamble = `fdf — Feature Document Format tooling (SPEC v0.4)
+var helpPreamble = banner + `
 
 FDF documents each software feature as a Markdown + Gherkin file whose design
 spec, implementation plan, acceptance tests and tasks live beside it as

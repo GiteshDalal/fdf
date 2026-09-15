@@ -23,8 +23,9 @@ import (
 	fdf "github.com/GiteshDalal/fdf"
 )
 
-// Version is stamped by the CLI (main.version) at dispatch time.
-var Version = "0.4.0-dev"
+// Version is stamped by the CLI (main.version) at dispatch time; this default
+// only shows when the package is driven directly, and must track main.version.
+var Version = "0.5.0-dev"
 
 // defaultRoot is the bundle root the skill texts are written against; a
 // different install root rewrites every occurrence in the skill bodies.
