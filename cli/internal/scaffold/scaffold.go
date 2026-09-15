@@ -16,7 +16,7 @@ import (
 	fdf "github.com/GiteshDalal/fdf"
 )
 
-const currentVersion = "0.4"
+const currentVersion = "0.5"
 const specURL = "https://github.com/GiteshDalal/fdf/blob/main/spec/" + currentVersion + ".md"
 
 // contextDocs are the bundle-root Context documents fdf init scaffolds as
@@ -62,6 +62,29 @@ const stubSentinel = "<!-- fdf:stub -->"
 func EnsureSpec(root string, out io.Writer) int         { return writeSpec(root, false, out) }
 func RefreshSpec(root string, out io.Writer) int        { return writeSpec(root, true, out) }
 func EnsureContextStubs(root string, out io.Writer) int { return writeContextStubs(root, out) }
+
+// EnsureChangesIndex creates changes/INDEX.md if absent. Post-delivery work
+// (v0.5) lives under changes/; scaffolding the index makes the directory
+// discoverable in a fresh bundle rather than something the first change has
+// to invent.
+func EnsureChangesIndex(root string, out io.Writer) int {
+	dir := filepath.Join(root, "changes")
+	idx := filepath.Join(dir, "INDEX.md")
+	if _, err := os.Stat(idx); err == nil {
+		return 0
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		fmt.Fprintln(out, "error:", err)
+		return 1
+	}
+	body := "# Changes\n\nPost-delivery changes and fixes for delivered features.\nA `Change` alters documented behavior; a `Fix` restores behavior the feature\ndocument already describes. Both may be filed flat here or in groups.\n\n* [Format reference](/SPEC.md) - how changes and fixes are structured.\n"
+	if err := os.WriteFile(idx, []byte(body), 0o644); err != nil {
+		fmt.Fprintln(out, "error:", err)
+		return 1
+	}
+	fmt.Fprintln(out, "wrote changes/INDEX.md (post-delivery changes and fixes)")
+	return 0
+}
 
 // specVersionRe matches an embedded spec filename stem (spec/<MAJOR.MINOR>.md),
 // so spec/README.md is skipped when listing versions.
@@ -215,6 +238,9 @@ func Init(root string, out io.Writer) int {
 		return code
 	}
 	if code := writeContextStubs(root, out); code != 0 {
+		return code
+	}
+	if code := EnsureChangesIndex(root, out); code != 0 {
 		return code
 	}
 	fmt.Fprintf(out, "\ndone: initialized FDF bundle at %s\n", root)

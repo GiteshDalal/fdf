@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 )
 
 // version is set by goreleaser via -ldflags "-X main.version=...".
@@ -19,16 +20,24 @@ var commands = map[string]func(args []string, stdout io.Writer) int{
 	"migrate":  runMigrate,
 	"help":     runHelp,
 	"spec":     runSpec,
+	"change":   runChange,
+	"fix":      runFix,
+	"history":  runHistory,
+	"release":  runRelease,
 }
 
-const usage = `fdf — Feature Document Format tooling (SPEC v0.4)
+const usage = `fdf — Feature Document Format tooling (SPEC v0.5)
 
 Usage: fdf <command> [flags]
 
 Commands:
-  validate   Check the bundle against SPEC v0.4 (F1-F9 + R1)
+  validate   Check the bundle against the pinned SPEC (F1-F10 + R1)
   init       Scaffold a bundle at the resolved root
   new        Scaffold a draft feature: fdf new <group>/<slug>
+  change     Scaffold a post-delivery Change: fdf change --affects <id> <slug>
+  fix        Scaffold a post-delivery Fix: fdf fix --affects <id> <slug>
+  history    List a delivered feature's changes and fixes
+  release    Derive a release document: fdf release [--ship] <version>
   install    Install/upgrade FDF skills for an AI harness: fdf install [--project] [--root <dir>] <claude-code|codex|opencode>
   serve      Serve the bundle in a browser (wraps bun x mdts)
   migrate    Upgrade a bundle to the current spec version
@@ -42,6 +51,19 @@ resolve against the project root).
 Flags must precede positional arguments (e.g. fdf new --root <dir> <group>/<slug>).
 
 Run 'fdf help' for the long form with examples for every command.`
+
+// flagOrderHint explains a usage failure caused by argument order. Go's flag
+// package stops parsing at the first non-flag argument, so a flag written
+// after a positional is silently read as another positional — the command
+// then fails on argument count, which explains nothing.
+func flagOrderHint(rest []string, stdout io.Writer) {
+	for _, a := range rest {
+		if strings.HasPrefix(a, "-") {
+			fmt.Fprintf(stdout, "note: %q was read as an argument, not a flag — flags must come before positional arguments\n", a)
+			return
+		}
+	}
+}
 
 // announce prints the one line that makes a command's behavior explainable:
 // which binary is running, and which bundle root it chose and why. A stale

@@ -96,6 +96,74 @@ var helpTopics = []helpTopic{
 		},
 	},
 	{
+		name:  "change",
+		usage: "fdf change [--root <dir>] --affects <group>/<slug>[,…] [<group>/]<slug>",
+		body: "Scaffold a post-delivery Change: a request to alter what a delivered\n" +
+			"feature does. Use it when the fix requires the feature's Gherkin to\n" +
+			"change — including when the original document was silent on a case\n" +
+			"nobody recognized. A Change carries a design gate (its .spec.md) and\n" +
+			"declares, under `# Scenario changes`, the scenarios it will add, modify\n" +
+			"or remove; F10 will not let it reach `done` until those landed.\n" +
+			"`--affects` may name several features: one Change can span them.",
+		flags: []string{
+			"--affects <ids>  comma-separated feature ID(s) this touches (required)",
+			"--root <dir>     bundle root (default docs/features)",
+		},
+		examples: []string{
+			"fdf change --affects payments/instant-refunds refund-window",
+			"fdf change --affects payments/instant-refunds,billing/invoices payments/tax-rounding",
+		},
+	},
+	{
+		name:  "fix",
+		usage: "fdf fix [--root <dir>] --affects <group>/<slug>[,…] [<group>/]<slug>",
+		body: "Scaffold a post-delivery Fix: the feature document was right and the\n" +
+			"code drifted from it. No design gate — restoring documented behavior\n" +
+			"needs no approval — and no trail files are required, so the floor is a\n" +
+			"single file. Declares, under `# Regression cases`, scenarios that\n" +
+			"already exist plus the verification for each; the lasting artifact is\n" +
+			"the case added to the affected feature's .test.md.",
+		flags: []string{
+			"--affects <ids>  comma-separated feature ID(s) this touches (required)",
+			"--root <dir>     bundle root (default docs/features)",
+		},
+		examples: []string{
+			"fdf fix --affects payments/instant-refunds refund-rounding",
+		},
+	},
+	{
+		name:  "history",
+		usage: "fdf history [--root <dir>] <group>/<slug>",
+		body: "List every Change and Fix that names this feature in its `affects`.\n" +
+			"Computed from frontmatter, never from back-links the feature would have\n" +
+			"to maintain by hand — a required back-link is a standing invitation to\n" +
+			"drift. This is how you answer \"what has happened to this feature since\n" +
+			"it shipped?\".",
+		flags:    []string{"--root <dir>  bundle root (default docs/features)"},
+		examples: []string{"fdf history payments/instant-refunds"},
+	},
+	{
+		name:  "release",
+		usage: "fdf release [--root <dir>] [--date <YYYY-MM-DD>] [--ship] <version>",
+		body: "Create or refresh releases/<version>.md from the `version:` fields\n" +
+			"already carried by features, changes and fixes. Those lists are the one\n" +
+			"thing in FDF that is wholly derived, so hand-maintaining them is pure\n" +
+			"drift surface. Idempotent, and `# Notes` is human prose that is\n" +
+			"preserved untouched. What it never derives is membership: which work\n" +
+			"ships is a human decision recorded as `version:` on each document.\n" +
+			"--ship refuses while any listed document is still open.",
+		flags: []string{
+			"--date <YYYY-MM-DD>  target date while planned, actual date once shipped",
+			"--ship               flip to shipped once every listed document is done",
+			"--root <dir>         bundle root (default docs/features)",
+		},
+		examples: []string{
+			"fdf release 1.2.0",
+			"fdf release --date 2026-10-01 1.2.0",
+			"fdf release --ship 1.2.0",
+		},
+	},
+	{
 		name:  "install",
 		usage: "fdf install [--project] [--root <dir>] <claude-code|codex|opencode>",
 		body: "Install or upgrade the FDF skills and that harness's adapter, plus a\n" +
