@@ -25,13 +25,13 @@ import (
 
 // Version is stamped by the CLI (main.version) at dispatch time; this default
 // only shows when the package is driven directly, and must track main.version.
-var Version = "0.5.0-dev"
+var Version = "0.5.1"
 
 // defaultRoot is the bundle root the skill texts are written against; a
 // different install root rewrites every occurrence in the skill bodies.
 const defaultRoot = "docs/features"
 
-var skillNames = []string{"fdf-help", "fdf-init", "fdf-brainstorm", "fdf-plan", "fdf-execute", "fdf-change", "fdf-validate"}
+var skillNames = []string{"fdf-help", "fdf-init", "fdf-brainstorm", "fdf-plan", "fdf-execute", "fdf-change", "fdf-debug", "fdf-validate"}
 
 // legacyCommands are the Claude Code slash commands shipped before the
 // surface became skills-only. They wrapped skills the model can now reach
@@ -205,9 +205,67 @@ func removeLegacyCommands(dir string) int {
 
 // primer is the instruction-file section teaching an agent what FDF is and
 // where the full rules live. It assumes no prior FDF knowledge.
-// primer is the instruction-file section teaching an agent what FDF is and
-// where the full rules live. It assumes no prior FDF knowledge.
 func primer(root string) string {
+	return primerHeading + `
+
+Projects on this machine may document software features with FDF (Feature
+Document Format): the directory ` + "`" + root + "/`" + ` in a project is an FDF
+**bundle** — every feature is a Markdown + Gherkin document, and its design
+spec, implementation plan, acceptance tests, and decision log live as
+stem-qualified trail siblings (` + "`slug.spec.md`" + `, ` + "`slug.plan.md`" + `,
+` + "`slug.test.md`" + `, optional ` + "`slug.surface.md`" + `/` + "`slug.log.md`" + `);
+tasks live only under a ` + "`slug/`" + ` directory. Feature frontmatter carries a
+status (draft → specified → planned → implementing → done → retired) that must
+always reflect reality; the ` + "`fdf validate`" + ` CLI gates consistency and must
+exit 0 after any bundle edit. The full format rules ship inside the bundle at
+` + "`" + root + "/SPEC.md`" + ` and are also printed by ` + "`fdf spec`" + ` — read
+either when you need exact frontmatter fields, casing, or validation
+semantics. ` + "`fdf help`" + ` documents every command with examples.
+
+Four bundle-root **Context documents** — ` + "`" + root + "/STACK.md`" + `,
+` + "`ARCHITECTURE.md`" + `, ` + "`SURFACES.md`" + `, ` + "`INFRA.md`" + ` — are the project's
+current stack, architecture, surface (interface) principles for all surfaces,
+and build/deployment infrastructure. They are **critical**: filled once by
+the fdf-init interview, then changed only with explicit human approval and a
+logged reason. Accurate context here is what makes this agentic engineering
+rather than vibe coding — read them before designing, and keep them true.
+Their upkeep is the human's responsibility.
+
+**Documents are living or episodic**, and that decides what happens when the
+software changes. Living documents describe the system today (the feature's
+Gherkin, ` + "`slug.test.md`" + `, ` + "`slug.surface.md`" + `, the Context docs) and
+are amended in place. Episodic documents are frozen records of one piece of
+work (` + "`slug.spec.md`" + `, ` + "`slug.plan.md`" + `, tasks, changes, logs) and are
+never rewritten — new work gets a new episode.
+
+Working in an FDF project:
+
+- First run: after ` + "`fdf init`" + `, use the fdf-init skill to fill the four
+  Context docs. Feature work is blocked (rule F9) while they're unfilled.
+- Before writing code, route by feature status using the fdf-help skill:
+  no feature/draft → fdf-brainstorm, specified → fdf-plan,
+  planned/implementing → fdf-execute, done/retired → fdf-change.
+- When something is broken, start with the fdf-debug skill: find the root
+  cause before any fix, and it routes the repair — a ` + "`Fix`" + ` when the code
+  drifted from the document, a ` + "`Change`" + ` when the document itself has to
+  change, a new feature when the behavior is genuinely new.
+- Scaffold with ` + "`fdf new <group>/<slug>`" + `; validate with ` + "`fdf validate`" + `.
+- Once a feature is **done**, never edit its behavior in place and never fork
+  a second feature document for the same capability. Post-delivery work is a
+  document under ` + "`" + root + "/changes/`" + `: ` + "`fdf change`" + ` when the
+  feature's Gherkin must change, ` + "`fdf fix`" + ` when the code merely drifted
+  from what the document already says. Rule F10 will not let one reach
+  ` + "`done`" + ` until the features it claims to alter actually say so.
+- Code that changes behavior without touching the bundle makes the bundle
+  lie — record the feature first, then implement.
+- After a feature or a change, propose any needed Context-doc update and
+  apply it only on approval, logging the change.
+`
+}
+
+// primerV05 is the primer shipped by the v0.5.0 release, kept so an upgrade
+// can recognize an untouched managed section written by it and refresh it.
+func primerV05(root string) string {
 	return primerHeading + `
 
 Projects on this machine may document software features with FDF (Feature
@@ -308,7 +366,7 @@ Working in an FDF project:
 // Every release that changes primer() must append the superseded text here —
 // otherwise re-running `fdf install` upgrades the skills but leaves the
 // instruction file teaching the old format.
-var legacyPrimers = []func(root string) string{primerV03, primerV04}
+var legacyPrimers = []func(root string) string{primerV03, primerV04, primerV05}
 
 // primerV03 is the primer shipped by the v0.3-era CLI (paired-directory
 // layout, three Context docs). Kept verbatim for upgrade detection.

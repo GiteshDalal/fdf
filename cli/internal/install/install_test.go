@@ -14,7 +14,7 @@ func TestInstallClaudeCodePlacesSkillsPrimerAndUpgrades(t *testing.T) {
 	if code := Run("claude-code", home, "", false, &out); code != 0 {
 		t.Fatalf("install: %d\n%s", code, out.String())
 	}
-	for _, skill := range []string{"fdf-help", "fdf-init", "fdf-brainstorm", "fdf-plan", "fdf-execute", "fdf-change", "fdf-validate"} {
+	for _, skill := range []string{"fdf-help", "fdf-init", "fdf-brainstorm", "fdf-plan", "fdf-execute", "fdf-change", "fdf-debug", "fdf-validate"} {
 		if _, err := os.Stat(filepath.Join(home, ".claude", "skills", skill, "SKILL.md")); err != nil {
 			t.Fatalf("missing skill %s", skill)
 		}
@@ -240,6 +240,29 @@ func TestUpgradeRefreshesStaleShippedPrimer(t *testing.T) {
 	}
 	if !strings.Contains(s, "# My notes") || !strings.Contains(s, "## Other section\n\nkeep me") {
 		t.Fatalf("content around the managed section must survive:\n%s", s)
+	}
+	if !strings.Contains(out.String(), "updated") {
+		t.Fatalf("report should say the primer was updated:\n%s", out.String())
+	}
+}
+
+func TestUpgradeRefreshesShippedV05Primer(t *testing.T) {
+	home := t.TempDir()
+	// Seed the exact primer the v0.5.0 release wrote (untouched managed content).
+	path := filepath.Join(home, ".claude", "CLAUDE.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(primerV05("docs/features")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if code := Run("claude-code", home, "", false, &out); code != 0 {
+		t.Fatalf("install: %d\n%s", code, out.String())
+	}
+	got, _ := os.ReadFile(path)
+	if !strings.Contains(string(got), "fdf-debug skill") {
+		t.Fatalf("refreshed primer must route broken things to fdf-debug:\n%s", got)
 	}
 	if !strings.Contains(out.String(), "updated") {
 		t.Fatalf("report should say the primer was updated:\n%s", out.String())

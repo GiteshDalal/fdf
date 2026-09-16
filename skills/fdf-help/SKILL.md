@@ -87,6 +87,7 @@ key: not the verb the user used, not the size of the change.
 | `specified` | fdf-plan |
 | `planned` or `implementing` | fdf-execute |
 | `done` or `retired` | Delivered — post-delivery work → fdf-change |
+| *(something is broken, at any status)* | fdf-debug (root cause first; it routes the repair) |
 | *(any bundle file just edited, or `fdf validate` failing)* | fdf-validate |
 
 Check the Context docs first: if `fdf validate` warns or fails on unfilled
@@ -98,9 +99,17 @@ Use it after any edit to a bundle file, including edits made outside a
 workflow skill (a status flip, a ticked checkbox, a typo fix), and whenever
 `fdf validate` exits non-zero.
 
+fdf-debug is not a stage either — it is the front door for anything broken:
+a bug report, a failing test, a crash, a regression. It finds the root cause
+and then routes back into this table, because which document may repair a
+defect depends on what the defect turns out to be.
+
 Then announce: "Using fdf-<skill> — <feature> is <status>."
 
-For a **delivered** feature, one question routes the work:
+For a **delivered** feature, one question routes the work — but if the report
+is a symptom rather than a decision ("it's broken", "this is wrong"), you
+cannot answer it yet. Run fdf-debug first; the root cause is what makes the
+question answerable.
 
 > **Does this require the feature's Gherkin to change?**
 
@@ -151,6 +160,7 @@ and so is the shortcut of doing it first and asking later.
 |---|---|
 | "It's a one-line change" | Size doesn't route; status does. One line that changes behavior gets a document. |
 | "It's just a bug, no doc needed" | A bug fix is a `Fix` under `changes/`. Ten lines of markdown, and the regression case is what stops it recurring. |
+| "It's a bug, so it's a Fix" | Only when a scenario already says otherwise. A bug in a case the document never covered is a `Change` — fdf-debug decides that, after the root cause. |
 | "This feature is done, I'll make a v2 feature doc" | Two documents for one capability is the drift FDF exists to stop. Amend the feature; record the work as a Change. |
 | "The feature is done, I'll just edit its Gherkin" | Then nothing records why it changed, and F10 never checked that the code followed. Open a Change. |
 | "The user said just do it" | Offer the two-minute path first. Only an explicit opt-out after that counts. |

@@ -22,7 +22,8 @@ This repo ships:
 1. A Go CLI (`cli/cmd/fdf`) that scaffolds and **validates** those bundles.
 2. Harness-neutral **skills** (`skills/`) that teach AI agents the brainstorm → plan →
    execute workflow and the post-delivery `fdf-change` workflow, plus `fdf-help`
-   (routing) and `fdf-validate` (the post-edit gate).
+   (routing), `fdf-debug` (root-cause-first triage that routes a defect to a Fix,
+   Change, feature, or task) and `fdf-validate` (the post-edit gate).
    Skills are the *only* agent-facing surface — there are deliberately no slash commands
    or per-harness adapters, since a command is user-typed and cannot be a reliable gate.
 3. **Versioned specs** (`spec/`) that are normative for the bundles pinning each version.

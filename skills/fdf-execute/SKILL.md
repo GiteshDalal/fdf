@@ -60,8 +60,10 @@ The implementer prompt contains, in order:
 ## Blockers
 
 - A fix attempt failed and the cause isn't obvious and mechanical → stop
-  retrying. The task stays `in-progress`; note the blocker, the attempts,
-  and the exact errors in the task body.
+  retrying and use **fdf-debug** to find the root cause. The task stays
+  `in-progress`; note the blocker, the attempts, and the exact errors in the
+  task body. The feature is still in flight, so the repair stays task work —
+  a Change or Fix is only for delivered features.
 - Independent siblings continue; batches needing the blocked task stall.
 - Report with a specific question ("Acceptance requires X; SPEC section Y
   implies Z — which wins?"), never just "it's broken".
