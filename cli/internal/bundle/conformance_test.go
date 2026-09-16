@@ -39,6 +39,11 @@ func TestConformanceFixtures(t *testing.T) {
 					if got != want {
 						t.Fatalf("exit %s, want %s\n%s", got, want, out.String())
 					}
+				case strings.HasPrefix(line, "not-contains: "):
+					sub := strings.TrimPrefix(line, "not-contains: ")
+					if strings.Contains(out.String(), sub) {
+						t.Fatalf("output unexpectedly contains %q\n%s", sub, out.String())
+					}
 				case strings.HasPrefix(line, "contains: "):
 					sub := strings.TrimPrefix(line, "contains: ")
 					if !strings.Contains(out.String(), sub) {

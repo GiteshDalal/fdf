@@ -96,6 +96,55 @@ var helpTopics = []helpTopic{
 		},
 	},
 	{
+		name:  "practice",
+		usage: "fdf practice [--root <dir>] [<group>/]<slug>",
+		body: "Scaffold a Practice under practices/ — the project's binding answer to\n" +
+			"how one recurring mechanism is done (authorization, permission checks,\n" +
+			"payment capture, database access). A practice is a living document with\n" +
+			"no spec, plan, test or tasks; its only sibling is an optional\n" +
+			"<slug>.log.md. Fill `# Rules` with the binding statements and set\n" +
+			"`applies-to` to the repo paths it governs — that is how later work is\n" +
+			"routed to it, since features never list the practices they follow.\n" +
+			"A practice binds all future code: land one only with human approval.\n" +
+			"v0.6 bundles only.",
+		flags: []string{"--root <dir>  bundle root (default docs/features)"},
+		examples: []string{
+			"fdf practice permission-checks",
+			"fdf practice payments/idempotency",
+		},
+	},
+	{
+		name:  "debt",
+		usage: "fdf debt [--root <dir>] [--open|--accepted|--resolved] [--cleanup [--dry-run] [--no-log]] [[<group>/]<slug>]",
+		body: "Read or file the debt register under debts/ — the known gaps between\n" +
+			"what the project says and what the code does: work left undone, and\n" +
+			"rules the codebase does not follow everywhere yet.\n\n" +
+			"With a slug it scaffolds a debt (" + debtStatusList() + "); without one it\n" +
+			"prints the register as a table of status, id, filing date and title.\n" +
+			"`resource` names the paths carrying the gap — that is how later work\n" +
+			"finds the debt, and R1 makes a debt pointing at vanished code loud.\n\n" +
+			"--cleanup is the chore that keeps the register worth reading: each\n" +
+			"resolved debt is recorded in debts/LOG.md as one line and its file is\n" +
+			"removed. Open and accepted debts are never touched. Use --dry-run to\n" +
+			"see the plan first, or --no-log to remove without recording.\n" +
+			"v0.6 bundles only.",
+		flags: []string{
+			"--root <dir>  bundle root (default docs/features)",
+			"--open        list only open debts",
+			"--accepted    list only accepted debts",
+			"--resolved    list only resolved debts",
+			"--cleanup     clear resolved debts, recording each in debts/LOG.md",
+			"--dry-run     with --cleanup: show what would be cleared, change nothing",
+			"--no-log      with --cleanup: remove without writing debts/LOG.md",
+		},
+		examples: []string{
+			"fdf debt",
+			"fdf debt --open",
+			"fdf debt --cleanup --dry-run",
+			"fdf debt authz-legacy-handlers",
+		},
+	},
+	{
 		name:  "change",
 		usage: "fdf change [--root <dir>] --affects <group>/<slug>[,…] [<group>/]<slug>",
 		body: "Scaffold a post-delivery Change: a request to alter what a delivered\n" +

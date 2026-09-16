@@ -1,0 +1,3 @@
+exit: 1
+contains: superseded-by "practices/authz-v2" is not a known practice
+contains: (F11)

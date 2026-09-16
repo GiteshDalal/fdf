@@ -14,10 +14,16 @@ import (
 // real content so the stub sentinel is gone and F9 is satisfied.
 func fillContext(t *testing.T, root string) {
 	t.Helper()
-	for _, name := range []string{"STACK.md", "ARCHITECTURE.md", "SURFACES.md", "INFRA.md"} {
-		body := "---\ntype: Context\ntitle: " + name + "\ndescription: filled.\n" +
-			"timestamp: 2026-07-06T00:00:00Z\n---\n\n# " + name + "\n\nReal content.\n"
-		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0o644); err != nil {
+	// Driven by contextDocs so a newly added Context document is filled here
+	// too, instead of failing F9 in every test that scaffolds a feature.
+	for _, c := range contextDocs {
+		content := "Real content.\n"
+		if c.file == "DOMAIN.md" {
+			content = "# Terms\n\n## Venue\nA physical location where a merchant sells.\n- instead-of: shopfront\n"
+		}
+		body := "---\ntype: Context\ntitle: " + c.file + "\ndescription: filled.\n" +
+			"timestamp: 2026-07-06T00:00:00Z\n---\n\n" + content
+		if err := os.WriteFile(filepath.Join(root, c.file), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -50,7 +56,7 @@ func TestInitScaffoldsConformingBundle(t *testing.T) {
 	if code := Init(root, &out); code != 0 {
 		t.Fatalf("init: %d\n%s", code, out.String())
 	}
-	for _, f := range []string{"INDEX.md", "LOG.md", "STACK.md", "ARCHITECTURE.md", "SURFACES.md", "INFRA.md"} {
+	for _, f := range []string{"INDEX.md", "LOG.md", "STACK.md", "ARCHITECTURE.md", "SURFACES.md", "INFRA.md", "DOMAIN.md"} {
 		if _, err := os.Stat(filepath.Join(root, f)); err != nil {
 			t.Fatalf("missing %s", f)
 		}

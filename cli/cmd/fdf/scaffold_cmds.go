@@ -57,3 +57,17 @@ func runNew(args []string, stdout io.Writer) int {
 	announce("new", root, source, stdout)
 	return scaffold.New(root, rest[0], stdout)
 }
+
+func runPractice(args []string, stdout io.Writer) int {
+	fs := newFlagSet("practice", stdout)
+	root, source, rest, ok := resolveRootSource(fs, args, stdout)
+	if !ok {
+		return 2
+	}
+	if len(rest) != 1 {
+		fmt.Fprintln(stdout, "usage: fdf practice [<group>/]<slug>")
+		return 2
+	}
+	announce("practice", root, source, stdout)
+	return scaffold.Practice(root, rest[0], stdout)
+}

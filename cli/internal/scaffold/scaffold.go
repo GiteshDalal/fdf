@@ -16,7 +16,7 @@ import (
 	fdf "github.com/GiteshDalal/fdf"
 )
 
-const currentVersion = "0.5"
+const currentVersion = "0.6"
 const specURL = "https://github.com/GiteshDalal/fdf/blob/main/spec/" + currentVersion + ".md"
 
 // contextDocs are the bundle-root Context documents fdf init scaffolds as
@@ -35,7 +35,24 @@ var contextDocs = []struct{ file, title, purpose, headings string }{
 	{"INFRA.md", "Build & Deployment Infrastructure",
 		"how the project is built, tested, packaged, and deployed, and the environments and targets it runs on",
 		"## Build & test\n\n## Packaging\n\n## Environments & targets\n\n## Deployment\n"},
+	{"DOMAIN.md", "Domain Language",
+		"the canonical name for each thing this project is about, and the words that must not be used for it instead",
+		domainTermsStub},
 }
+
+// domainTermsStub models DOMAIN.md's parsed `# Terms` grammar (F12): one
+// `## <Term>` per canonical term, definition first, optional bullets after.
+const domainTermsStub = "# Terms\n\n" +
+	"<!-- One `## <Term>` heading per canonical term. The first line under it is\n" +
+	"     the definition; then, optionally:\n" +
+	"       - instead-of: the words this term replaces (banned everywhere)\n" +
+	"       - code: how the term appears in the code (type, table, field)\n" +
+	"       - see: a link to the practice that explains it in depth\n\n" +
+	"## Venue\n" +
+	"A physical location where a merchant sells.\n" +
+	"- instead-of: store, business, tenant\n" +
+	"- code: `Venue` (model), `venues` (table)\n" +
+	"-->\n"
 
 // specDoc renders the embedded spec for the current version as a bundle-root
 // Reference document. Agents and readers of the bundle need no external
@@ -62,6 +79,50 @@ const stubSentinel = "<!-- fdf:stub -->"
 func EnsureSpec(root string, out io.Writer) int         { return writeSpec(root, false, out) }
 func RefreshSpec(root string, out io.Writer) int        { return writeSpec(root, true, out) }
 func EnsureContextStubs(root string, out io.Writer) int { return writeContextStubs(root, out) }
+
+// EnsurePracticesIndex creates practices/INDEX.md if absent. Practices (v0.6)
+// are the project's binding answers to recurring mechanisms; scaffolding the
+// index makes the directory discoverable rather than something the first
+// practice has to invent.
+func EnsurePracticesIndex(root string, out io.Writer) int {
+	dir := filepath.Join(root, "practices")
+	idx := filepath.Join(dir, "INDEX.md")
+	if _, err := os.Stat(idx); err == nil {
+		return 0
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		fmt.Fprintln(out, "error:", err)
+		return 1
+	}
+	body := "# Practices\n\nHow this project does the things it does the same way every time —\nauthorization, permission checks, payment capture, database access. Each is\nbinding on all code it applies to, and changes only with human approval.\n\n* [Format reference](/SPEC.md) - how practices are structured.\n"
+	if err := os.WriteFile(idx, []byte(body), 0o644); err != nil {
+		fmt.Fprintln(out, "error:", err)
+		return 1
+	}
+	fmt.Fprintln(out, "wrote practices/INDEX.md (project practices)")
+	return 0
+}
+
+// EnsureDebtsIndex creates debts/INDEX.md if absent. The debt register (v0.6)
+// records known gaps between what the project says and what the code does.
+func EnsureDebtsIndex(root string, out io.Writer) int {
+	dir := filepath.Join(root, "debts")
+	idx := filepath.Join(dir, "INDEX.md")
+	if _, err := os.Stat(idx); err == nil {
+		return 0
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		fmt.Fprintln(out, "error:", err)
+		return 1
+	}
+	body := "# Debt\n\nKnown gaps between what this project says and what the code does — work\nleft undone, and rules the codebase does not follow everywhere yet. Run\n`fdf debt` to read the register.\n\n* [Format reference](/SPEC.md) - how debts are structured.\n"
+	if err := os.WriteFile(idx, []byte(body), 0o644); err != nil {
+		fmt.Fprintln(out, "error:", err)
+		return 1
+	}
+	fmt.Fprintln(out, "wrote debts/INDEX.md (the debt register)")
+	return 0
+}
 
 // EnsureChangesIndex creates changes/INDEX.md if absent. Post-delivery work
 // (v0.5) lives under changes/; scaffolding the index makes the directory
@@ -190,7 +251,87 @@ func writeSpec(root string, force bool, out io.Writer) int {
 	return 0
 }
 
+// contextDocNames lists the Context documents for user-facing messages, so a
+// new one never leaves a stale literal behind.
+// ContextDocNames is contextDocNames for other packages (migrate's next-step
+// message), so the list of Context documents has one source.
+func ContextDocNames() string { return contextDocNames() }
+
+func contextDocNames() string {
+	names := make([]string, 0, len(contextDocs))
+	for _, c := range contextDocs {
+		names = append(names, c.file)
+	}
+	if len(names) < 2 {
+		return strings.Join(names, "")
+	}
+	return strings.Join(names[:len(names)-1], ", ") + ", and " + names[len(names)-1]
+}
+
 var idRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*$`)
+var practiceSlugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+var practiceGroupedRe = regexp.MustCompile(`^([a-z0-9][a-z0-9-]*)/([a-z0-9][a-z0-9-]*)$`)
+
+// Practice scaffolds practices/<id>.md, where id is "<slug>" or
+// "<group>/<slug>". A practice has no trail and no tasks: the document is the
+// whole thing, so there is nothing else to create.
+func Practice(root, id string, out io.Writer) int {
+	if !practiceSlugRe.MatchString(id) && !practiceGroupedRe.MatchString(id) {
+		fmt.Fprintf(out, "error: id must be <slug> or <group>/<slug>, lowercase [a-z0-9-]; got %q\n", id)
+		return 1
+	}
+	path := filepath.Join(root, "practices", filepath.FromSlash(id)+".md")
+	if _, err := os.Stat(path); err == nil {
+		fmt.Fprintf(out, "error: practices/%s.md already exists\n", id)
+		return 1
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		fmt.Fprintln(out, "error:", err)
+		return 1
+	}
+	slug := id
+	if m := practiceGroupedRe.FindStringSubmatch(id); m != nil {
+		slug = m[2]
+	}
+	title := strings.ToUpper(slug[:1]) + strings.ReplaceAll(slug[1:], "-", " ")
+	body := fmt.Sprintf(`---
+type: Practice
+status: active
+title: %s
+description: TODO — one sentence on what this practice governs.
+# applies-to: [internal/authz, internal/http]   # the repo paths this governs (R1: they must exist)
+timestamp: %s
+---
+
+# Rules
+
+- TODO — the binding statements, imperative and short: what code MUST do.
+
+# How
+
+TODO — the canonical mechanism, with links to the code that implements it.
+
+# Boundaries
+
+TODO — where this does not apply, and what to do instead there. Optional.
+
+# Rationale
+
+TODO — why it is this way, so a later change knows what it is trading away.
+Optional.
+`, title, time.Now().UTC().Format("2006-01-02T15:04:05Z"))
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		fmt.Fprintln(out, "error:", err)
+		return 1
+	}
+	if code := EnsurePracticesIndex(root, out); code != 0 {
+		return code
+	}
+	fmt.Fprintf(out, "wrote practices/%s.md (type: Practice, status: active)\n", id)
+	fmt.Fprintln(out, "next: fill `# Rules` and set `applies-to` to the paths this governs, then link it from practices/INDEX.md.")
+	fmt.Fprintln(out, "      a practice binds all future code — get human approval before it lands.")
+	return 0
+}
 
 // pinRe tolerates unquoted pins (`fdf_version: 0.4`), matching how the
 // validator and migrate read them.
@@ -243,9 +384,15 @@ func Init(root string, out io.Writer) int {
 	if code := EnsureChangesIndex(root, out); code != 0 {
 		return code
 	}
+	if code := EnsurePracticesIndex(root, out); code != 0 {
+		return code
+	}
+	if code := EnsureDebtsIndex(root, out); code != 0 {
+		return code
+	}
 	fmt.Fprintf(out, "\ndone: initialized FDF bundle at %s\n", root)
 	fmt.Fprintf(out, "  pinned fdf_version %s; wrote INDEX.md, LOG.md, SPEC.md and %d Context stub(s)\n", currentVersion, len(contextDocs))
-	fmt.Fprintln(out, "next: run the fdf-init skill to fill STACK.md, ARCHITECTURE.md, SURFACES.md, and INFRA.md before adding features.")
+	fmt.Fprintln(out, "next: run the fdf-init skill to fill "+contextDocNames()+" before adding features.")
 	fmt.Fprintln(out, "      `fdf validate` fails F9 until those stubs are filled and a feature exists.")
 	return 0
 }

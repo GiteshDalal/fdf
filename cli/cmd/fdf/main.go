@@ -11,7 +11,7 @@ import (
 )
 
 // version is set by goreleaser via -ldflags "-X main.version=...".
-var version = "0.5.1"
+var version = "0.6.0"
 
 // banner is the product header both the short usage and `fdf help` print.
 // The spec version is derived, never written out, so a spec bump cannot
@@ -22,6 +22,8 @@ var commands = map[string]func(args []string, stdout io.Writer) int{
 	"validate": runValidate,
 	"init":     runInit,
 	"new":      runNew,
+	"practice": runPractice,
+	"debt":     runDebt,
 	"install":  runInstall,
 	"serve":    runServe,
 	"migrate":  runMigrate,
@@ -38,9 +40,11 @@ var usage = banner + `
 Usage: fdf <command> [flags]
 
 Commands:
-  validate   Check the bundle against the pinned SPEC (F1-F10 + R1)
+  validate   Check the bundle against the pinned SPEC (F1-F12 + R1)
   init       Scaffold a bundle at the resolved root
   new        Scaffold a draft feature: fdf new <group>/<slug>
+  practice   Scaffold a Practice: fdf practice [<group>/]<slug>
+  debt       Read or file the debt register: fdf debt [--open|--cleanup] [<slug>]
   change     Scaffold a post-delivery Change: fdf change --affects <id> <slug>
   fix        Scaffold a post-delivery Fix: fdf fix --affects <id> <slug>
   history    List a delivered feature's changes and fixes

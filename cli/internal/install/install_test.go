@@ -35,8 +35,14 @@ func TestInstallClaudeCodePlacesSkillsPrimerAndUpgrades(t *testing.T) {
 	if !strings.Contains(string(claudeMd), "slug.spec.md") {
 		t.Fatalf("primer should describe stem-qualified trail siblings:\n%s", claudeMd)
 	}
-	if !strings.Contains(string(claudeMd), "fill the four") {
-		t.Fatalf("primer should say fill the four Context docs:\n%s", claudeMd)
+	if !strings.Contains(string(claudeMd), "fill the five") {
+		t.Fatalf("primer should say fill the five Context docs:\n%s", claudeMd)
+	}
+	if !strings.Contains(string(claudeMd), "DOMAIN.md") {
+		t.Fatalf("primer should mention the DOMAIN.md Context doc:\n%s", claudeMd)
+	}
+	if !strings.Contains(string(claudeMd), "practices/") || !strings.Contains(string(claudeMd), "type: Practice") {
+		t.Fatalf("primer should teach practice documents:\n%s", claudeMd)
 	}
 	out.Reset()
 	if code := Run("claude-code", home, "", false, &out); code != 0 || !strings.Contains(out.String(), "up to date") {
@@ -267,6 +273,42 @@ func TestUpgradeRefreshesShippedV05Primer(t *testing.T) {
 	if !strings.Contains(out.String(), "updated") {
 		t.Fatalf("report should say the primer was updated:\n%s", out.String())
 	}
+}
+
+func TestUpgradeRefreshesShippedV051Primer(t *testing.T) {
+	home := t.TempDir()
+	// Seed the exact primer the v0.5.1 release wrote (untouched managed
+	// content): four Context documents, no practices, no domain language.
+	path := filepath.Join(home, ".claude", "CLAUDE.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(primerV051("docs/features")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if code := Run("claude-code", home, "", false, &out); code != 0 {
+		t.Fatalf("install: %d\n%s", code, out.String())
+	}
+	got := string(mustRead(t, path))
+	if strings.Contains(got, "fill the four") {
+		t.Fatalf("stale four-Context-doc text must be replaced:\n%s", got)
+	}
+	if !strings.Contains(got, "DOMAIN.md") || !strings.Contains(got, "type: Practice") {
+		t.Fatalf("refreshed primer must teach DOMAIN.md and practices:\n%s", got)
+	}
+	if !strings.Contains(out.String(), "updated") {
+		t.Fatalf("report should say the primer was updated:\n%s", out.String())
+	}
+}
+
+func mustRead(t *testing.T, path string) []byte {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
 }
 
 func TestUpgradeLeavesUserEditedPrimerWithNote(t *testing.T) {

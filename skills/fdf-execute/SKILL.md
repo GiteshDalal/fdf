@@ -37,8 +37,13 @@ Stem paths for a feature `<group>/<slug>`:
 
 1. Set `status: in-progress` in the task file; feature to `implementing` if
    this is the first task. `fdf validate` after every frontmatter change.
-2. Do the work per `# Steps`; touch only paths consistent with `resource:`.
-3. Verify `# Acceptance`; set `status: done`; update `timestamp`. When
+2. **Check the practices that govern those paths** before writing anything:
+   a practice whose `applies-to` covers a path in this task's `resource:` is
+   binding, and its `# Rules` are what the code must do. Follow them; if you
+   believe a rule is wrong here, stop and raise it rather than quietly doing
+   it your way.
+3. Do the work per `# Steps`; touch only paths consistent with `resource:`.
+4. Verify `# Acceptance`; set `status: done`; update `timestamp`. When
    completing the FINAL task, flip the task and the feature status in the
    same edit before validating — a lone final-task flip fails F4
    ("implementing but every task is done").
@@ -48,7 +53,9 @@ Stem paths for a feature `<group>/<slug>`:
 The implementer prompt contains, in order:
 
 1. Its task file path plus `slug.spec.md`, `slug.plan.md`, the feature doc,
-   and `slug.surface.md` if present — read these first, task file foremost.
+   `slug.surface.md` if present, and **every practice whose `applies-to`
+   covers a path in the task's `resource:`** — read these first, task file
+   foremost. A subagent has no other way to learn that a practice binds it.
 2. The scope rule: touch only paths consistent with the task's `resource:`;
    siblings run in parallel and staying in-scope is what prevents
    collisions. Never edit anything under the bundle directory.
@@ -84,12 +91,14 @@ The implementer prompt contains, in order:
   case you didn't run is reported as unrun — and the feature stays
   `implementing`.
 
-## Context-document review (after the feature is done)
+## Project-document review (after the feature is done)
 
-The Context docs (`STACK.md`, `ARCHITECTURE.md`, `SURFACES.md`, `INFRA.md`)
-are **critical and immutable without explicit approval** — this is one of
-only two places they may change (the other is fdf-init). After completing
-the feature, check whether the work made any of them stale:
+The Context docs and the practices are **critical and immutable without
+explicit approval** — this is one of only two places they may change (the
+other is fdf-init). After completing the feature, ask four questions in
+order.
+
+**1. Is a Context document now stale?**
 
 - New dependency, language, or data store → STACK.md.
 - New pattern, module boundary, or convention → ARCHITECTURE.md.
@@ -98,14 +107,93 @@ the feature, check whether the work made any of them stale:
   shape → SURFACES.md.
 - New infrastructure — a cache (e.g. Redis), queue, service, env var,
   deployment target → INFRA.md.
+- A new concept with a name, or a name the team has now settled →
+  DOMAIN.md (with its `instead-of` words, so the old names stop spreading).
+
+**2. Did this feature diverge from a practice it is governed by?**
+
+A practice governs the paths in its `applies-to`. If the code you wrote there
+does not follow its `# Rules`, exactly one of two things is true, and you must
+say which: the code is wrong and you fix it, or the divergence is deliberate
+and belongs in that practice's `# Exceptions` with its reason — approved, like
+any other practice edit. Silence is neither.
+
+**3. Did this feature establish a mechanism the next one will repeat?**
+
+The threshold is the **second** occurrence, not the first. One feature doing a
+thing is what its `slug.spec.md` records; two features doing it the same way
+is a practice waiting to be written before a third guesses differently. When
+that line is crossed, propose `fdf practice [<group>/]<slug>`.
+
+A practice is **extracted, not authored**: the decision was already made, in
+the specs of the features that made it. Read them and lift the rules out. The
+spec stays frozen as the episode ("we decided X for this feature"); the
+practice carries the present tense ("X is how this project does it") and is
+the one later work amends.
+
+```markdown
+---
+type: Practice
+status: active
+title: Permission checks
+description: Where authorization decisions are made, and how they are expressed.
+applies-to: [internal/authz, internal/http]
+timestamp: 2026-09-16T00:00:00Z
+---
+
+# Rules
+
+- Every handler resolves permission through `authz.Can(ctx, action, resource)`.
+  No handler reads roles or plan flags directly.
+- A denial on a resource the caller may not know exists returns 404, not 403.
+
+# How
+
+`authz.Middleware` resolves the principal once per request onto the context.
+
+# Boundaries
+
+Background jobs run as the system principal and do not call `Can`.
+```
+
+`# Rules` is required and non-empty (F11): imperative, short, what code MUST
+do. `applies-to` lists the existing repo paths it governs (R1) and is how
+later work finds it — a feature never lists the practices it follows, so a
+practice with no `applies-to` is a document nothing routes to. No Gherkin, no
+spec, no plan, no tasks; the only sibling it may have is `<slug>.log.md`.
+Link it from `practices/INDEX.md`.
+
+Write only what the code **already does**. If the feature revealed a better
+way nobody has adopted yet, that is a proposal for the user, not a practice
+asserting it is already the rule.
+
+**4. Did this feature knowingly leave something undone?**
+
+Work deferred to ship, a rule the new code follows that older code does not, a
+task that ended blocked on something outside the project. `fdf debt
+[<group>/]<slug>` files it: `# Gap` states it concretely (files and counts, not
+impressions — F13), `# Cost` says what carrying it risks, and `resource` names
+the paths, which is how later work finds it.
+
+This is the question that keeps `done` honest. A feature that shipped without
+its batch import is genuinely done *and* has left a gap, and those are two
+facts, not a contradiction — the debt is what lets you state both instead of
+quietly rounding one off. A blocked task is the other case: file the debt, and
+the feature stops being held at `implementing` by something the project has
+decided not to solve now.
+
+Debt is a register entry, not a unit of work, so it gets no plan and no tasks.
+When it is paid, flip it to `resolved` with a `# Resolution` saying what closed
+it; `fdf debt --cleanup` clears resolved entries into `debts/LOG.md` so the
+register stays a list worth reading.
 
 If something changed, **propose** the specific edit to the user and wait for
 explicit approval. Only on approval: make the edit, and log it (what changed
-and why) in `slug.log.md` (if used) and the bundle LOG.md. If nothing
-changed, say so in one line. Never edit a Context doc silently, and never
-edit one the user didn't approve. Remind the user, briefly, that keeping
-these accurate is what keeps the work grounded — agentic engineering, not
-vibe coding.
+and why) in `slug.log.md` (if used), `practices/<slug>.log.md` for a practice,
+and the bundle LOG.md. If nothing changed, say so in one line. Never edit a
+Context document or a practice silently, and never edit one the user didn't
+approve. Remind the user, briefly, that keeping these accurate is what keeps
+the work grounded — agentic engineering, not vibe coding.
 
 ## After a feature is done
 
@@ -116,7 +204,12 @@ capability, and do not edit a delivered feature's Gherkin directly.
 
 ## Rules
 
+- Log at the **narrowest scope that fits**: a decision about one feature goes
+  in its `slug.log.md`, one about a group in that group's `LOG.md`, and only a
+  bundle-wide decision in the root `LOG.md`. Logs are newest-first and never
+  rewritten, so the only thing that keeps the root log readable is not writing
+  feature-scoped entries into it.
 - Statuses reflect reality, not intent — flip in-progress before working.
 - A blocked task stays in-progress with the blocker noted in the task body.
-- Context docs change only with explicit user approval, and every change is
-  logged.
+- Context docs and practices change only with explicit user approval, and
+  every change is logged.

@@ -1,0 +1,7 @@
+exit: 0
+contains: broken cross-link -> /really-missing.md
+not-contains: example/01-first.md
+not-contains: example/02-second.md
+not-contains: /nowhere/INDEX.md
+not-contains: still-sample.md
+not-contains: inline-only.md
