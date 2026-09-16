@@ -103,12 +103,15 @@ order.
 - New dependency, language, or data store → STACK.md.
 - New pattern, module boundary, or convention → ARCHITECTURE.md.
 - New surface convention — API error envelope, naming rule, pagination
-  style, CLI flag/output convention, UI pattern, exemplar link, event
-  shape → SURFACES.md.
+  style, CLI flag/output convention, UI pattern, the wording a surface shows
+  people for a term, exemplar link, event shape → SURFACES.md.
 - New infrastructure — a cache (e.g. Redis), queue, service, env var,
   deployment target → INFRA.md.
 - A new concept with a name, or a name the team has now settled →
   DOMAIN.md (with its `instead-of` words, so the old names stop spreading).
+  The lexicon is internal vocabulary — the bundle and the code's identifiers.
+  A label or locale string that shows a term to people under another word is
+  a surface matter, not a new term and not drift.
 
 **2. Did this feature diverge from a practice it is governed by?**
 

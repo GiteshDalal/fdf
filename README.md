@@ -72,9 +72,12 @@ accurate context is what makes this agentic engineering, not vibe coding.
 **DOMAIN.md** is the project's domain language: one canonical name per concept
 and the words banned in its place. The same thing called `Item` in one
 document, `Product` in another and `SKU` in a third is three things to every
-reader, and that drift reaches schemas and endpoints. Rule **F12** reports a
-banned word found in a feature's Gherkin — a warning by default, an error
-under `fdf validate --strict-domain`.
+reader, and that drift reaches schemas and endpoints. It is the project's
+*internal* vocabulary — the bundle and the code's identifiers — not the words
+a surface shows to people: a UI label or locale string may say "store" for a
+Venue on purpose, and the skills treat that as a surface decision, never as
+drift. Rule **F12** reports a banned word found in a feature's Gherkin — a
+warning by default, an error under `fdf validate --strict-domain`.
 
 **Practices** (`practices/<slug>.md`, `type: Practice`) are the project's
 binding answers to *how do we do X* for one recurring mechanism —

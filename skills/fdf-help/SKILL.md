@@ -37,9 +37,18 @@ architecture, interface principles for **all surfaces** (API/UI/CLI/events/
 inputs — not UI only), build/deployment infrastructure, and domain language.
 
 `DOMAIN.md` is the project's vocabulary: one canonical name per concept and
-the words banned in its place. Use those names in Gherkin, in specs, and in
-the identifiers you write — the same thing called `Item` here and `Product`
-there is two things to the next reader.
+the words banned in its place. It governs the project's **internal** language
+— the bundle's documents (Gherkin, specs, plans, tasks, practices) and the
+identifiers in the code (types, tables, fields, functions, routes, events).
+Use the canonical names there: the same thing called `Item` here and
+`Product` there is two things to the next reader. It does **not** govern what
+a person reads on a surface — UI labels, button text, locale and translation
+files, help text, notifications, end-user error messages, marketing copy —
+nor the names an external system fixes at its own boundary (a payment
+provider's payload fields). A Venue may be shown to customers as "store" on
+purpose; that wording is a surface decision (SURFACES.md), not vocabulary
+drift. Never rewrite user-facing copy to match the lexicon, and never report
+it as drift.
 
 **Practices** live under `practices/` (`type: Practice`) and are the project's
 binding answers to *how do we do X* for recurring mechanisms: authorization,

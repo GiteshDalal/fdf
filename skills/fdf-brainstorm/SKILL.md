@@ -34,6 +34,18 @@ If the capability needs a concept the lexicon does not have, say so — a new
 term is a DOMAIN.md change and needs the user's approval like any other
 Context edit.
 
+The lexicon is the project's *internal* language. What a person reads on a
+surface — a screen title, a button, a locale string — may say "store" for a
+Venue on purpose, and a scenario does not change that. Write steps around the
+concept, not the copy: `When the merchant opens the Venue settings`, not
+`When I tap "Store settings"`. The step definition binds the concept to
+whatever the label says today, so the scenario survives a reworded button or
+a new translation, and a banned word never enters the Gherkin through quoted
+copy. Where the exact wording is the thing under test (an error message the
+user must be able to read), name the outcome in the scenario — `Then the
+merchant is told the Venue is closed` — and pin the literal string in
+`slug.test.md`, where the case that checks it lives.
+
 **Read the practices that will govern the code.** `practices/` holds the
 project's binding answers for recurring mechanisms; a practice whose
 `applies-to` covers the paths this feature will touch constrains the design

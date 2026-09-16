@@ -42,7 +42,7 @@ shortens every phase:
 | What conventions should the code follow? | `ARCHITECTURE.md`, `SURFACES.md`, `STACK.md`, `INFRA.md` |
 | How was this mechanism supposed to be done? | the practice whose `applies-to` covers the file in the trace — `# Rules` is binding, and code that ignores one is a common root cause |
 | Is this already a known gap? | `fdf debt --open` — a debt whose `resource` names the file in the trace has already diagnosed this, and says why it was left |
-| What is this thing actually called? | `DOMAIN.md` — grep the bundle for the canonical term, not the word in the bug report |
+| What is this thing actually called? | `DOMAIN.md` — grep the bundle for the canonical term, not the word in the bug report; a report usually names what the reporter saw on screen, and the surface is allowed to use a word the lexicon bans |
 | Is the bundle itself consistent? | `fdf validate` |
 
 To find the feature that owns a symptom, grep the bundle for the symptom's
@@ -54,6 +54,12 @@ the lexicon bans and the documents therefore never use — and grep it for the f
 grep -rn "refund" docs/features --include='*.md'
 grep -rn "src/payments/refund.ts" docs/features   # which task built this?
 ```
+
+The report's word maps to the term through `instead-of`; the surface that
+showed the word does not. A UI label or locale string that says "store" for a
+Venue is not a finding — the lexicon governs the bundle and the code's
+identifiers, not what a person reads on screen — so "the label uses a banned
+word" is never a root cause and never routes to a Fix.
 
 ## Phase 1 — Reproduce, and read what was promised
 
