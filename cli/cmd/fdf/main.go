@@ -6,10 +6,17 @@ import (
 	"io"
 	"os"
 	"strings"
+
+	"github.com/GiteshDalal/fdf/cli/internal/scaffold"
 )
 
 // version is set by goreleaser via -ldflags "-X main.version=...".
-var version = "0.4.0-dev"
+var version = "0.5.0-dev"
+
+// banner is the product header both the short usage and `fdf help` print.
+// The spec version is derived, never written out, so a spec bump cannot
+// leave a stale literal behind in one of the two.
+var banner = fmt.Sprintf("fdf — Feature Document Format tooling (SPEC v%s)", scaffold.CurrentVersion())
 
 var commands = map[string]func(args []string, stdout io.Writer) int{
 	"validate": runValidate,
@@ -26,7 +33,7 @@ var commands = map[string]func(args []string, stdout io.Writer) int{
 	"release":  runRelease,
 }
 
-const usage = `fdf — Feature Document Format tooling (SPEC v0.5)
+var usage = banner + `
 
 Usage: fdf <command> [flags]
 
