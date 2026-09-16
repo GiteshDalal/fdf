@@ -131,9 +131,8 @@ has its own `.fdf-version` markers). A machine with both will carry two primers
 | project | codex | `<proj>/.codex/skills/` | `<proj>/AGENTS.md` |
 | project | opencode | `<proj>/.opencode/skills/` | `<proj>/AGENTS.md` |
 
-The agent-facing surface is **skills only** — seven of them (`fdf-help`,
-`fdf-init`, `fdf-brainstorm`, `fdf-plan`, `fdf-execute`, `fdf-change`,
-`fdf-validate`), identical across harnesses. Earlier versions also shipped Claude Code slash
+The agent-facing surface is **skills only** — [eight of them](#skills),
+identical across harnesses. Earlier versions also shipped Claude Code slash
 commands; those wrapped skills the model can reach directly, so `fdf install`
 now removes them (leaving any commands you wrote yourself alone).
 
@@ -161,6 +160,111 @@ the **project** root.
    refreshed. `fdf install` upgrades skills automatically when the version
    marker changes; if your primer heading already exists with old wording,
    edit or replace that section.
+
+## Skills
+
+`fdf install` places eight skills into your harness. Five walk a feature
+through its lifecycle; the other three are not stages at all — a router, a
+diagnostic front door, and a gate, each of which applies at every stage. An
+agent needs no prior FDF knowledge: `fdf-help` routes, and the spec is
+vendored in the bundle it is working in.
+
+| Skill | What it is for |
+|---|---|
+| **`fdf-help`** | The router. Finds the feature and its status, then sends the work to the right skill — *before* any code is written, including for "tiny" changes. |
+| **`fdf-init`** | The project-context interview. Fills `STACK` / `ARCHITECTURE` / `SURFACES` / `INFRA` with your approval, so every later feature is designed against what is actually true. |
+| **`fdf-brainstorm`** | Idea → feature document. Questions the idea one at a time, writes the Gherkin, and gets your explicit design approval before writing `slug.spec.md`. |
+| **`fdf-plan`** | Approved spec → executable plan. Tasks a zero-context implementer could run, plus `slug.test.md`: how each scenario will be *proven*. |
+| **`fdf-execute`** | Plan → working code. Works tasks serially or in parallel batches, keeps statuses truthful, and will not call a feature done on an unrun test case. |
+| **`fdf-change`** | Post-delivery writing. A `Change` when a delivered feature must behave differently; a `Fix` when the code drifted from what its document already says. |
+| **`fdf-debug`** | Something is broken and nobody knows why yet. Finds the root cause first, then routes the repair — Fix, Change, new feature, or task work. |
+| **`fdf-validate`** | The gate after every bundle edit. Turns `fdf validate`'s rule codes into the *honest* fix, and refuses the fake ones (deleting a scenario so F8 stops asking). |
+
+The three human gates are: the Context interview (`fdf-init`), the design
+approval (`fdf-brainstorm`, and `fdf-change` for a `Change`), and any edit to
+a Context document. Everything between them is mechanical work an agent does
+on its own.
+
+### Common flows
+
+**Build a new capability**
+
+`fdf-help` → `fdf-brainstorm` → `fdf-plan` → `fdf-execute`
+
+The spine. Brainstorm stops at "Do you approve this design?" and writes
+nothing before you say yes; plan turns the approved spec into tasks and the
+test document; execute works the tasks, flipping statuses as it goes, and
+reports the actual command output per test case. It ends by asking whether
+the work made any Context doc stale.
+
+**Fix a bug in a delivered feature**
+
+`fdf-debug` → *(root cause)* → `fdf-change` → `fdf fix` or `fdf change`
+
+Debug first, because the root cause decides the document. Code contradicts a
+scenario that already exists → a **`Fix`** (no design gate; the lasting
+artifact is the regression case added to the feature's `slug.test.md`). No
+scenario covers the case, or the scenario itself is wrong → a **`Change`**,
+because someone now has to decide what should happen, and that needs the
+design gate.
+
+**Fix a bug in a feature still being built**
+
+`fdf-debug` → `fdf-execute`
+
+A feature that has not shipped is repaired in place as task work. `Change`
+and `Fix` are only for `done` / `retired` features — F10 rejects anything
+else.
+
+**Change what a delivered feature does**
+
+`fdf-help` → `fdf-change`
+
+A request, not a defect, so there is nothing to diagnose. The change declares
+its effects up front (`add:` / `modify:` / `remove:` per scenario), and F10
+will not let it reach `done` until the feature's Gherkin actually says so.
+
+**Retire a capability**
+
+`fdf-change` → a `Change` with `retires:` and a `# Rationale`
+
+The feature document is never deleted — it records behavior the software once
+had. The feature goes to `retired`, with `replaced-by:` when a successor
+exists.
+
+**Update ARCHITECTURE.md / INFRA.md after work that changed reality**
+
+`fdf-execute` / `fdf-change` → Context-doc review → your approval → LOG entry
+
+Not a separate flow you start — it is the last step of the work that made the
+doc stale. The agent *proposes* the specific edit; nothing is written until
+you approve it, and the change is logged. If a Context doc is stale on its
+own, with no work in flight, re-run the `fdf-init` interview for that
+document.
+
+**Migrate infrastructure** (new datastore, new deployment target)
+
+First question: **does anything a user or a calling system can observe
+change?** — limits, error shapes, endpoints, auth, guarantees.
+
+- **Yes** → every feature that promises that behavior gets a `Change`
+  (`fdf-change`), or a new feature via `fdf-brainstorm` if the migration adds
+  a capability. Then the `INFRA.md` / `STACK.md` update, approved and logged.
+- **No** → the work is behavior-neutral, so no feature document changes. The
+  only bundle artifact is the approved `INFRA.md` / `STACK.md` edit plus its
+  LOG entry.
+
+FDF has no document type for behavior-neutral engineering work, and
+deliberately so: the bundle records what the software *does*, not every task
+performed on it. Track the migration itself in your issue tracker.
+
+**Start a project, or adopt FDF in an existing one**
+
+`fdf init` → `fdf-init` → `fdf-brainstorm`
+
+The interview is the most leveraged conversation in the whole workflow, and
+F9 blocks feature work until it is done — accurate context is what makes an
+agent build *this* project's way instead of guessing.
 
 ## Spec
 

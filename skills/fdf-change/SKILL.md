@@ -39,6 +39,11 @@ If the new behavior reads as its own `Feature:` block with its own
 As-a / I-want / So-that, it is not a change at all — it is a **new feature**
 (fdf-brainstorm), which may record its lineage with `depends-on`.
 
+Do not settle this from the report's wording. A defect's route follows from
+its **root cause**, so if nobody has diagnosed it yet, run **fdf-debug**
+first and come back with the cause in one sentence — that is also what the
+Fix body's `# Symptom` and `# Root cause` sections are waiting for.
+
 ## Process
 
 1. **Confirm the feature is delivered.** `affects` may only name features that
@@ -71,7 +76,10 @@ As-a / I-want / So-that, it is not a change at all — it is a **new feature**
    For a `Fix`, under `# Regression cases`, one heading per affected feature
    and one entry per scenario it proves:
    `- <scenario name> — <command, test path, or manual procedure>`.
-   Every name must **already exist** in that feature.
+   Every name must **already exist** in that feature. Fill `# Symptom` with
+   the verbatim reproduction and its failing output, and `# Root cause` with
+   why the code diverged — both come straight out of the fdf-debug
+   investigation; neither is a guess written after the patch.
 5. **For a `Change`, get the design approved.** Present approach, alternatives
    with trade-offs (lead with your recommendation), accepted trade-offs. One
    explicit gate: "Do you approve this design?" Only on yes, write
