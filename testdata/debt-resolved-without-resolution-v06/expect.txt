@@ -1,0 +1,3 @@
+exit: 1
+contains: status 'resolved' requires a `# Resolution`
+contains: (F13)

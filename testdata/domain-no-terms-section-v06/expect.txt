@@ -1,0 +1,3 @@
+exit: 1
+contains: missing required `# Terms` section
+contains: (F12)

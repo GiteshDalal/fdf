@@ -3,8 +3,9 @@
 //
 //	v0.1 → case renames, vendored-spec removal, link rewrites, TEST stubs
 //	v0.2/v0.3 → lift nested trail to stem-qualified siblings, rewrite links
-//	v0.4 → nothing structural: 0.4→0.5 is purely additive
-//	any → pin current, RefreshSpec, EnsureContextStubs, changes/INDEX.md, validate
+//	v0.4/v0.5 → nothing structural: 0.4→0.5 and 0.5→0.6 add documents, not moves
+//	any → pin current, RefreshSpec, EnsureContextStubs, changes/ and
+//	      practices/ and debts/ INDEX.md, validate
 //
 // Ends by validating the result with FreshStubsAdvisory so unfilled Context
 // stubs do not fail the migration (plain `fdf validate` will still enforce F9).
@@ -24,7 +25,7 @@ import (
 )
 
 const specURL = "https://github.com/GiteshDalal/fdf/blob/main/SPEC.md"
-const currentVersion = "0.5"
+const currentVersion = "0.6"
 
 // Version is the CLI version, set by the command wrapper. A migrate that
 // finds the pin already current is indistinguishable from a migrate that has
@@ -88,15 +89,25 @@ func Run(root, repoRoot string, out io.Writer) int {
 		if code := scaffold.EnsureContextStubs(root, out); code != 0 {
 			return code
 		}
+		if code := scaffold.EnsureChangesIndex(root, out); code != 0 {
+			return code
+		}
+		if code := scaffold.EnsurePracticesIndex(root, out); code != 0 {
+			return code
+		}
+		if code := scaffold.EnsureDebtsIndex(root, out); code != 0 {
+			return code
+		}
 		fmt.Fprintln(out, "\nvalidating bundle:")
 		return bundle.Validate(root, bundle.Options{RepoRoot: repoRoot, Out: out, FreshStubsAdvisory: true})
 	}
 
-	// A bundle already in the stem-qualified layout (v0.4) needs no structural
-	// work: 0.4 → 0.5 only adds changes/ and moves the pin. Running the
-	// pre-0.4 chain over it would be actively wrong — pre-flight reads every
-	// `slug.spec.md` as an illegal dotted basename.
-	stem := pin == "0.4"
+	// A bundle already in the stem-qualified layout (v0.4 onward) needs no
+	// structural work: 0.4 → 0.5 only adds changes/, and 0.5 → 0.6 only adds
+	// practices/ and DOMAIN.md. Running the pre-0.4 chain over one would be
+	// actively wrong — pre-flight reads every `slug.spec.md` as an illegal
+	// dotted basename.
+	stem := pin == "0.4" || pin == "0.5"
 	var moves map[string]string
 	if !stem {
 
@@ -198,6 +209,12 @@ func Run(root, repoRoot string, out io.Writer) int {
 	if code := scaffold.EnsureChangesIndex(root, out); code != 0 {
 		return code
 	}
+	if code := scaffold.EnsurePracticesIndex(root, out); code != 0 {
+		return code
+	}
+	if code := scaffold.EnsureDebtsIndex(root, out); code != 0 {
+		return code
+	}
 
 	// 9. Report what actually changed, then validate. Without this the only
 	// evidence of a migration is a scroll of per-file lines, and a migration
@@ -218,7 +235,7 @@ func Run(root, repoRoot string, out io.Writer) int {
 	fmt.Fprintln(out, "\nvalidating migrated bundle:")
 	code := bundle.Validate(root, bundle.Options{RepoRoot: repoRoot, Out: out, FreshStubsAdvisory: true})
 	if code == 0 {
-		fmt.Fprintln(out, "\nnext: run the fdf-init skill to fill STACK.md, ARCHITECTURE.md, SURFACES.md, and INFRA.md.")
+		fmt.Fprintln(out, "\nnext: run the fdf-init skill to fill "+scaffold.ContextDocNames()+".")
 		fmt.Fprintln(out, "warning: the next plain `fdf validate` will fail F9 until those stubs are filled (migrate passes only because FreshStubsAdvisory treats freshly scaffolded stubs as warnings).")
 	}
 	return code

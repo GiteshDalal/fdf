@@ -19,6 +19,7 @@ func runValidate(args []string, stdout io.Writer) int {
 	fs := newFlagSet("validate", stdout)
 	root := rootFlag(fs)
 	repoRoot := fs.String("repo-root", "", "project root for R1 resource checks (default: auto-detect)")
+	strictDomain := fs.Bool("strict-domain", false, "promote F12 banned-word warnings to errors (v0.6 bundles)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -38,5 +39,5 @@ func runValidate(args []string, stdout io.Writer) int {
 			rr = pr
 		}
 	}
-	return bundle.Validate(bundleRoot, bundle.Options{RepoRoot: rr, Out: stdout})
+	return bundle.Validate(bundleRoot, bundle.Options{RepoRoot: rr, Out: stdout, StrictDomain: *strictDomain})
 }

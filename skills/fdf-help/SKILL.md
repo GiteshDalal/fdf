@@ -31,10 +31,29 @@ the feature document already says). Both may be filed flat or in groups, both
 take the same `slug.spec.md`/`slug.plan.md` trail and task directory, and both
 name the features they touch in an `affects:` list.
 
-Four bundle-root **Context documents** — `STACK.md`, `ARCHITECTURE.md`,
-`SURFACES.md`, `INFRA.md` — hold the project's current stack, architecture,
-interface principles for **all surfaces** (API/UI/CLI/events/inputs — not UI
-only), and build/deployment infrastructure.
+Five bundle-root **Context documents** — `STACK.md`, `ARCHITECTURE.md`,
+`SURFACES.md`, `INFRA.md`, `DOMAIN.md` — hold the project's current stack,
+architecture, interface principles for **all surfaces** (API/UI/CLI/events/
+inputs — not UI only), build/deployment infrastructure, and domain language.
+
+`DOMAIN.md` is the project's vocabulary: one canonical name per concept and
+the words banned in its place. Use those names in Gherkin, in specs, and in
+the identifiers you write — the same thing called `Item` here and `Product`
+there is two things to the next reader.
+
+**Practices** live under `practices/` (`type: Practice`) and are the project's
+binding answers to *how do we do X* for recurring mechanisms: authorization,
+permission checks, payment capture, database access. Before writing code in a
+path a practice's `applies-to` covers, read it and follow its `# Rules`. They
+are living documents and, like the Context docs, change only with explicit
+user approval.
+
+**Debt** lives under `debts/` (`type: Debt`) and records a known gap between
+what the project says and what the code does — work left undone, and rules the
+code does not follow everywhere yet. `fdf debt` reads the register,
+`fdf debt --open` shows what is outstanding, and a debt's `resource` paths are
+how it reaches work that touches them. A debt is a register entry, not a unit
+of work: the work that closes it is a Change, a Fix, or plain code work.
 
 You are not expected to know FDF. Two commands tell you everything:
 
@@ -45,14 +64,14 @@ You are not expected to know FDF. Two commands tell you everything:
 
 The CLI keeps the bundle honest: `fdf validate` must exit 0 after any bundle
 edit. Scaffold with `fdf new <group>/<slug>`, `fdf change`, `fdf fix`. The
-rules the fdf skills cite by number (F1–F10, R1) are defined in the spec.
+rules the fdf skills cite by number (F1–F13, R1) are defined in the spec.
 
 The bundle is the source of truth for what the software does. Code that
 changes behavior without touching the bundle makes the bundle lie — that is
 the failure FDF exists to prevent, and tiny changes are where it happens.
 
-**Context documents are critical.** STACK/ARCHITECTURE/SURFACES/INFRA are the
-project's living context; accurate, they let you build the project's way
+**Context documents are critical.** STACK/ARCHITECTURE/SURFACES/INFRA/DOMAIN
+are the project's living context; accurate, they let you build the project's way
 instead of guessing — agentic engineering, not vibe coding. They are filled
 once by the fdf-init interview and changed only with explicit user approval
 (the post-feature step in fdf-execute), each change logged. Never edit them
@@ -65,7 +84,7 @@ This is the distinction that decides what you touch when something changes:
 
 | | Documents | When the software changes |
 |---|---|---|
-| **Living** — the system **today** | Feature Gherkin, `slug.test.md`, `slug.surface.md`, Context docs | **Amend in place.** A living document describing behavior the software no longer has makes the bundle lie. |
+| **Living** — the system **today** | Feature Gherkin, `slug.test.md`, `slug.surface.md`, practices, debts, Context docs | **Amend in place.** A living document describing behavior the software no longer has makes the bundle lie. |
 | **Episodic** — a record of **one piece of work** | `slug.spec.md`, `slug.plan.md`, tasks, Change/Fix, log entries | **Never rewrite.** New work gets a new episode; the old one records why things were done that way. |
 
 So a delivered feature that changes keeps **one** feature document, whose
@@ -91,8 +110,14 @@ key: not the verb the user used, not the size of the change.
 | *(any bundle file just edited, or `fdf validate` failing)* | fdf-validate |
 
 Check the Context docs first: if `fdf validate` warns or fails on unfilled
-STACK/ARCHITECTURE/SURFACES/INFRA stubs, route to fdf-init before any feature
-work — F9 will block it otherwise.
+STACK/ARCHITECTURE/SURFACES/INFRA/DOMAIN stubs, route to fdf-init before any
+feature work — F9 will block it otherwise.
+
+Whichever stage you land in, the project-level documents come with you: write
+in `DOMAIN.md`'s vocabulary, follow the `# Rules` of any practice whose
+`applies-to` covers the paths you are about to touch, and check
+`fdf debt --open` for a gap already filed against them — a known gap is not a
+discovery, and re-diagnosing one wastes the work someone already did.
 
 fdf-validate is not a stage — it is the gate that closes every one of them.
 Use it after any edit to a bundle file, including edits made outside a

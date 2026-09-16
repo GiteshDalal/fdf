@@ -11,9 +11,12 @@ New to FDF? Run `fdf spec` for the format rules and `fdf help` for the CLI.
 The fdf-help skill explains how the skills fit together.
 
 **Read the Context docs first** — `STACK.md`, `ARCHITECTURE.md`,
-`SURFACES.md`, `INFRA.md`. A change lands in a system that already exists;
-ground it in the documented stack and conventions, and flag explicitly when
-the change would depart from them.
+`SURFACES.md`, `INFRA.md`, `DOMAIN.md`. A change lands in a system that
+already exists; ground it in the documented stack and conventions, and flag
+explicitly when the change would depart from them. Write scenario names and
+declarations in the vocabulary `DOMAIN.md` fixes — and read the practices
+whose `applies-to` covers the code this will touch, since they bind this work
+exactly as they bind a new feature.
 
 ## Which document am I writing?
 
@@ -106,9 +109,56 @@ Fix body's `# Symptom` and `# Root cause` sections are waiting for.
    F10 refuses a `done` change whose declared effects are not reality.
 9. **Log it** — `slug.log.md` on the affected feature (what changed and why),
    and the bundle `LOG.md`.
-10. **Context-doc review**, exactly as in fdf-execute: if the work made
-    STACK/ARCHITECTURE/SURFACES/INFRA stale, *propose* the edit and wait for
-    explicit approval. Never edit one silently.
+10. **Project-document review**, exactly as in fdf-execute — all four
+    questions. Did this make a Context document stale (including a term in
+    DOMAIN.md)? Did the code diverge from a practice that governs its paths,
+    and is that a defect or an approved `# Exceptions` entry? Did it establish
+    a mechanism a second feature now repeats, which should become a practice?
+    Did it knowingly leave something undone — `fdf debt [<group>/]<slug>`?
+    *Propose* each edit and wait for explicit approval. Never edit a Context
+    document or a practice silently. See *Practices and a change* below —
+    post-delivery work is where practice drift actually surfaces.
+
+## Practices and a change
+
+Post-delivery work is where the gap between what a practice says and what the
+code does becomes visible, so three cases come up here that do not come up
+during a feature.
+
+**A Fix whose root cause was an unwritten rule.** The code diverged, and when
+you look, nothing told it not to. That is a practice waiting to be written:
+the same defect will arrive again in the next handler. Propose one, with the
+Fix as its evidence — this is the strongest kind of practice, because it costs
+nothing to argue for. Fixing the one call site the bug surfaced in while the
+other eleven still do it the old way is a **debt**, not a finished job: file it
+with the paths, so the next reader sees a known gap instead of an inconsistency
+they have to re-derive.
+
+**A Fix whose root cause was a written rule nobody followed.** The practice
+exists and was ignored. Do not amend the practice to match the code; fix the
+code, and consider whether the `# Rules` line was too vague to follow —
+sharpening it is an edit worth proposing.
+
+**A Change that alters the mechanism itself.** When the new behavior means the
+project now does something a *different* way, the practice must change too. It
+is a **living** document, so amend it in place — the practice always describes
+today — and let the Change document record why. Two shapes:
+
+- *The mechanism is refined* — edit the `# Rules`, log it in
+  `practices/<slug>.log.md`.
+- *The mechanism is replaced* — set the old practice to
+  `status: superseded` with `superseded-by: practices/<new-slug>` and write
+  the replacement. Never delete it: code in the tree still follows it, and the
+  old document is what explains that code. F11 requires the `superseded-by`
+  target to exist. The code still on the old mechanism is a debt — file it,
+  because "superseded" describes the document, not the tree.
+
+A practice is never forked per change, and a change never gets its own copy of
+one. One practice per mechanism, amended forever.
+
+Both require explicit user approval before you write. A practice binds all
+future code, so changing one is a bigger decision than the change that
+prompted it.
 
 ## Retiring a feature
 
@@ -128,6 +178,8 @@ deleted — the document records behavior the software once had.
 - Never edit a delivered feature's Gherkin outside a Change or Fix: then
   nothing records why, and nothing verified that the code followed.
 - Never rewrite the feature's original spec, plan, or tasks.
+- Never fork a practice per change: amend the one that exists, or supersede
+  it. A practice describes today, and there is only one today.
 - Never hand-write a back-link on the feature. `affects:` is the whole link;
   `fdf history <group>/<slug>` computes the trail.
 - A `Fix` names only scenarios that already exist. If you need a new one, it

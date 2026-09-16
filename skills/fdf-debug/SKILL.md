@@ -40,10 +40,14 @@ shortens every phase:
 | What was built, and where | `<group>/<slug>.plan.md` and the tasks under `<group>/<slug>/` — their `resource:` paths name the code |
 | What happened since it shipped? | `fdf history <group>/<slug>`, `<group>/<slug>.log.md`, bundle `LOG.md` |
 | What conventions should the code follow? | `ARCHITECTURE.md`, `SURFACES.md`, `STACK.md`, `INFRA.md` |
+| How was this mechanism supposed to be done? | the practice whose `applies-to` covers the file in the trace — `# Rules` is binding, and code that ignores one is a common root cause |
+| Is this already a known gap? | `fdf debt --open` — a debt whose `resource` names the file in the trace has already diagnosed this, and says why it was left |
+| What is this thing actually called? | `DOMAIN.md` — grep the bundle for the canonical term, not the word in the bug report |
 | Is the bundle itself consistent? | `fdf validate` |
 
 To find the feature that owns a symptom, grep the bundle for the symptom's
-vocabulary — and grep it for the file in the stack trace, because a task's
+vocabulary — in `DOMAIN.md`'s canonical terms, since the report may use a word
+the lexicon bans and the documents therefore never use — and grep it for the file in the stack trace, because a task's
 `resource:` line names the code that task produced:
 
 ```bash
@@ -119,6 +123,8 @@ Work down; the first row that matches wins:
 | No scenario covers the case, or the scenario itself is what is wrong | **Change**: `fdf change --affects <group>/<slug>[,…] [<group>/]<slug>` → fdf-change |
 | The behavior that should exist reads as its own `Feature:` block | New feature → fdf-brainstorm, recording lineage with `depends-on` |
 | The root cause is upstream — a dependency, a platform, an external service | Still ours to answer: what should our software do when that happens? That decision is a Change. A version pin with no observable difference is neutral. |
+| The code ignored a practice that governs its path | Route by what a user can observe, as above — but say so in the handoff, because it is the same class of defect the practice exists to prevent. If the practice itself is wrong, that is a practice change and needs the user's approval, never a quiet edit. |
+| An open debt already names this gap | Not a new finding. Say so, and route the repair by what a user can observe, as above. Closing the gap for good means flipping the debt to `resolved` with a `# Resolution`; fixing only the site that surfaced means the debt stays open with its `resource` narrowed. Never leave the register saying something the tree no longer does. |
 
 Rows four and five are the ones people get wrong. "It's a bug" does not make
 it a Fix. A Fix restores behavior **someone already approved**, so it names
@@ -128,6 +134,11 @@ it needs the design gate.
 
 **The document was silent** is the most common finding of all, and it is a
 Change: nobody decided what should happen, so someone has to decide now.
+
+**Check the register before diagnosing.** `fdf debt --open` costs one command,
+and a symptom that is already a filed debt is a different conversation: the
+gap was known, the reason it was left is written down, and the question is
+whether that decision still holds — not what is broken.
 
 Then announce: "Root cause: <one sentence>. That is a
 <Fix | Change | feature | task> — using fdf-<skill>."

@@ -3,10 +3,15 @@
 One file per spec version; each is the normative text for bundles pinning that
 version. The current version is the highest-numbered file.
 
-- [`0.5.md`](0.5.md) — current. Adds post-delivery documents: `Change` and
-  `Fix` under `changes/` (flat or grouped), rule F10 (change integrity), the
-  `retired` feature status, feature `depends-on`, and releases that may list
-  changes. Purely additive over 0.4.
+- [`0.6.md`](0.6.md) — current. Adds `DOMAIN.md` (a fifth Context document
+  holding the project's domain language), `Practice` documents under
+  `practices/`, `Debt` documents under `debts/`, and rules F11 (practice
+  integrity), F12 (domain integrity) and F13 (debt integrity). Additive over
+  0.5 except that F9 now requires `DOMAIN.md`.
+- [`0.5.md`](0.5.md) — superseded. Still validated for back-compat. Adds
+  post-delivery documents: `Change` and `Fix` under `changes/` (flat or
+  grouped), rule F10 (change integrity), the `retired` feature status,
+  feature `depends-on`, and releases that may list changes.
 - [`0.4.md`](0.4.md) — superseded. Still validated for back-compat.
   Stem-qualified trail layout
   (`slug.spec.md` / `slug.plan.md` / `slug.test.md` beside the feature; tasks

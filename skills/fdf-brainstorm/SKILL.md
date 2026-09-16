@@ -17,13 +17,28 @@ and use fdf-change — a second feature document for one capability is the drift
 FDF exists to prevent.
 
 **Read the Context docs first.** `STACK.md`, `ARCHITECTURE.md`,
-`SURFACES.md`, and `INFRA.md` at the bundle root are the project's stack,
-architecture, surface (interface) principles, and infrastructure. Ground the
-design in them — propose an approach that fits the documented stack,
-principles, and surface conventions, and flag it explicitly when a good
-design would require departing from them (a new dependency, a new pattern, a
-new surface convention). If they're still unfilled stubs, stop and run
-fdf-init first.
+`SURFACES.md`, `INFRA.md`, and `DOMAIN.md` at the bundle root are the
+project's stack, architecture, surface (interface) principles, infrastructure,
+and domain language. Ground the design in them — propose an approach that fits
+the documented stack, principles, and surface conventions, and flag it
+explicitly when a good design would require departing from them (a new
+dependency, a new pattern, a new surface convention). If they're still
+unfilled stubs, stop and run fdf-init first.
+
+**Write the Gherkin in the project's words.** `DOMAIN.md` gives one canonical
+name per concept and lists the words banned in its place; use the canonical
+ones in every scenario, and in the names you propose for anything new. F12
+reports a banned word in a feature's Gherkin, but the point is upstream of the
+warning: a scenario that calls a Venue a "store" has already started the drift.
+If the capability needs a concept the lexicon does not have, say so — a new
+term is a DOMAIN.md change and needs the user's approval like any other
+Context edit.
+
+**Read the practices that will govern the code.** `practices/` holds the
+project's binding answers for recurring mechanisms; a practice whose
+`applies-to` covers the paths this feature will touch constrains the design
+before you propose it. Designing against one is a legitimate thing to
+propose — designing in ignorance of one is not.
 
 ## Process
 

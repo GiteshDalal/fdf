@@ -1,0 +1,3 @@
+exit: 1
+contains: unknown trail role "spec" under debts/
+contains: a debt is a register entry, not a unit of work

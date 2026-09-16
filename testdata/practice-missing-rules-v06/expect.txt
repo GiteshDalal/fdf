@@ -1,0 +1,3 @@
+exit: 1
+contains: needs a non-empty `# Rules` section
+contains: (F11)
