@@ -119,6 +119,16 @@ lexicon is out of date, and that is a **Context-document change** — propose it
 to the user and only edit `DOMAIN.md` on explicit approval, exactly as for the
 other four. Never quietly drop an `instead-of` entry to clear a warning.
 
+**The banned word is inside quoted user-facing copy** — `When I tap "Store
+settings"`. The lexicon governs the project's internal language (the bundle
+and the code's identifiers), not what a person reads on a surface, so the
+label is not wrong and must not be changed to clear the warning — nor may
+locale files, help text or any other external wording. Reword the step around
+the concept — `When the merchant opens the Venue settings` — and let the step
+definition or `slug.surface.md` carry the literal label. Where the exact
+wording is the thing under test, name the outcome in the scenario and pin the
+string in `slug.test.md`.
+
 A rewording that touches a **delivered** feature's Gherkin is a `Change`, not
 an edit: scenario names are the join F8 and F10 both check, and renaming one
 in place breaks that trail. Report the warning and route to fdf-change.

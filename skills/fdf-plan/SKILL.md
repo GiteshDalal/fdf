@@ -25,7 +25,11 @@ vocabulary — task `resource:` paths, tools, and test commands must match them,
 not invented ones. When the feature has an optional `slug.surface.md`, ground
 interface choices (API shapes, CLI flags, UI flows) there and in SURFACES.md.
 Name things in tasks the way `DOMAIN.md` names them: the identifiers a task
-dictates are the ones that end up in the code.
+dictates are the ones that end up in the code. The lexicon stops at the
+surface, though — when a task dictates user-facing copy (a screen title, a
+button, a locale string), that wording follows SURFACES.md and the feature's
+`slug.surface.md`, and may legitimately differ from the term: a task can name
+the `Venue` type in one line and title its screen "My store" in the next.
 
 **Write for a zero-context implementer.** Whoever executes a task may be a
 fresh agent that sees only that task file and `slug.spec.md` — no session

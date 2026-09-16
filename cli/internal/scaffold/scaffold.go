@@ -45,7 +45,8 @@ var contextDocs = []struct{ file, title, purpose, headings string }{
 const domainTermsStub = "# Terms\n\n" +
 	"<!-- One `## <Term>` heading per canonical term. The first line under it is\n" +
 	"     the definition; then, optionally:\n" +
-	"       - instead-of: the words this term replaces (banned everywhere)\n" +
+	"       - instead-of: the words this term replaces (banned in documents and\n" +
+	"         code identifiers, not in the copy a surface shows people)\n" +
 	"       - code: how the term appears in the code (type, table, field)\n" +
 	"       - see: a link to the practice that explains it in depth\n\n" +
 	"## Venue\n" +

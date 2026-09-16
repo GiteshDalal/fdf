@@ -302,6 +302,33 @@ func TestUpgradeRefreshesShippedV051Primer(t *testing.T) {
 	}
 }
 
+func TestUpgradeRefreshesShippedV06Primer(t *testing.T) {
+	home := t.TempDir()
+	// Seed the exact primer the v0.6.0 release wrote (untouched managed
+	// content): DOMAIN.md taught without its surface boundary.
+	path := filepath.Join(home, ".claude", "CLAUDE.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(primerV06("docs/features")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if code := Run("claude-code", home, "", false, &out); code != 0 {
+		t.Fatalf("install: %d\n%s", code, out.String())
+	}
+	got := string(mustRead(t, path))
+	if strings.Contains(got, "in the identifiers you write") {
+		t.Fatalf("stale unscoped DOMAIN.md text must be replaced:\n%s", got)
+	}
+	if !strings.Contains(got, "does not govern what a person reads on a surface") {
+		t.Fatalf("refreshed primer must scope the lexicon to internal language:\n%s", got)
+	}
+	if !strings.Contains(out.String(), "updated") {
+		t.Fatalf("report should say the primer was updated:\n%s", out.String())
+	}
+}
+
 func mustRead(t *testing.T, path string) []byte {
 	t.Helper()
 	raw, err := os.ReadFile(path)

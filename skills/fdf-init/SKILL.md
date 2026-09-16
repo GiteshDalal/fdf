@@ -29,7 +29,7 @@ comes first.
 | `ARCHITECTURE.md` | The architecture style, how code is organized, the design principles and conventions contributors follow, and the load-bearing decisions behind them. |
 | `SURFACES.md` | Interface and interaction principles for **all surfaces** through which people or systems engage the project — APIs, human UIs, CLIs, events/webhooks, file formats, and other inputs (not “UI only”). Naming, errors, versioning, UX principles, CLI conventions, assets/exemplars. |
 | `INFRA.md` | How the project is built, tested, packaged, deployed; its environments and runtime targets; the operational dependencies (CI, hosting, queues, caches, secrets). |
-| `DOMAIN.md` | The project's **domain language**: one canonical name per concept, the words banned in its place, and how each name appears in the code. |
+| `DOMAIN.md` | The project's **domain language**: one canonical name per concept, the words banned in its place, and how each name appears in the code. Internal vocabulary only — what a surface shows a person (labels, locale strings) is SURFACES.md's business. |
 
 Each is a **current snapshot**, not a roadmap and not a changelog. Write only
 what is true now (or true for the project being started).
@@ -53,7 +53,11 @@ Spec/Architecture territory.
    For DOMAIN.md specifically, harvest the **nouns**: model and entity class
    names, database tables, top-level API resource paths, event names. Where
    two of them plainly mean the same thing, you have found the first entry the
-   lexicon needs, and the most useful question to ask.
+   lexicon needs, and the most useful question to ask. UI copy and locale
+   files are evidence of what users call a thing — worth an `instead-of`
+   entry so the documents do not drift toward it — but a label that differs
+   from the code's name is not a defect, and the interview never proposes
+   renaming it.
 3. **Interview — one question at a time.** Prefer multiple-choice with a
    recommended default; let the user redirect. Do not dump a questionnaire.
    Cover the areas below, skipping what genuinely doesn't apply (and say why
@@ -130,6 +134,9 @@ Spec/Architecture territory.
 - Which pairs are easy to confuse, and where is the line between them (a
   Product versus the Line Item that sells one)?
 - How does each name appear in the code — type, table, field, route segment?
+- Where does the wording people see differ from the term — the screen says
+  "store", the code says `Venue`? Keep the label; note the mapping under
+  SURFACES.md's conventions for that surface. The lexicon is for the inside.
 - Any word the team has already argued about? Settle it here; that is exactly
   what this document is for.
 - Start small and true. A lexicon of six real terms beats thirty invented
@@ -183,6 +190,15 @@ the lexicon has settled.
 
 Depth does not belong here: a term needing more than a definition gets a
 practice, and the term links to it with `see:`.
+
+**Scope.** The lexicon governs the project's internal language: every
+document in the bundle and the identifiers in the code. It does not govern
+what a person reads on a surface — UI labels, locale and translation files,
+help text, notifications, marketing copy — nor the names an external system
+fixes at its own boundary. Those may use a banned word on purpose, and the
+mapping ("Venue is shown to merchants as *Store*") belongs in SURFACES.md,
+not in `# Terms`. Say this to the user when you present the document, so
+nobody later "fixes" the UI to match the lexicon.
 
 ## Practices in an existing project
 
