@@ -139,7 +139,7 @@ go install github.com/GiteshDalal/fdf/cli/cmd/fdf@latest
 fdf init                     # scaffold docs/features/ + SPEC.md + context stubs (or FDF_ROOT_DIR / --root)
                              #   then run the fdf-init skill to fill STACK/ARCHITECTURE/SURFACES/INFRA/DOMAIN
 fdf new payments/instant-refunds
-fdf validate                 # F1-F12 + R1; exit 1 on any violation
+fdf validate                 # F1-F13 + R1; exit 1 on any violation
 fdf validate --strict-domain # …and F12 banned words become errors, not warnings
 fdf practice permission-checks  # scaffold a Practice under practices/
 
@@ -181,7 +181,7 @@ has its own `.fdf-version` markers). A machine with both will carry two primers
 | project | codex | `<proj>/.codex/skills/` | `<proj>/AGENTS.md` |
 | project | opencode | `<proj>/.opencode/skills/` | `<proj>/AGENTS.md` |
 
-The agent-facing surface is **skills only** — [eight of them](#skills),
+The agent-facing surface is **skills only** — [nine of them](#skills),
 identical across harnesses. Earlier versions also shipped Claude Code slash
 commands; those wrapped skills the model can reach directly, so `fdf install`
 now removes them (leaving any commands you wrote yourself alone).
@@ -218,21 +218,22 @@ the **project** root.
 
 ## Skills
 
-`fdf install` places eight skills into your harness. Five walk a feature
-through its lifecycle; the other three are not stages at all — a router, a
-diagnostic front door, and a gate, each of which applies at every stage. An
-agent needs no prior FDF knowledge: `fdf-help` routes, and the spec is
-vendored in the bundle it is working in.
+`fdf install` places nine skills into your harness. Five walk a feature
+through its lifecycle; the other four are not stages at all — a router, a
+diagnostic front door, a periodic audit, and a gate, each of which applies at
+every stage. An agent needs no prior FDF knowledge: `fdf-help` routes, and the
+spec is vendored in the bundle it is working in.
 
 | Skill | What it is for |
 |---|---|
 | **`fdf-help`** | The router. Finds the feature and its status, then sends the work to the right skill — *before* any code is written, including for "tiny" changes. |
 | **`fdf-init`** | The project-context interview. Fills `STACK` / `ARCHITECTURE` / `SURFACES` / `INFRA` / `DOMAIN` with your approval, so every later feature is designed against what is actually true. |
 | **`fdf-brainstorm`** | Idea → feature document. Questions the idea one at a time, writes the Gherkin, and gets your explicit design approval before writing `slug.spec.md`. |
-| **`fdf-plan`** | Approved spec → executable plan. Tasks a zero-context implementer could run, plus `slug.test.md`: how each scenario will be *proven*. |
-| **`fdf-execute`** | Plan → working code. Works tasks serially or in parallel batches, keeps statuses truthful, and will not call a feature done on an unrun test case. |
+| **`fdf-plan`** | Approved spec → executable plan. Tasks a zero-context implementer could run, plus `slug.test.md`: how each scenario will be *proven*. Ends with a ready-to-paste prompt, so execution can start from a fresh context. |
+| **`fdf-execute`** | Plan → working code. Delegates tasks to subagents in parallel batches — a fast model for mechanical tasks, the most capable one for tasks that need judgment — or works them serially; keeps statuses truthful, and will not call a feature done on an unrun test case. |
 | **`fdf-change`** | Post-delivery writing. A `Change` when a delivered feature must behave differently; a `Fix` when the code drifted from what its document already says. |
 | **`fdf-debug`** | Something is broken and nobody knows why yet. Finds the root cause first, then routes the repair — Fix, Change, new feature, or task work. |
+| **`fdf-checkpoint`** | The periodic audit. Checks the Context docs, the vendored `SPEC.md`, and `CLAUDE.md` / `AGENTS.md` against the code and against each other — stale, repeated, or contradictory — and proposes each fix for your approval. Run it before a release and after dependency or infrastructure work. |
 | **`fdf-validate`** | The gate after every bundle edit. Turns `fdf validate`'s rule codes into the *honest* fix, and refuses the fake ones (deleting a scenario so F8 stops asking). |
 
 The three human gates are: the Context interview (`fdf-init`), the design
@@ -293,9 +294,11 @@ exists.
 
 Not a separate flow you start — it is the last step of the work that made the
 doc stale. The agent *proposes* the specific edit; nothing is written until
-you approve it, and the change is logged. If a Context doc is stale on its
-own, with no work in flight, re-run the `fdf-init` interview for that
-document.
+you approve it, and the change is logged. A Context doc can also go stale with
+no feature in flight — a dependency upgrade, a CI move, a refactor. That is
+what `fdf-checkpoint` is for: it audits the Context docs, `SPEC.md` and
+`CLAUDE.md` / `AGENTS.md` against the code and each other, and proposes each
+correction the same way.
 
 **Migrate infrastructure** (new datastore, new deployment target)
 
@@ -307,7 +310,7 @@ change?** — limits, error shapes, endpoints, auth, guarantees.
   a capability. Then the `INFRA.md` / `STACK.md` update, approved and logged.
 - **No** → the work is behavior-neutral, so no feature document changes. The
   only bundle artifact is the approved `INFRA.md` / `STACK.md` edit plus its
-  LOG entry.
+  LOG entry — which `fdf-checkpoint` proposes if nobody did at the time.
 
 FDF has no document type for behavior-neutral engineering work, and
 deliberately so: the bundle records what the software *does*, not every task

@@ -137,7 +137,7 @@ func Sync(root, version, date string, ship bool, out io.Writer) int {
 	}
 	fmt.Fprintf(out, "\ndone: release %s is %s\n", version, status)
 	if status == "planned" {
-		fmt.Fprintf(out, "next: set `version: %q` on anything else that ships, re-run `fdf release %s`, then `fdf release %s --ship` once everything is done.\n", version, version, version)
+		fmt.Fprintf(out, "next: set `version: %q` on anything else that ships, re-run `fdf release %s`, then `fdf release --ship %s` once everything is done.\n", version, version, version)
 	}
 	return 0
 }

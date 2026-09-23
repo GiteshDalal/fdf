@@ -82,10 +82,12 @@ the failure FDF exists to prevent, and tiny changes are where it happens.
 **Context documents are critical.** STACK/ARCHITECTURE/SURFACES/INFRA/DOMAIN
 are the project's living context; accurate, they let you build the project's way
 instead of guessing — agentic engineering, not vibe coding. They are filled
-once by the fdf-init interview and changed only with explicit user approval
-(the post-feature step in fdf-execute), each change logged. Never edit them
-casually. Until filled they carry a `<!-- fdf:stub -->` stub marker, and F9
-blocks feature work while any stays a stub.
+once by the fdf-init interview. After that they change only with explicit user
+approval, and every change is logged. Whichever skill finds the need proposes
+the edit — most often the review that ends fdf-execute and fdf-change, or
+fdf-checkpoint, the periodic audit that also keeps `SPEC.md` and
+CLAUDE.md/AGENTS.md consistent with them. Never edit them casually. Until filled they carry a `<!-- fdf:stub -->` stub marker,
+and F9 blocks feature work while any stays a stub.
 
 ## Living and episodic documents
 
@@ -114,8 +116,9 @@ key: not the verb the user used, not the size of the change.
 | `draft` | fdf-brainstorm (finish the spec) |
 | `specified` | fdf-plan |
 | `planned` or `implementing` | fdf-execute |
-| `done` or `retired` | Delivered — post-delivery work → fdf-change |
+| `done` or `retired` | Delivered — post-delivery work → fdf-change (a `retired` capability coming back is a new feature → fdf-brainstorm) |
 | *(something is broken, at any status)* | fdf-debug (root cause first; it routes the repair) |
+| *(project context may have drifted — periodically, before a release, after dependency or infrastructure work)* | fdf-checkpoint |
 | *(any bundle file just edited, or `fdf validate` failing)* | fdf-validate |
 
 Check the Context docs first: if `fdf validate` warns or fails on unfilled
@@ -136,7 +139,13 @@ workflow skill (a status flip, a ticked checkbox, a typo fix), and whenever
 fdf-debug is not a stage either — it is the front door for anything broken:
 a bug report, a failing test, a crash, a regression. It finds the root cause
 and then routes back into this table, because which document may repair a
-defect depends on what the defect turns out to be.
+defect depends on what the defect turns out to be. (A test failing inside the
+task you are implementing is still that task's work; fdf-execute sends it to
+fdf-debug once a fix attempt has failed.)
+
+Nor is fdf-checkpoint — it is the periodic audit of the documents every agent
+reads first: the Context docs, `SPEC.md`, and the agent instruction files,
+checked against the code and against each other.
 
 Then announce: "Using fdf-<skill> — <feature> is <status>."
 
@@ -172,7 +181,19 @@ promises? Either way, yes:
   stops the bug coming back.
 
 Only genuinely bundle-neutral work is exempt — pure refactors with no
-behavior change, typos, tooling, dependency bumps.
+behavior change, typos, tooling, dependency bumps. Exempt from a *feature*
+document, that is — not from the Context docs: a dependency bump or a CI move
+can make `STACK.md` or `INFRA.md` wrong. Propose that edit when you make the
+change, or run fdf-checkpoint.
+
+**Paying down a debt** routes like any other work — usually plain code work,
+since bringing code into line with a practice changes nothing a user sees.
+When it lands, flip the debt to `resolved` with a `# Resolution`.
+
+**Cutting a release** is bookkeeping, not a stage: set `version:` on each
+feature, change and fix that ships, run fdf-checkpoint, then
+`fdf release <version>`, and `fdf release --ship <version>` once they are all
+`done`.
 
 **When is it a new feature instead of a Change?** If the new behavior reads as
 its own `Feature:` block with its own As-a / I-want / So-that, it is a new

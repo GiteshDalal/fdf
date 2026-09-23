@@ -1,6 +1,6 @@
 ---
 name: fdf-init
-description: Use right after `fdf init` on a new FDF bundle, or whenever STACK.md / ARCHITECTURE.md / SURFACES.md / INFRA.md / DOMAIN.md are still unfilled stubs — runs the project-context interview that fills the five critical Context documents, and writes down the practices an existing codebase already follows, before any feature work.
+description: Use right after `fdf init` on a new FDF bundle, or whenever STACK.md / ARCHITECTURE.md / SURFACES.md / INFRA.md / DOMAIN.md are still unfilled stubs — runs the project-context interview that fills the five critical Context documents, and writes down the practices an existing codebase already follows, before any feature work. Documents already filled but possibly stale are fdf-checkpoint's.
 ---
 
 # FDF Init
@@ -9,8 +9,9 @@ Interview the user about the project, then write the five bundle-root
 **Context documents** — `STACK.md`, `ARCHITECTURE.md`, `SURFACES.md`,
 `INFRA.md`, `DOMAIN.md` — that every later feature relies on. This is the
 difference between agentic engineering and vibe coding: with accurate context
-an agent builds *this* project's way; without it, it guesses. Do this thoroughly
-slowly. It is the most leveraged conversation in the whole workflow.
+an agent builds *this* project's way; without it, it guesses. Take it slowly
+and do it thoroughly: it is the most leveraged conversation in the whole
+workflow.
 
 New to FDF? The format is defined in the bundle at `docs/features/SPEC.md`.
 `fdf spec` prints the format rules and `fdf help` documents every command.
@@ -47,9 +48,11 @@ Spec/Architecture territory.
 2. **Survey what already exists.** If there's code, read enough to ground your
    questions — `README`, manifests (`package.json`, `go.mod`, `Cargo.toml`,
    `pyproject.toml`, `pom.xml`), lockfiles, CI config, Dockerfiles, IaC, OpenAPI
-   or route trees, UI entry points, CLI command trees. Come to the interview
-   with informed guesses to confirm, not a blank slate. For a greenfield
-   project there's nothing to read — the interview *is* the design.
+   or route trees, UI entry points, CLI command trees — and the agent
+   instruction files (`CLAUDE.md`, `AGENTS.md`), which often already state the
+   stack, the commands and the conventions. Come to the interview with
+   informed guesses to confirm, not a blank slate. For a greenfield project
+   there's nothing to read — the interview *is* the design.
    For DOMAIN.md specifically, harvest the **nouns**: model and entity class
    names, database tables, top-level API resource paths, event names. Where
    two of them plainly mean the same thing, you have found the first entry the
@@ -78,10 +81,16 @@ Spec/Architecture territory.
    codebase this is the highest-value part of the whole interview — see
    *Practices in an existing project* below. On a greenfield project there is
    nothing to surface yet; say so and move on.
-7. **Log and gate.** Add a LOG.md entry noting the interview and key decisions.
+7. **Point the instruction files at the new documents.** Where `CLAUDE.md` or
+   `AGENTS.md` restates what the five documents now hold — a stack list,
+   build commands, conventions — propose replacing each with a one-line
+   pointer, so every fact has one home from day one. fdf-checkpoint's
+   *Agent instruction files* section is the full check.
+8. **Log and gate.** Add a root `LOG.md` entry noting the interview and key
+   decisions — the interview is bundle-wide, so it is logged at the root.
    Run `fdf validate` — exit 0 (F9 now satisfied) before you're done. If it
    fails on anything else, use fdf-validate.
-8. **Hand off the responsibility.** Tell the user plainly (see Closing).
+9. **Hand off the responsibility.** Tell the user plainly (see Closing).
 
 ## What to ask
 
@@ -151,21 +160,6 @@ Spec/Architecture territory.
 - Operational dependencies: managed DBs, caches, queues, CDNs, secrets,
   observability. What has to exist for the system to run?
 - Targets: OS/arch, browsers, mobile platforms, runtime versions.
-
-## Closing (say this explicitly)
-
-Tell the user, in your own words:
-
-> STACK.md, ARCHITECTURE.md, SURFACES.md, INFRA.md, and DOMAIN.md are written
-> and validated. Treat them as **critical, living documents**: from here on I
-> will not change them without your explicit approval, and after each feature
-> I'll ask whether any of them needs updating (a new dependency, a new
-> pattern, a new surface convention, new infrastructure, a new term) and only
-> edit on your say-so, logging the change. The practices under `practices/`
-> are the same: binding on all code that matches their `applies-to`, and mine
-> to propose but yours to approve. Keeping all of this accurate is what makes
-> this agentic engineering rather than vibe coding — stale context produces
-> confidently wrong work. They're yours to own; I'll help maintain them.
 
 ## Writing DOMAIN.md
 
@@ -334,6 +328,25 @@ carries no Gherkin, no spec, no plan, no tasks. Get each one approved before
 writing it, exactly like a Context document, and link it from
 `practices/INDEX.md`.
 
+## Closing (say this explicitly)
+
+Tell the user, in your own words:
+
+> STACK.md, ARCHITECTURE.md, SURFACES.md, INFRA.md, and DOMAIN.md are written
+> and validated. Treat them as **critical, living documents**: from here on I
+> will not change them without your explicit approval, and after each feature
+> I'll ask whether any of them needs updating (a new dependency, a new
+> pattern, a new surface convention, new infrastructure, a new term) and only
+> edit on your say-so, logging the change. Work that no feature records — a
+> dependency upgrade, a CI move — can still make them stale, so run the
+> fdf-checkpoint skill now and then, and before each release: it re-checks
+> them, `SPEC.md` and CLAUDE.md/AGENTS.md against the code and each other.
+> The practices under `practices/` are the same: binding on all code that
+> matches their `applies-to`, and mine to propose but yours to approve.
+> Keeping all of this accurate is what makes this agentic engineering rather
+> than vibe coding — stale context produces confidently wrong work. They're
+> yours to own; I'll help maintain them.
+
 ## Rules
 
 - One question at a time; confirm each document before writing it.
@@ -341,9 +354,10 @@ writing it, exactly like a Context document, and link it from
 - Removing the stub sentinel/banner is required; a Context doc that still
   contains `<!-- fdf:stub -->` counts as unfilled and fails F9 once features
   exist.
-- These five files are edited ONLY here and, later, via the post-feature
-  update step in fdf-execute — always with explicit user approval, always
-  logged. Never edit them casually mid-implementation.
+- After this interview, these five files change only with explicit user
+  approval, always logged. Whichever skill finds the need proposes the edit —
+  most often the review that ends fdf-execute and fdf-change, or
+  fdf-checkpoint. Never edit them casually mid-implementation.
 - A practice records what the project **already does**, with files you can
   cite. Never write one from what would be good practice in general; that is
   how a bundle starts lying on day one.

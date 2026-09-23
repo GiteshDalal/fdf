@@ -67,18 +67,24 @@ word" is never a root cause and never routes to a Fix.
    codes. Errors routinely name their own cause.
 2. **Reproduce it, and write the command down verbatim.** That command
    becomes the regression case later, so capture it exactly, with its failing
-   output. Start from the feature's `slug.test.md` case: if that case still
-   passes, the bug is outside what the feature promises — which is itself a
-   finding.
+   output. Start from the feature's `slug.test.md` case. If it still passes,
+   either the bug is outside what the scenario promises, or the case is
+   weaker than its scenario — a boundary it never exercised. Read the scenario
+   to tell which: the first is a Change, the second a Fix whose regression
+   case strengthens the test.
 3. **Find the owning feature(s)** and note each status. A symptom can cross
    features; that is one document with several `affects:` entries, never one
    document per feature.
-4. **Read the scenario** and state the gap in the bundle's own terms:
+4. **Check the debt register** — `fdf debt --open`. A debt whose `resource`
+   names a file in the trace has already diagnosed this gap and says why it
+   was left. Then the conversation changes: the gap was known, and the
+   question is whether that decision still holds — not what is broken.
+5. **Read the scenario** and state the gap in the bundle's own terms:
    - a scenario says X and the software does Y → documented behavior broke;
    - no scenario covers this situation → nobody ever decided it.
 
    That distinction *is* the routing decision in Phase 3. Do not blur it.
-5. **Check what changed.** `fdf history <group>/<slug>` lists every Change and
+6. **Check what changed.** `fdf history <group>/<slug>` lists every Change and
    Fix that touched the feature; a recent one is a prime suspect, and its
    `# Scenario changes` says exactly what was meant to move. Then git log and
    diff, dependency bumps, config and environment differences.
@@ -122,15 +128,26 @@ Work down; the first row that matches wins:
 
 | What the investigation found | Route |
 |---|---|
-| Nothing a user can observe changes — build, CI, deps, formatting, pure refactor | Fix it directly, no document. Say plainly that the bundle is untouched and why the work is behavior-neutral. |
+| Nothing a user can observe changes — build, CI, deps, formatting, pure refactor | Repair it directly, no feature document. Say plainly that the bundle is untouched and why the work is behavior-neutral — and if the repair changes what `STACK.md` or `INFRA.md` says (a version, a build step), propose that Context edit. |
 | The bundle contradicts itself; `fdf validate` fails | fdf-validate. The code may be fine and the documents may be the drift. |
-| The owning feature is `draft`, `specified`, `planned`, or `implementing` | Not post-delivery. Repair it in the in-flight workflow — a task under fdf-execute, or back to fdf-plan / fdf-brainstorm if the design was wrong. Never open a Change or Fix against an undelivered feature; F10 rejects it. |
+| The owning feature is `draft`, `specified`, `planned`, or `implementing` | Not post-delivery. Repair it in the in-flight workflow — a task under fdf-execute; or, if the design itself was wrong, amend the Gherkin and `slug.spec.md` directly with the user's approval (the feature is still in flight) and re-plan with fdf-plan. Never open a Change or Fix against an undelivered feature; F10 rejects it. |
 | A `done`/`retired` feature has a scenario saying otherwise — the code drifted | **Fix**: `fdf fix --affects <group>/<slug>[,…] [<group>/]<slug>` → fdf-change |
 | No scenario covers the case, or the scenario itself is what is wrong | **Change**: `fdf change --affects <group>/<slug>[,…] [<group>/]<slug>` → fdf-change |
 | The behavior that should exist reads as its own `Feature:` block | New feature → fdf-brainstorm, recording lineage with `depends-on` |
 | The root cause is upstream — a dependency, a platform, an external service | Still ours to answer: what should our software do when that happens? That decision is a Change. A version pin with no observable difference is neutral. |
-| The code ignored a practice that governs its path | Route by what a user can observe, as above — but say so in the handoff, because it is the same class of defect the practice exists to prevent. If the practice itself is wrong, that is a practice change and needs the user's approval, never a quiet edit. |
-| An open debt already names this gap | Not a new finding. Say so, and route the repair by what a user can observe, as above. Closing the gap for good means flipping the debt to `resolved` with a `# Resolution`; fixing only the site that surfaced means the debt stays open with its `resource` narrowed. Never leave the register saying something the tree no longer does. |
+
+Two findings are not routes of their own. They ride along with whichever row
+matched:
+
+- **The code ignored a practice that governs its path.** Say so in the
+  handoff: it is the same class of defect the practice exists to prevent. If
+  the practice itself is wrong, that is a practice change and needs the
+  user's approval, never a quiet edit.
+- **An open debt already names this gap.** It is not a new finding — say so.
+  Closing the gap for good means flipping the debt to `resolved` with a
+  `# Resolution`; fixing only the site that surfaced means the debt stays
+  open with its `resource` narrowed. Never leave the register saying
+  something the tree no longer does.
 
 Rows four and five are the ones people get wrong. "It's a bug" does not make
 it a Fix. A Fix restores behavior **someone already approved**, so it names
@@ -140,11 +157,6 @@ it needs the design gate.
 
 **The document was silent** is the most common finding of all, and it is a
 Change: nobody decided what should happen, so someone has to decide now.
-
-**Check the register before diagnosing.** `fdf debt --open` costs one command,
-and a symptom that is already a filed debt is a different conversation: the
-gap was known, the reason it was left is written down, and the question is
-whether that decision still holds — not what is broken.
 
 Then announce: "Root cause: <one sentence>. That is a
 <Fix | Change | feature | task> — using fdf-<skill>."
@@ -169,8 +181,8 @@ The durable artifact of a defect is never the patch — it is the case in the
 affected feature's `slug.test.md`. If the work ends with no test that would
 have caught this, the bug is not finished.
 
-Record the conclusion in the feature's `slug.log.md`, and the bundle `LOG.md`,
-when it is worth the next agent's time. Never edit the feature's frozen
+Record the conclusion in the feature's `slug.log.md` when it is worth the next
+agent's time. Never edit the feature's frozen
 `slug.spec.md`, `slug.plan.md`, or tasks — they record how it was built,
 which is the context that made this diagnosis possible.
 

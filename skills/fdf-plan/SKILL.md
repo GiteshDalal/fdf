@@ -46,8 +46,8 @@ and "similar to task 01" are plan failures.
    paths must exist (R1); invented paths are confidently wrong. Match
    surface constraints from SURFACES.md / optional `.surface.md`.
 2. **Route each task to the practices that govern it.** A practice whose
-   `applies-to` covers a path in a task's `resource:` is binding on that
-   task's code. Name it in the task's `# Steps` — "follow
+   `applies-to` covers a path the task touches — in its `resource:`, or where
+   its `# Steps` create files — is binding on that task's code. Name it in the task's `# Steps` — "follow
    `/practices/permission-checks`" — because the implementer may be a fresh
    agent with no reason to go looking. If the plan requires departing from a
    practice, that is a decision for the user, not a detail for the task.
@@ -85,16 +85,18 @@ and "similar to task 01" are plan failures.
    ---
    type: Task
    status: pending
-   resource: [src/count.rs, src/main.rs]   # OMIT for files that don't exist yet
+   resource: [src/cli.rs, src/report/]     # a file it edits; the existing dir it adds files to
    depends-on: [01-count-core, 02-cli]      # LIST for 2+; bare scalar for one
    ---
    ```
 
    - **`resource:`** lists *existing* project paths the task touches. R1
-     fails the `planned` gate if a listed path doesn't exist yet — so on a
-     **greenfield task that creates new files, omit `resource:` entirely**
-     (it is optional). Only list paths that already exist at plan time; the
-     `# Steps` still name the files the task will create.
+     fails the `planned` gate if a listed path doesn't exist yet — so for a
+     file the task will **create**, list the existing directory it goes into
+     instead. R1 accepts a directory, and it keeps the task's scope and its
+     practice routing working. Omit `resource:` only when not even the
+     directory exists yet (a greenfield project); the `# Steps` always name
+     the files the task creates.
    - **`depends-on:`** names sibling tasks by ID (filename minus `.md`),
      and the graph MUST be acyclic. One dependency is a bare scalar
      (`depends-on: 01-count-core`); **two or more MUST be a YAML list**
@@ -108,18 +110,48 @@ and "similar to task 01" are plan failures.
    status, output, resulting state). "Run the tests" proves nothing. If
    verification isn't obvious, STOP and ask how done-ness will be proven;
    record the answer. New APIs get an E2E/integration test; UI changes get a
-   real-browser (Playwright) check.
+   check in a real browser, using the browser-test tool `STACK.md` or
+   `INFRA.md` names (e.g. Playwright) — and if they name none, ask.
 8. **The final task always satisfies `slug.test.md`** — writing/running what
    it names. Every plan ends with it; it depends-on every other task.
 9. **Write `<group>/<slug>.plan.md`** (`type: Plan`): `# Tasks` — ordered
    list linking every task file with **relative paths from the plan** (e.g.
    `instant-refunds/01-refund-api.md` → `slug/01-….md`). Plan order is the
    readable order; depends-on is execution truth.
-10. Flip feature status to `planned`; LOG entry (bundle/group LOG.md and/or
-   `slug.log.md`); `fdf validate` exit 0 — fdf-validate on failure (F8 enforces `slug.test.md`
-   scenario coverage).
+10. Flip feature status to `planned`; log it in the feature's `slug.log.md`
+    (feature-scoped, so not the root `LOG.md`); `fdf validate` exit 0 —
+    fdf-validate on failure (F8 enforces `slug.test.md` scenario coverage).
+    Validate here, not between steps 6 and 9: tasks, test document and plan
+    are only valid together — a task directory fails F6 until its plan
+    exists.
 
-Next: the feature is `planned` — fdf-execute is the next skill.
+## Hand off to fdf-execute
+
+The feature is `planned`; fdf-execute is next. Planning filled this
+conversation with exploration and dialogue that execution does not need —
+the plan was written so that a reader with none of it can carry it out. So
+recommend, in one line, that the user compact the conversation (`/compact`
+in Claude Code) or start a fresh session, and give them a prompt to resume
+with:
+
+```text
+Use the fdf-execute skill on <group>/<slug> (status: planned).
+Plan: docs/features/<group>/<slug>.plan.md (<N> tasks). Batches from depends-on:
+  1. 01-…, 02-…   2. 03-…   3. 04-… (satisfies <slug>.test.md)
+Suggested models: 01, 02 mechanical → fast (e.g. Sonnet-class);
+  03, 04 need judgment → most capable (e.g. Opus-class).
+```
+
+A task is **mechanical** when its `# Steps` leave nothing to decide, and needs
+**judgment** when they leave design latitude, cross module boundaries, or
+touch concurrency, security or a data migration; the task that proves
+`slug.test.md` always needs judgment.
+
+The prompt points at files and never carries a decision they lack. If you
+are about to write a sentence of context the plan does not contain, the plan
+is incomplete: put it in the task or the spec, then write the prompt. When
+the user asked for the implementation too, ask whether to continue here or
+from the prompt in a fresh context — do not simply stop.
 
 ## Rules
 

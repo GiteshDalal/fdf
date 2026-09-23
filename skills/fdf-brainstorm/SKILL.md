@@ -14,7 +14,9 @@ explains how the fdf skills fit together.
 **This skill is for capabilities that do not exist yet.** If the capability is
 already delivered (`done` or `retired`) and needs to change or be fixed, stop
 and use fdf-change — a second feature document for one capability is the drift
-FDF exists to prevent.
+FDF exists to prevent. The one exception: a `retired` capability that is
+coming back returns as a new feature, brainstormed here, which may name the
+retired one in `depends-on`. The retired document is never flipped back.
 
 **Read the Context docs first.** `STACK.md`, `ARCHITECTURE.md`,
 `SURFACES.md`, `INFRA.md`, and `DOMAIN.md` at the bundle root are the
@@ -86,12 +88,14 @@ propose — designing in ignorance of one is not.
    (a term you defined, a rule extended to a case the dialogue never
    covered) gets its own bullet here — the gate covers your decisions too.
    Pause for approval after each section, and end with one explicit gate:
-   "Do you approve this design?" Nothing is written until yes.
+   "Do you approve this design?" The spec is not written until yes.
 6. **Write `<group>/<slug>.spec.md`** (`type: Spec`) with sections:
    `## What is being built`, `## Why`, `## Design decisions` (one bullet per
    resolved ambiguity), `## Alternatives rejected` (each with its reason).
    Path is a **stem sibling** of the feature file — not nested under
-   `<group>/<slug>/`.
+   `<group>/<slug>/`. In the same edit, flip the feature's `status` to
+   `specified`: a `draft` may carry no trail siblings (F4), so the spec and
+   the flip land together.
 7. **Optional surface doc.** When the feature exposes non-trivial interface
    decisions that Gherkin cannot hold (API envelope for this feature, CLI
    flag set, UI choreography, event shapes, copy/a11y for this flow), after
@@ -100,14 +104,15 @@ propose — designing in ignorance of one is not.
    not visual design only. Skip when SURFACES.md already covers it and the
    feature adds nothing feature-specific. Validation never requires
    `.surface.md` for a status.
-8. **Self-review** before flipping: re-read the feature doc against the
+8. **Self-review** before validating: re-read the feature doc against the
    conversation. Any user decision that no scenario or SPEC line records?
    Any two scenarios whose names could be confused? Fix silently; don't
    re-ask.
-9. **Flip status** to `specified`; update the feature's `timestamp`; add a
-   bundle (or group) LOG.md entry, and optionally start `slug.log.md`
-   (date heading + one line). **Gate**: `fdf validate` exit 0 — use
-   fdf-validate if it fails.
+9. **Log and gate.** Update the feature's `timestamp`; log the approval in
+   the feature's `slug.log.md` (create it on first use: `type: Log`, a
+   `## YYYY-MM-DD` heading, one line). Feature-scoped entries stay out of the
+   root `LOG.md`, which is for bundle-wide events. **Gate**: `fdf validate`
+   exit 0 — use fdf-validate if it fails.
 
 Next: the feature is `specified` — fdf-plan is the next skill.
 

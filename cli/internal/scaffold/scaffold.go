@@ -189,7 +189,7 @@ func SpecText(version string) ([]byte, error) {
 	return raw, nil
 }
 
-// writeContextStubs places the four Context stubs at the bundle root, each
+// writeContextStubs places the Context stubs at the bundle root, each
 // only if absent. The fdf-init interview replaces the stub bodies later.
 func writeContextStubs(root string, out io.Writer) int {
 	now := time.Now().UTC().Format("2006-01-02T15:04:05Z")

@@ -40,7 +40,7 @@ var usage = banner + `
 Usage: fdf <command> [flags]
 
 Commands:
-  validate   Check the bundle against the pinned SPEC (F1-F12 + R1)
+  validate   Check the bundle against the pinned SPEC (F1-F13 + R1)
   init       Scaffold a bundle at the resolved root
   new        Scaffold a draft feature: fdf new <group>/<slug>
   practice   Scaffold a Practice: fdf practice [<group>/]<slug>

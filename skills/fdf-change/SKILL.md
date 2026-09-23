@@ -1,6 +1,6 @@
 ---
 name: fdf-change
-description: Use when a delivered (done or retired) FDF feature needs to change or a bug in it needs fixing — change requests, defects, and retirements, including ones spanning several features. Not for features still in draft/specified/planned/implementing.
+description: Use when a delivered (done or retired) FDF feature needs to change, a diagnosed defect in it needs fixing, or it is being retired — including work spanning several features. An undiagnosed bug goes to fdf-debug first. Not for features still in draft/specified/planned/implementing.
 ---
 
 # FDF Change
@@ -58,7 +58,8 @@ Fix body's `# Symptom` and `# Root cause` sections are waiting for.
 
    Group it (`payments/refund-window`) when `changes/` is getting long. The
    group is filing only — nothing ties it to the affected feature's group, and
-   nothing checks that it does.
+   nothing checks that it does. Below, `<id>` is the document's path under
+   `changes/` without `.md` — `refund-window` or `payments/refund-window`.
 3. **Understand the change** through questions, ONE at a time: what is wrong,
    for whom, what should happen instead, what must not break? Chase ambiguous
    words exactly as fdf-brainstorm does.
@@ -91,10 +92,17 @@ Fix body's `# Symptom` and `# Root cause` sections are waiting for.
    A `Fix` skips this entirely — it restores behavior already approved.
 6. **Plan it if it needs decomposing.** More than a couple of steps → write
    `changes/<id>.plan.md` with `# Tasks` linking every task under
-   `changes/<id>/`, flip to `planned`, then work them as fdf-execute does
+   `changes/<id>/` (plan and tasks together — a task directory without its
+   plan fails F6), flip to `planned`, then work them as fdf-execute does
    (`in-progress` before working, per task). A small change needs no tasks at
-   all and goes straight to `done`.
-7. **Amend the living documents.** This is the step that keeps the bundle
+   all: it skips to step 7.
+7. **Do the work and prove it.** Implement the change — through its tasks, or
+   directly when there are none. Then run the affected features'
+   `slug.test.md` cases this work touches, plus their neighbours, and for a
+   `Fix` the regression command, which must now pass where `# Symptom` showed
+   it failing. Report each command with its actual output; a case you did not
+   run keeps the document short of `done`.
+8. **Amend the living documents.** This is the step that keeps the bundle
    true, and F10 enforces it:
    - The feature's **Gherkin** — apply exactly the adds/modifies/removes you
      declared.
@@ -105,11 +113,14 @@ Fix body's `# Symptom` and `# Root cause` sections are waiting for.
    Do **not** touch the feature's `slug.spec.md`, `slug.plan.md`, or tasks.
    Those are the frozen record of how it was first built — the context someone
    needs to judge this change and the next one.
-8. **Flip to `done`** and update timestamps. **Gate**: `fdf validate` exit 0.
-   F10 refuses a `done` change whose declared effects are not reality.
-9. **Log it** — `slug.log.md` on the affected feature (what changed and why),
-   and the bundle `LOG.md`.
-10. **Project-document review**, exactly as in fdf-execute — all four
+9. **Flip to `done`** — with tasks, the last task and the document in the
+   same edit, as fdf-execute does — and update timestamps. If the work closes
+   an open debt, flip it to `resolved` with a `# Resolution` now too.
+   **Gate**: `fdf validate` exit 0. F10 refuses a `done` change whose declared
+   effects are not reality.
+10. **Log it** in each affected feature's `slug.log.md` — what changed and
+    why. The work is feature-scoped, so it stays out of the root `LOG.md`.
+11. **Project-document review**, exactly as in fdf-execute — all four
     questions. Did this make a Context document stale (including a term in
     DOMAIN.md)? Did the code diverge from a practice that governs its paths,
     and is that a defect or an approved `# Exceptions` entry? Did it establish
@@ -168,9 +179,22 @@ deleted — the document records behavior the software once had.
 - Write a `Change` with `retires: <feature-id>` and a `# Rationale` section
   saying why it is going and what supersedes it. F10 will not accept a
   `retired` feature without exactly one `done` Change that retires it.
+- The feature is in `affects`, so the Change still carries
+  `# Scenario changes` with a `## <feature-id>` heading for it (F10). Leave
+  the heading empty: the retired feature keeps its Gherkin as the record of
+  what it did.
 - Set the feature to `status: retired`, and `replaced-by: <feature-id>` when a
   successor exists.
+- Order matters, because F10 checks both ends at every status: `retires:` is
+  only valid once the feature is `retired`, and a `retired` feature needs a
+  `done` Change retiring it. So take the Change through its design gate
+  *without* `retires:`, then land the retirement in one edit — add
+  `retires:`, flip the Change to `done`, flip the feature to `retired` — and
+  validate after that edit.
 - A `Fix` can never retire anything — removing behavior is deliberate.
+- Retirement is terminal. A capability that comes back is a new feature
+  (fdf-brainstorm), which may name the retired one in `depends-on`; the retired
+  document is never flipped back to `done`.
 
 ## Rules
 
