@@ -17,15 +17,19 @@ optional `slug.surface.md` / `slug.log.md`); tasks live only under a `slug/` dir
 bundle-root Context docs (`STACK.md`, `ARCHITECTURE.md`, `SURFACES.md`, `INFRA.md`,
 `DOMAIN.md`) hold project context. Post-delivery work lives under `changes/` as a `Change` (alters what a
 delivered feature does) or a `Fix` (the code drifted from what the document already says).
+Known gaps are `Debt` under `debts/`; known defects nobody is repairing yet are `Bug` under
+`bugs/` (v0.7). A capability that predates the bundle is an `adopted` feature (v0.7): no
+build trail, its code named in `resource`.
 This repo ships:
 
 1. A Go CLI (`cli/cmd/fdf`) that scaffolds and **validates** those bundles.
 2. Harness-neutral **skills** (`skills/`) that teach AI agents the brainstorm → plan →
    execute workflow and the post-delivery `fdf-change` workflow, plus `fdf-help`
-   (routing), `fdf-debug` (root-cause-first triage that routes a defect to a Fix,
-   Change, feature, or task), `fdf-checkpoint` (the periodic audit of the Context
-   docs, the vendored `SPEC.md` and the agent instruction files) and
-   `fdf-validate` (the post-edit gate).
+   (routing), `fdf-adopt` (mapping a codebase that predates its bundle, in
+   phases), `fdf-debug` (root-cause-first triage that routes a defect to a Fix,
+   Change, feature, task or adoption — or files a Bug), `fdf-checkpoint` (the
+   periodic audit of the Context docs, the vendored `SPEC.md` and the agent
+   instruction files) and `fdf-validate` (the post-edit gate).
    Skills are the *only* agent-facing surface — there are deliberately no slash commands
    or per-harness adapters, since a command is user-typed and cannot be a reliable gate.
 3. **Versioned specs** (`spec/`) that are normative for the bundles pinning each version.
@@ -57,7 +61,7 @@ goreleaser (`.goreleaser.yaml`) on tag push.
 ## Architecture
 
 The CLI is a flat command dispatcher (`cli/cmd/fdf/main.go`: a `map[string]func` over
-`validate|init|new|practice|debt|install|serve|migrate|spec|help|change|fix|history|release|version`).
+`validate|init|new|practice|debt|bug|adopt|mv|lexicon|install|serve|migrate|spec|help|change|fix|history|release|version`).
 Each command is a thin wrapper around one
 `cli/internal/` package. Commands write usage/errors to stdout (not stderr) so tests capture
 everything, and flags must precede positional args (`ContinueOnError` FlagSets).
@@ -69,26 +73,42 @@ everything, and flags must precede positional args (`ContinueOnError` FlagSets).
   verify against the real project root even when the bundle is a git submodule.
 
 - **`cli/internal/bundle`** (`validate.go`) — the heart of the tool. `Validate()` is the
-  enforcement engine for the spec. Rules are coded **F1–F13** (format conformance) and **R1**
+  enforcement engine for the spec. Rules are coded **F1–F14** (format conformance) and **R1**
   (repo integrity); every error message ends with its rule code, e.g. `(F4)`. Highlights:
   - `readPin()` reads `fdf_version` from the root `INDEX.md` *before* the directory walk,
     because version-gated rules (Context docs, stem trail layout) must be known for every
     file and `WalkDir` visits lexically (`ARCHITECTURE.md` sorts before `INDEX.md`).
-  - Validates spec **v0.2 – v0.6** (`supportedVersions`); a pin outside that set is an F1
-    error pointing at `fdf migrate`. `specStem` gates the stem-trail layout (v0.4 onward);
-    `specV5` gates `changes/`, the `Change`/`Fix` types, `retired`, feature `depends-on`,
-    and F10 (v0.5 **and later**, not v0.5 only); `specV6` gates `practices/`, the
-    `Practice` and `Debt` types, `DOMAIN.md`, F11, F12 and F13. v0.2/v0.3 keep
-    the nested paired-directory layout.
+  - Validates spec **v0.2 – v0.7** (`supportedVersions`); a pin outside that set is an F1
+    error pointing at `fdf migrate`. Gates are `pinAtLeast(pin, minor)`: `specStem` the
+    stem-trail layout (v0.4 onward); `specV5` `changes/`, the `Change`/`Fix` types,
+    `retired`, feature `depends-on`, and F10; `specV6` `practices/`, the `Practice` and
+    `Debt` types, `DOMAIN.md`, F11, F12 and F13; `specV7` `bugs/` and F14, `resolves`,
+    the `adopted` status and feature `resource`, and F12's full reach. Every gate means
+    "this version **and later**". v0.2/v0.3 keep the nested paired-directory layout.
   - **`practices.go`** holds F11 (practice body shape, `superseded-by` graph) and the
-    `sectionText` helper that `domain.go` and `debts.go` also use.
+    `sectionText` helper that `domain.go`, `debts.go` and `bugs.go` also use.
+    **`bugs.go`** holds F14 and the `resolves` half of F10: `# Symptom`/`# Expected`
+    required, `# Violates` parsed with the regression-case grammar and checked verbatim
+    while open, forbidden on `accepted`, and a resolved bug still citing it must be named
+    by a done Fix/Change's `resolves`. A cleared bug's ID is read back from
+    `bugs/LOG.md` (`* **bugs/<id>** — …`). Debts and bugs share one position branch in
+    `validate.go`. **`adopted.go`** is F4/F8 for `adopted` features: no spec, plan or
+    task directory, `resource` required, no `version`, `slug.test.md` from the first
+    scenario (F5 lets a map entry have none).
     **`debts.go`** holds F13: `# Gap` required, no Gherkin, `# Rationale` on
     `accepted`, `# Resolution` on `resolved`. Debt and practice positions are
     near-identical (`<slug>.md` plus an optional `<slug>.log.md`, one level of
     groups, never a task directory) and share `logTrailRoleRe`. **`domain.go`** holds F12: parsing
-    `DOMAIN.md`'s `# Terms` grammar, the lexicon's internal consistency, and the
-    banned-word scan — a warning unless `Options.StrictDomain` (the `--strict-domain` flag)
-    promotes it to an error. The scan covers every feature's Gherkin and the declared
+    `DOMAIN.md`'s `# Terms` grammar (`readLexicon`: consistency, `except:` and `strict`
+    checks) and the **v0.6** scan — a warning unless `Options.StrictDomain` (the
+    `--strict-domain` flag) promotes it to an error. **`lexicon.go`** is the **v0.7**
+    scanner, exported for `fdf lexicon` and `fdf migrate`: `LoadLexicon`, `ScanBundle`,
+    `ScanDocument`, `DomainScanned`. It masks quoting text byte for byte (so every
+    `Occurrence` keeps file:line:col), scans names, matches through a `phraseSet`
+    (candidate words looked up by leading token rather than one large alternation over
+    every byte), and prints one line per document, capped at `domainReportCap`.
+    `strict: true` in DOMAIN.md also promotes. Validate hands the scanner the texts it
+    already read. The scan covers every feature's Gherkin and the declared
     scenario names (`add:`/`modify:`/`remove:`/regression cases) of every Change and Fix, at
     any status — the 0.6 erratum lets a *lexicon fix* (banned word → term) edit any document,
     frozen ones included, so every finding is clearable. It never scans a `## <feature-id>`
@@ -105,25 +125,38 @@ everything, and flags must precede positional args (`ContinueOnError` FlagSets).
     `# Rationale`. `Options.FreshStubsAdvisory`
     downgrades F9 (unfilled Context stub) from error to warning — only `fdf migrate` sets it.
 
-- **`cli/internal/scaffold`** (`init`, `new`), **`cli/internal/install`** (skills +
-  a `## Feature Document Format` primer, idempotent, never clobbers user edits; also
-  removes the superseded slash commands by exact name), and
-  **`cli/internal/migrate`** (mechanical upgrades to the current spec version; 0.3→0.4
-  rewrites nested trail files to stem siblings and scaffolds `SURFACES.md`; 0.4→0.5 and
-  0.5→0.6 are **additive**, so the pre-0.4 layout transform — pre-flight included — is
-  skipped for bundles already in the stem layout. 0.5→0.6 moves nothing but adds a fifth
-  Context stub, so F9 holds the bundle to filling `DOMAIN.md` before its next feature;
-  migrate itself passes via `FreshStubsAdvisory`). **`cli/internal/debt`** (`fdf debt`:
-  the register — list with optional status filter, scaffold, and `--cleanup`, which folds
-  resolved debts into `debts/LOG.md` newest-first and removes their files; open and
-  accepted debts are never touched, `--dry-run` previews, `--no-log` skips the log).
-  **`cli/internal/changes`** (`fdf change`/`fdf fix`
-  scaffolding and `fdf history`, which computes a feature's post-delivery trail from
-  `affects:` rather than from back-links) and **`cli/internal/release`** (`fdf release`,
-  which derives a release's `# Features`/`# Changes` lists from `version:` fields and
-  preserves hand-written `# Notes`; it never derives membership).
+- **`cli/internal/scaffold`** (`init`, `new`, and `Adopt`, which scaffolds an adopted map
+  entry), **`cli/internal/install`** (skills + a `## Feature Document Format` primer,
+  idempotent, never clobbers user edits; also removes the superseded slash commands by
+  exact name), and **`cli/internal/migrate`** (mechanical upgrades to the current spec
+  version; 0.3→0.4 rewrites nested trail files to stem siblings and scaffolds
+  `SURFACES.md`; 0.4→0.5, 0.5→0.6 and 0.6→0.7 are **additive**, so the pre-0.4 layout
+  transform — pre-flight included — is skipped for bundles already in the stem layout.
+  0.5→0.6 moves nothing but adds a fifth Context stub, so F9 holds the bundle to filling
+  `DOMAIN.md` before its next feature; migrate itself passes via `FreshStubsAdvisory`.
+  0.6→0.7 scaffolds `bugs/INDEX.md`, refuses a bundle whose `bugs/` is a feature group,
+  and reports the new F12 count and the debts that may be bugs).
+  **`cli/internal/register`** (`fdf debt` and `fdf bug`: `register.Debt` and
+  `register.Bug` are two `Kind`s over one implementation — list with optional status
+  filter, scaffold, and `--cleanup`, which folds resolved entries into `<dir>/LOG.md`
+  newest-first, with the first *paragraph* of `# Resolution`, and removes their files;
+  open and accepted entries are never touched, `--dry-run` previews, `--no-log` skips
+  the log). **`cli/internal/changes`** (`fdf change`/`fdf fix` scaffolding, with
+  `--from bugs/<id>` copying a bug's analysis and writing `resolves`, and `fdf history`,
+  which computes a feature's post-delivery trail and known bugs from `affects:` rather
+  than from back-links) and **`cli/internal/release`** (`fdf release`, which derives a
+  release's `# Features`/`# Changes` lists from `version:` fields and preserves
+  hand-written `# Notes`; it never derives membership). **`cli/internal/adopt`** is the
+  adoption map (`fdf adopt` without an ID: features with scenario and test counts, then
+  `git ls-files` code no `resource` claims). **`cli/internal/refactor`** holds the two
+  maintenance edits a tool does whole: `Move` (`fdf mv` — plan every file move, rewrite
+  links, edges, declaration headings and ID mentions in every document, move index
+  listings, log, and report references outside the bundle) and `Lexicon`
+  (`fdf lexicon`, and `--fix` one `--term` at a time: plurals, capitals and a/an kept,
+  scenario names renamed across their joins; italic mentions, quoted Gherkin labels,
+  table cells and names are left for a person).
 
-### Layout the validator expects (v0.6)
+### Layout the validator expects (v0.7)
 
 ```
 docs/features/
@@ -147,12 +180,19 @@ debts/                            # v0.6: same shape as practices/
 ├── LOG.md                        # where `fdf debt --cleanup` retires resolved debts
 ├── slug.md                       # type: Debt (status: open | accepted | resolved)
 └── slug.log.md                   # the ONLY legal sibling
+bugs/                             # v0.7: same shape as debts/
+├── INDEX.md
+├── LOG.md                        # `fdf bug --cleanup`; F10 reads cleared IDs here
+├── slug.md                       # type: Bug (open | accepted | resolved)
+└── slug.log.md
 ```
 
 Trail roles are only `spec`, `plan`, `test`, `surface`, `log` under a group — only
 `spec`, `plan`, `log` under `changes/`, since `test` and `surface` are living documents
 owned by the affected feature — and only `log` under `practices/` and `debts/`, since both
-are living references with no episodic trail at all. Task dirs must not contain nested SPEC/PLAN/TEST or LOG.md.
+are living references with no episodic trail at all — and bugs/ follows debts/. An `adopted`
+feature (v0.7) owns only `slug.test.md`/`slug.surface.md`/`slug.log.md`, never a spec, plan
+or task directory. Task dirs must not contain nested SPEC/PLAN/TEST or LOG.md.
 
 ### The conformance contract
 
@@ -168,7 +208,7 @@ describe the case they lock in (e.g. `done-with-open-task`, `depends-on-cycle`,
 ### Specs and versioning
 
 `spec/<version>.md` files are normative. `spec/README.md` and the top-level `SPEC.md` index
-them; the current version is **0.6**. `currentVersion` is defined in
+them; the current version is **0.7**. `currentVersion` is defined in
 `cli/internal/scaffold/scaffold.go`. A bundle vendors a copy of its pinned spec at its own
 `docs/features/SPEC.md`, so bundles are self-describing. Bumping the spec means: add
 `spec/<new>.md`, extend `supportedVersions` in `validate.go`, add a `migrate` path, update

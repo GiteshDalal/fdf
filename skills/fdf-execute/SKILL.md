@@ -208,6 +208,13 @@ When it is paid, flip it to `resolved` with a `# Resolution` saying what closed
 it; `fdf debt --cleanup` clears resolved entries into `debts/LOG.md` so the
 register stays a list worth reading.
 
+A **defect** this work found outside its own scope — the software doing
+something wrong in code this feature does not own — is not a debt and not this
+feature's task: file it with `fdf bug`, carrying the reproduction under
+`# Symptom` and what should happen under `# Expected`, so the next person
+starts from your evidence. A defect inside this feature's scope is simply its
+next task.
+
 If something changed, **propose** the specific edit to the user and wait for
 explicit approval. Only on approval: make the edit (a Context document gets a
 new `timestamp`) and log what changed and why at its scope — the root

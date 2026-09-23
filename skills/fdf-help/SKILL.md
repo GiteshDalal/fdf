@@ -25,6 +25,13 @@ beside it at the group level:
 Position and stem are the link — no frontmatter pointers. The task directory
 holds **only** ordered task files; trail documents never nest inside it.
 
+A capability the software had **before** the bundle existed is an **adopted**
+feature (`status: adopted`): documented from the code as it stands, with its
+code named in `resource` and no spec, plan or tasks — ever, because nothing was
+built through FDF. It may start as a *map entry* (a `Feature:` block and no
+scenarios); its scenarios are backfilled as work reaches it. fdf-adopt runs
+that.
+
 Work that arrives **after** a feature ships lives under `changes/` as a
 `Change` (alters what the feature does) or a `Fix` (the code drifted from what
 the feature document already says). Both may be filed flat or in groups, both
@@ -64,6 +71,16 @@ code does not follow everywhere yet. `fdf debt` reads the register,
 how it reaches work that touches them. A debt is a register entry, not a unit
 of work: the work that closes it is a Change, a Fix, or plain code work.
 
+**Bugs** live under `bugs/` (`type: Bug`): known defects — the software doing
+something observably wrong — that nobody is repairing yet, with the
+investigation's `# Symptom` and `# Expected`, and the scenarios they contradict
+under `# Violates`. `fdf bug --open` reads the register. The line between the
+two registers: if someone could observe the software misbehaving it is a bug,
+even when a practice violation is the cause; a gap nobody can observe yet is a
+debt. A bug is **never resolved in place** — its repair is a `Fix` or `Change`
+that names it in `resolves` (`fdf fix --from bugs/<id> …`), and once that lands
+the bug is `resolved`.
+
 You are not expected to know FDF. Two commands tell you everything:
 
 | Question | Command |
@@ -73,7 +90,7 @@ You are not expected to know FDF. Two commands tell you everything:
 
 The CLI keeps the bundle honest: `fdf validate` must exit 0 after any bundle
 edit. Scaffold with `fdf new <group>/<slug>`, `fdf change`, `fdf fix`. The
-rules the fdf skills cite by number (F1–F13, R1) are defined in the spec.
+rules the fdf skills cite by number (F1–F14, R1) are defined in the spec.
 
 The bundle is the source of truth for what the software does. Code that
 changes behavior without touching the bundle makes the bundle lie — that is
@@ -95,25 +112,38 @@ This is the distinction that decides what you touch when something changes:
 
 | | Documents | When the software changes |
 |---|---|---|
-| **Living** — the system **today** | Feature Gherkin, `slug.test.md`, `slug.surface.md`, practices, debts, Context docs | **Amend in place.** A living document describing behavior the software no longer has makes the bundle lie. |
-| **Episodic** — a record of **one piece of work** | `slug.spec.md`, `slug.plan.md`, tasks, Change/Fix, log entries | **Never rewrite**, except by a lexicon fix. New work gets a new episode; the old one records why things were done that way. |
+| **Living** — the system **today** | Feature Gherkin, `slug.test.md`, `slug.surface.md`, practices, debts, bugs, Context docs | **Amend in place.** A living document describing behavior the software no longer has makes the bundle lie. |
+| **Episodic** — a record of **one piece of work** | `slug.spec.md`, `slug.plan.md`, tasks, Change/Fix, log entries | **Never rewrite**, except by a maintenance edit. New work gets a new episode; the old one records why things were done that way. |
 
 So a delivered feature that changes keeps **one** feature document, whose
 Gherkin you edit, and gains a **new** Change document with its own spec, plan
 and tasks. Never fork a second feature document for the same capability: two
 documents describing one capability is exactly the drift FDF exists to stop.
 
-One edit is allowed on every document, living or episodic, at any status: a
-**lexicon fix** — a word `DOMAIN.md` bans replaced by its term, and nothing
-else. It changes nothing that was delivered, so it needs no Change or Fix:
-when a word is banned, sweep it out of the whole bundle, frozen documents
-included. fdf-validate (F12) has the details.
+Three **maintenance edits** are allowed on every document, living or
+episodic, at any status, because each only puts one name in place of another
+and changes nothing that was delivered — so none needs a Change or Fix, and
+each is logged:
+
+- a **lexicon fix** — a word `DOMAIN.md` bans replaced by its term. When a word
+  is banned, the whole bundle is swept, frozen documents included:
+  `fdf lexicon` finds every one, `fdf lexicon --term <Term> --fix` replaces
+  them (fdf-validate, F12, has the triage);
+- a **reference repair** — a document moved or renamed, and every link, edge
+  and heading that names it updated. `fdf mv` does the whole thing; never
+  rename a bundle file by hand;
+- a **path repair** — a `resource` or `applies-to` path updated to where the
+  code now lives, after a refactor moved it.
 
 ## The Rule
 
 Before writing any code — and before answering "how should we build X" —
 find the bundle state and route by **feature status**. Status is the dispatch
 key: not the verb the user used, not the size of the change.
+
+One exception comes first, at any status: a report that something is
+**broken** goes to fdf-debug before anything else, because which document may
+repair a defect depends on what the defect turns out to be.
 
 | Bundle state | Skill |
 |---|---|
@@ -122,7 +152,8 @@ key: not the verb the user used, not the size of the change.
 | `draft` | fdf-brainstorm (finish the spec) |
 | `specified` | fdf-plan |
 | `planned` or `implementing` | fdf-execute |
-| `done` or `retired` | Delivered — post-delivery work → fdf-change (a `retired` capability coming back is a new feature → fdf-brainstorm) |
+| `done`, `adopted` or `retired` | Delivered — post-delivery work → fdf-change (a `retired` capability coming back is a new feature → fdf-brainstorm). Adding scenarios that describe what an `adopted` feature already does → fdf-adopt |
+| *(the capability exists in code but no feature documents it)* | fdf-adopt — map it (a map entry), then route the work by its new status. Never brainstorm existing behavior as if it were new |
 | *(something is broken, at any status)* | fdf-debug (root cause first; it routes the repair) |
 | *(project context may have drifted — periodically, before a release, after dependency or infrastructure work)* | fdf-checkpoint |
 | *(any bundle file just edited, or `fdf validate` failing)* | fdf-validate |
@@ -134,7 +165,8 @@ feature work — F9 will block it otherwise.
 Whichever stage you land in, the project-level documents come with you: write
 in `DOMAIN.md`'s vocabulary, follow the `# Rules` of any practice whose
 `applies-to` covers the paths you are about to touch, and check
-`fdf debt --open` for a gap already filed against them — a known gap is not a
+`fdf debt --open` and `fdf bug --open` for a gap or defect already filed
+against them — a known gap is not a
 discovery, and re-diagnosing one wastes the work someone already did.
 
 fdf-validate is not a stage — it is the gate that closes every one of them.
@@ -153,7 +185,8 @@ Nor is fdf-checkpoint — it is the periodic audit of the documents every agent
 reads first: the Context docs, `SPEC.md`, and the agent instruction files,
 checked against the code and against each other.
 
-Then announce: "Using fdf-<skill> — <feature> is <status>."
+Then announce: "Using fdf-<skill> — <feature> is <status>." (For code no
+feature documents yet: "Using fdf-adopt — <capability> is not mapped.")
 
 For a **delivered** feature, one question routes the work — but if the report
 is a symptom rather than a decision ("it's broken", "this is wrong"), you
@@ -196,6 +229,12 @@ change, or run fdf-checkpoint.
 since bringing code into line with a practice changes nothing a user sees.
 When it lands, flip the debt to `resolved` with a `# Resolution`.
 
+**Repairing a bug** is never plain code work: it changes what the software
+does. It is a `Fix` (the bug cites a scenario under `# Violates`) or a
+`Change` (no scenario covers it) — `fdf fix --from bugs/<id> …` or
+`fdf change --from bugs/<id> …` — through fdf-change. In code no feature
+documents, the capability is adopted first (fdf-adopt).
+
 **Cutting a release** is bookkeeping, not a stage: set `version:` on each
 feature, change and fix that ships, run fdf-checkpoint, then
 `fdf release <version>`, and `fdf release --ship <version>` once they are all
@@ -231,6 +270,9 @@ and so is the shortcut of doing it first and asking later.
 | "I'll flip statuses in a batch at the end" | Statuses reflect reality *now* — `in-progress` before working, per task. |
 | "Skip validate just this once" | `fdf validate` exit 0 is the gate after every bundle edit. No exceptions — use fdf-validate. |
 | "Validate failed, I'll just delete the scenario" | Never weaken content to silence a rule. fdf-validate has the honest fix for each code. |
+| "This already exists in code — I'll write it up as a `done` feature" | That invents a spec, a plan and tasks that never happened. It is an `adopted` feature — fdf-adopt. |
+| "I'll rename this feature file and fix the links myself" | A hand rename misses an `affects`, a heading or a link somewhere. `fdf mv` repairs every reference and logs the move. |
+| "It's a known bug, so I'll just patch it and close the bug" | A bug is never resolved in place. The repair is a Fix or Change that names it in `resolves` — that is what leaves the regression case behind. |
 | "I'll add the back-link on the feature" | Don't. `affects:` is the whole link; `fdf history <feature>` computes the rest. A hand-written back-link drifts. |
 
 ## Precedence

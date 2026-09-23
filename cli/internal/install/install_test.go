@@ -375,7 +375,7 @@ func TestUpgradeRefreshesShippedV062Primer(t *testing.T) {
 		t.Fatalf("install: %d\n%s", code, out.String())
 	}
 	got := string(mustRead(t, path))
-	if !strings.Contains(got, "**lexicon fix**") {
+	if !strings.Contains(got, "a lexicon fix (a banned word replaced by its term)") {
 		t.Fatalf("refreshed primer must allow the lexicon fix on every document:\n%s", got)
 	}
 	if strings.Count(got, primerHeading) != 1 {
@@ -383,6 +383,32 @@ func TestUpgradeRefreshesShippedV062Primer(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "updated") {
 		t.Fatalf("report should say the primer was updated:\n%s", out.String())
+	}
+}
+
+func TestUpgradeRefreshesShippedV063Primer(t *testing.T) {
+	home := t.TempDir()
+	// Seed the exact primer the v0.6.3 release wrote (untouched managed
+	// content): no bug register, no adoption, the lexicon fix alone.
+	path := filepath.Join(home, ".claude", "CLAUDE.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(primerV063("docs/features")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if code := Run("claude-code", home, "", false, &out); code != 0 {
+		t.Fatalf("install: %d\n%s", code, out.String())
+	}
+	got := string(mustRead(t, path))
+	for _, want := range []string{"**Bug documents**", "fdf-adopt", "**maintenance edits**", "`fdf mv`", "fdf lexicon"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("refreshed primer must teach v0.7 (%q):\n%s", want, got)
+		}
+	}
+	if strings.Count(got, primerHeading) != 1 {
+		t.Fatalf("refresh must replace the section, not append a second one:\n%s", got)
 	}
 }
 

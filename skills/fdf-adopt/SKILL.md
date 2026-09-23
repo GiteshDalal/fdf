@@ -1,0 +1,186 @@
+---
+name: fdf-adopt
+description: Use when an FDF project's capabilities already exist in code with no feature document — mapping an existing codebase into the bundle in phases, backfilling scenarios for an adopted feature, or before changing or fixing code that no feature documents yet. Not for new capabilities (fdf-brainstorm).
+---
+
+# FDF Adopt
+
+Bring a codebase that predates its bundle into FDF — honestly, and in phases.
+
+New to FDF? Run `fdf spec` for the format rules (see *Adopted features*) and
+`fdf help adopt` for the command. The fdf-help skill explains how the skills
+fit together.
+
+**Read the Context docs first** — `STACK.md`, `ARCHITECTURE.md`,
+`SURFACES.md`, `INFRA.md`, `DOMAIN.md`. They must be filled (fdf-init) before
+any feature exists, adopted ones included; F9 enforces it. Name everything in
+`DOMAIN.md`'s vocabulary: F12 reads feature names and Gherkin like any other
+document.
+
+## Why adoption is its own path
+
+A capability the software already has was never specified, planned or built
+through FDF. Writing it a `slug.spec.md`, a plan and done tasks now would
+invent a history that never happened — the one thing an episodic document must
+never be — and leaving it out of the bundle means every change to it happens
+around the bundle. So it enters as an **adopted** feature:
+
+| | An adopted feature |
+|---|---|
+| Build trail | **None**: no `slug.spec.md`, no `slug.plan.md`, no task directory — ever |
+| `resource` | **Required**: the code it lives in. With no tasks, it is the only link from the document to the code |
+| Scenarios | **Zero or more.** A `Feature:` block and `resource` alone make a *map entry* |
+| `slug.test.md` | From the first scenario, one case per scenario, pointing at an existing test or an explicit manual procedure |
+| Delivered? | Yes: a `Change`, `Fix` or `Bug` can name it in `affects`. It never becomes `done` |
+| `version` | None: it shipped before the bundle recorded releases |
+
+Adoption is for code that predates its capability's first document. Code
+written last week is not adopted — it goes through fdf-brainstorm, because
+skipping the design gate is exactly the drift FDF exists to stop.
+
+## Phases
+
+A large codebase is adopted breadth first, then deepened where work happens.
+Run `fdf adopt` (no arguments) at any point: it prints every feature with its
+scenario and test counts, and the tracked code no document claims yet, most
+unclaimed first. That list is the plan.
+
+### Phase 1 — Map
+
+Goal: every capability the software has is on the map — an ID, a group, its
+code — before anyone documents how it behaves. It is cheap, and it is what lets
+every later piece of work find the capability it is about to touch.
+
+1. **Survey the entry points**, not the modules: routes and RPCs, CLI commands,
+   scheduled jobs, event consumers, UI screens. Group them by what a person or
+   calling system would call *one thing they can do*. That is a capability.
+   Not one per endpoint — "refund a payment" is one capability behind three
+   RPCs — and not one per module; a module usually holds several.
+2. **Propose a group at a time**: the capability list for one area, each with
+   its proposed `<group>/<slug>`, a one-line purpose, and the paths it lives
+   in. Groups follow `ARCHITECTURE.md`'s map or the product's own areas. Wait
+   for approval before scaffolding — the names become IDs every later
+   document links to.
+3. **Scaffold each** with
+   `fdf adopt --resource <path>[,<path>…] <group>/<slug>`. The paths must
+   exist; prefer the directory or file that holds the capability over a whole
+   module. A file every capability passes through — a route table, a wiring
+   module — goes on each capability it registers, after the capability's own
+   code, not instead of it. An entry point whose code you cannot find is still
+   mapped, with the file that declares it as its `resource`; say in its prose
+   that the code behind it was not found — and if nothing serves it at all,
+   that is a defect (below).
+4. **Fill the `Feature:` block** truthfully — who uses this, what they do with
+   it, why — and the one-line `description`. No scenarios yet. Code rarely
+   names its actor: ask when it matters; in a batch the user pre-approved, name
+   the most likely actor and say in the prose that it was inferred. Replace
+   every scaffold placeholder, in the feature and in the group's `INDEX.md`
+   entry — `fdf validate` warns about any left behind.
+5. **What else you find, file — do not act on.** Mapping is when defects and
+   drift surface, because it is the first time anyone reads the code for what
+   it does:
+   - a **defect** (the code visibly does something wrong, a route served by
+     nothing) → `fdf bug --affects <new-id> --resource <path> <slug>`, with
+     `# Symptom` saying it was found by reading and `# Expected` naming the
+     open question. Never repaired during mapping, never backfilled.
+   - a **banned word in a code name** (a type, function or table) → propose a
+     debt (`fdf debt`); renaming code is plain code work for later.
+   - a **Context document the code contradicts** → note it for fdf-checkpoint.
+
+   Filing a bug is part of mapping. Proposing a debt waits for approval like
+   any other debt. If the user limited the session to mapping alone, list
+   each finding with the command that would file it instead.
+6. **Log and gate**: one bundle-root `LOG.md` line per batch, under today's
+   `## YYYY-MM-DD` heading (added above the older ones: newest first) —
+   `* **Adopted**: 14 capabilities mapped in payments/ and orders/.` — link any
+   new group from the root `INDEX.md`, then `fdf validate` exit 0.
+
+### Phase 2 — Backfill on touch
+
+Before a change reaches an adopted capability, its document has to be able to
+carry the change:
+
+- A `Change` that will `modify:` or `remove:` a scenario needs that scenario
+  to exist first — backfill exactly those, then route the work to
+  fdf-change. A Change that only `add:`s scenarios needs no backfill.
+- A capability with no map entry is mapped first (Phase 1, one capability).
+- A defect: see *Defects in adopted and undocumented code* below.
+
+### Phase 3 — Backfill by risk
+
+With the map complete, deepen where being wrong costs most: money, access
+control, data loss and privacy first; then the paths agents change most often
+(`git log --format= --name-only | sort | uniq -c | sort -rn` ranks them).
+There is no quota. A capability with three scenarios that matter beats one with
+thirty nobody checks.
+
+### Phase 4 — Steady state
+
+New capabilities go through the normal lifecycle (fdf-brainstorm).
+Post-delivery work on adopted ones goes through fdf-change. The map keeps
+itself honest: `fdf adopt` shows what is still unclaimed.
+
+## Backfilling one scenario
+
+A backfilled scenario is a **promise about what the code already does** — and
+the proof that it already does it is part of the same edit.
+
+1. **Read the code and its existing tests.** Find the behavior, and the test
+   that already exercises it if there is one.
+2. **Write the scenario** in declarative Gherkin, in `DOMAIN.md`'s terms,
+   describing what the software does **today** — never what it should do.
+3. **Write its `slug.test.md` case** — the scenario name verbatim, and the
+   existing test's command or path, or an explicit manual procedure.
+4. **Run it against the code as it stands.** No code change in this edit.
+5. **It passes** → keep both; `fdf validate`. Log the batch in the feature's
+   `slug.log.md` when it is worth the next reader's time.
+6. **It fails** → stop. Either you misread the code (rewrite the scenario to
+   what the code actually does, and run again), or you found a defect. A defect
+   is never backfilled — not as it is, which would promise it, and not as it
+   should be, whose test fails. File it (`fdf bug --affects <group>/<slug> …`)
+   with its `# Symptom` and `# Expected`.
+
+Backfill only **adds**. Once written, a scenario is a promise like any other:
+modifying or removing one is a `Change` with its design gate, exactly as for a
+`done` feature.
+
+## Defects in adopted and undocumented code
+
+Start with fdf-debug: root cause first. Then:
+
+- **The code is on the map** — the defect's repair is a `Change` when no
+  scenario covers the case (the usual one: nobody wrote the promise down, so
+  someone decides it now — for an obvious case the design gate is a one-line
+  approval), or a `Fix` when a backfilled scenario already says otherwise.
+- **The code is not on the map** — map the capability first (Phase 1, one
+  entry), add it to the bug's `affects`, then repair it as above. A defect is
+  never repaired around the bundle because its code was undocumented: that
+  repair would leave no scenario and no test behind, and the defect would
+  return unnoticed.
+- **Not repairing it now** — it is a `Bug` on the register, with everything the
+  investigation learned.
+
+## Red flags — STOP
+
+| Thought | Reality |
+|---|---|
+| "I'll write a quick spec and plan so it can be `done`" | That invents a history. Adopted features have no build trail, by design. |
+| "The code clearly should do X — I'll backfill X" | Backfill documents what the code does. If it does not do X, that is a Bug or a Change, never a backfilled scenario. |
+| "I'll fix this small thing while backfilling" | A backfill edit changes no code. The fix is its own work, routed through fdf-debug. |
+| "Map every endpoint as its own feature" | Capabilities, not endpoints. A map nobody can read is not a map. |
+| "Let me backfill all the scenarios before anything else" | Breadth first, depth where work happens. Full backfill of a large codebase is a project nobody finishes. |
+| "This new code has no document yet — I'll adopt it" | Adoption is for code that predates its document. New work goes through fdf-brainstorm and its design gate. |
+| "The backfilled scenario was wrong; I'll edit it" | If the code does something else, it was a misread only before it landed. Once written, changing it is a Change. |
+| "It's only the mapping phase, so the bug I just spotted can wait" | File it — `fdf bug`, found by reading. Mapping is when defects surface, and one known only to a chat log is found again from zero. |
+| "The name the code uses is fine for the feature ID" | IDs are names the bundle chooses: they follow `DOMAIN.md`, and F12 reads them. A code name that uses a banned word is a debt to propose, not a precedent. |
+
+## Rules
+
+- An adopted feature never gets a spec, plan or task directory; work on it gets
+  its own Change.
+- `resource` names code that exists; `fdf adopt` refuses a path that does not.
+- A backfilled scenario describes today's behavior and arrives with a test case
+  that passes against unchanged code.
+- Backfill adds; modifying or removing a scenario is a Change.
+- Map in batches the user approves; IDs are hard to take back.
+- `fdf validate` exit 0 after every bundle edit.

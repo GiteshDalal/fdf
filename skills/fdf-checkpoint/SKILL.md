@@ -24,8 +24,9 @@ It **proposes; the user decides.** Nothing is edited without explicit
 approval. It edits documents, never code. It never writes into `SPEC.md` or the
 managed primer — `fdf migrate` and `fdf install` rewrite them. And it touches
 episodic documents — `slug.spec.md`, plans, tasks, changes and logs — only for
-a lexicon fix: they record the past, and a past that disagrees with today is
-not drift, except in the words `DOMAIN.md` bans.
+a maintenance edit (a lexicon fix, a reference repair by `fdf mv`, a path
+repair): they record the past, and a past that disagrees with today is not
+drift, except in the names it uses.
 
 Most of the work is judgment — which copy is the original, whether the
 document or the code moved — so where you can choose the model, run it on the
@@ -65,9 +66,11 @@ it appears as a link to that home, not a copy.
    fdf-init's job; any other failure goes through fdf-validate first — audit a
    bundle that validates. Its `warn:` lines are findings too: carry them into
    the report — routed as fdf-validate says when they carry a rule code, and
-   simply listed when they do not. (A banned word is fixed in place with a
-   lexicon fix, in every document that uses it — delivered features and
-   finished changes included.)
+   simply listed when they do not. (Banned words are swept with a lexicon
+   fix, in every document that uses them — delivered features and finished
+   changes included — in fdf-validate's triage order: `fdf lexicon`, qualify
+   the other senses into `except:`, code-span the mentions, then
+   `fdf lexicon --term <Term> --fix`.)
 2. **Set the baseline** — a commit: the one that logged the last checkpoint,
    or, with none, the oldest of the Context documents' last commits (the
    widest window misses least). Then list what changed since:
@@ -204,7 +207,19 @@ names something checkable is a claim, and each kind has one place to check:
 Then look the other way: what the evidence shows that no document mentions —
 a new top-level directory, a new data store or client library, a new deploy
 target, models, tables and routes added since the baseline that `DOMAIN.md`
-has no term for.
+has no term for. `fdf adopt` (no arguments) lists the tracked code no feature,
+task, change or fix claims: a capability that appeared there since the baseline
+with no document is a finding — map it (fdf-adopt) or, if it is new work that
+skipped the lifecycle, say so plainly.
+
+**The registers.** Read `fdf debt --open` and `fdf bug --open` against the
+tree. A debt whose `# Gap` describes the software doing something observably
+wrong is a bug filed in the wrong register — common in bundles migrated from
+v0.6, which had no bug register. Propose re-filing it:
+`fdf mv debts/<id> bugs/<id>` changes its type and heading, and F14 then asks
+for the `# Expected` it never had to state. An open bug whose `resource` paths
+are gone, or whose `# Violates` scenarios a Change has since removed, needs
+amending — it is a living document.
 
 Every mismatch has two readings, and they take opposite fixes:
 
@@ -252,20 +267,21 @@ is accurate today — it is the copy that goes stale next.
   `practices/`, and none it calls current is `superseded`.
 - **Vocabulary** — every document in the bundle is internal language,
   episodic ones included, and so are the instruction files: they use
-  `DOMAIN.md`'s canonical names. F12 scans only Gherkin and declared scenario
-  names, so the prose is yours. Build the pattern from every `instead-of`
-  word in `DOMAIN.md`:
+  `DOMAIN.md`'s canonical names. Inside the bundle F12 reads it all, and
+  `fdf lexicon` lists every occurrence with its place; triage and sweep it as
+  fdf-validate describes. A word used in another sense ("git branch", the
+  `## Data stores` scaffold heading when "store" is banned) is a proposed
+  `except:` phrase, not a finding against the document. The instruction files
+  live outside the bundle, so check them by hand — build the pattern from
+  every `instead-of` word in `DOMAIN.md`:
 
   ```bash
-  grep -rnwiE --exclude=SPEC.md '(<word>|<word>|…)s?' docs/features CLAUDE.md AGENTS.md
+  grep -rnwiE '(<word>|<word>|…)s?' CLAUDE.md AGENTS.md
   ```
 
-  A hit that names the concept is a finding, and its fix is a lexicon fix —
-  in a spec, plan, task, change or log as much as in a Context document. A
-  hit in another sense is not — quoted surface wording (the label a screen
-  shows for the term), a scaffold heading such as `## Data stores` when
-  "store" is banned, or the examples in the managed primer, which is fdf's
-  text.
+  A hit that names the concept is a finding; quoted surface wording and the
+  examples in the managed primer (fdf's text) are not. When the bundle's
+  report is empty, propose `strict: true` in `DOMAIN.md`.
 
 ## 4. Agent instruction files
 
@@ -328,7 +344,7 @@ question bank), draft the whole document, and get it approved as a whole.
   `fdf install` rewrite them. Deleting an edited primer section so
   `fdf install` can write it fresh is the one hand step.
 - Never drop a line inside a rewrite without saying so.
-- Never edit an episodic document to agree with today — except a lexicon
-  fix, which changes only the words `DOMAIN.md` bans.
+- Never edit an episodic document to agree with today — except a maintenance
+  edit: a lexicon fix, a reference repair (`fdf mv`), or a path repair.
 - Context documents are snapshots: no history, no plans.
 - `fdf validate` exit 0 at the end.

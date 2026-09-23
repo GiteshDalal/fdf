@@ -12,9 +12,12 @@ at `docs/features/SPEC.md`) and `fdf help` for the CLI. The fdf-help skill
 explains how the fdf skills fit together.
 
 **This skill is for capabilities that do not exist yet.** If the capability is
-already delivered (`done` or `retired`) and needs to change or be fixed, stop
-and use fdf-change — a second feature document for one capability is the drift
-FDF exists to prevent. The one exception: a `retired` capability that is
+already delivered (`done`, `adopted` or `retired`) and needs to change or be
+fixed, stop and use fdf-change — a second feature document for one capability
+is the drift FDF exists to prevent. If it already exists **in the code** but no
+feature documents it, it is not new either: map it with fdf-adopt, then change
+it through fdf-change — brainstorming existing behavior as if it were new
+invents a design history it never had. The one exception: a `retired` capability that is
 coming back returns as a new feature, brainstormed here, which may name the
 retired one in `depends-on`. The retired document is never flipped back.
 
@@ -29,8 +32,9 @@ unfilled stubs, stop and run fdf-init first.
 
 **Write the Gherkin in the project's words.** `DOMAIN.md` gives one canonical
 name per concept and lists the words banned in its place; use the canonical
-ones in every scenario, and in the names you propose for anything new. F12
-reports a banned word in a feature's Gherkin, but the point is upstream of the
+ones in every scenario, in the spec, and in the names you propose for anything
+new — the feature's own slug included. F12 reports a banned word in any
+document the bundle writes and in its names, but the point is upstream of the
 warning: a scenario that calls a Venue a "store" has already started the drift.
 If the capability needs a concept the lexicon does not have, say so — a new
 term is a DOMAIN.md change and needs the user's approval like any other

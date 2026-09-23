@@ -1,6 +1,6 @@
 ---
 name: fdf-change
-description: Use when a delivered (done or retired) FDF feature needs to change, a diagnosed defect in it needs fixing, or it is being retired — including work spanning several features. An undiagnosed bug goes to fdf-debug first. Not for features still in draft/specified/planned/implementing.
+description: Use when a delivered (done, adopted or retired) FDF feature needs to change, a diagnosed defect in it needs fixing — including a bug on the register — or it is being retired, including work spanning several features. An undiagnosed bug goes to fdf-debug first. Not for features still in draft/specified/planned/implementing.
 ---
 
 # FDF Change
@@ -50,11 +50,21 @@ Fix body's `# Symptom` and `# Root cause` sections are waiting for.
 ## Process
 
 1. **Confirm the feature is delivered.** `affects` may only name features that
-   are `done` or `retired`. A feature still in flight is edited directly —
-   route back to fdf-brainstorm/plan/execute.
+   are `done`, `adopted` or `retired`. A feature still in flight is edited
+   directly — route back to fdf-brainstorm/plan/execute. Code no feature
+   documents is adopted first (fdf-adopt), then changed here. For an `adopted`
+   feature, every scenario this work will `modify:` or `remove:` must exist
+   first — backfill them with fdf-adopt; one it only `add:`s needs none.
 2. **Scaffold**, flags before the slug:
    - `fdf change --affects <group>/<slug>[,…] [<group>/]<slug>`
    - `fdf fix --affects <group>/<slug>[,…] [<group>/]<slug>`
+
+   When the work repairs a bug on the register, scaffold **from** it:
+   `fdf fix --from bugs/<id> [<group>/]<slug>` (or `fdf change --from …`). It
+   takes over the bug's analysis as this document's permanent record — its
+   `# Symptom` and `# Root cause`, its `# Violates` scenarios as regression
+   cases — defaults `affects` to the bug's, and writes `resolves: bugs/<id>`.
+   A bug is never resolved in place; this is how it is resolved.
 
    Group it (`payments/refund-window`) when `changes/` is getting long. The
    group is filing only — nothing ties it to the affected feature's group, and
@@ -76,7 +86,8 @@ Fix body's `# Symptom` and `# Root cause` sections are waiting for.
 
    A rename is `remove:` the old plus `add:` the new. A rename whose only
    reason is a word `DOMAIN.md` bans is not a Change at all: it is a lexicon
-   fix, made in place across the bundle (fdf-validate, F12). Delete the
+   fix, made in place across the bundle — `fdf lexicon --term <Term> --fix`
+   renames a scenario everywhere it is a join (fdf-validate, F12). Delete the
    scaffold's TODO lines that do not apply.
 
    For a `Fix`, under `# Regression cases`, one heading per affected feature
@@ -122,7 +133,10 @@ Fix body's `# Symptom` and `# Root cause` sections are waiting for.
    needs to judge this change and the next one.
 9. **Flip to `done`** — with tasks, the last task and the document in the
    same edit, as fdf-execute does — and update timestamps. If the work closes
-   an open debt, flip it to `resolved` with a `# Resolution` now too.
+   an open debt, flip it to `resolved` with a `# Resolution` now too. Every bug
+   this document `resolves` is flipped to `resolved` in the same edit, its
+   `# Resolution` naming this document — F10 refuses a done repair whose bug
+   still reads as open.
    **Gate**: `fdf validate` exit 0. F10 refuses a `done` change whose declared
    effects are not reality.
 10. **Log it** in each affected feature's `slug.log.md` — what changed and
@@ -132,7 +146,8 @@ Fix body's `# Symptom` and `# Root cause` sections are waiting for.
     DOMAIN.md)? Did the code diverge from a practice that governs its paths,
     and is that a defect or an approved `# Exceptions` entry? Did it establish
     a mechanism a second feature now repeats, which should become a practice?
-    Did it knowingly leave something undone — `fdf debt [<group>/]<slug>`?
+    Did it knowingly leave something undone — `fdf debt [<group>/]<slug>` —
+    or find a defect it is not repairing — `fdf bug [<group>/]<slug>`?
     *Propose* each edit and wait for explicit approval. Never edit a Context
     document or a practice silently. See *Practices and a change* below —
     post-delivery work is where practice drift actually surfaces.
@@ -208,9 +223,14 @@ deleted — the document records behavior the software once had.
 - Never fork a second feature document for the same capability.
 - Never edit a delivered feature's Gherkin outside a Change or Fix: then
   nothing records why, and nothing verified that the code followed. A
-  lexicon fix is the one exception — it changes words, not behavior.
+  lexicon fix is the one exception — it changes words, not behavior — and so
+  is backfilling an adopted feature: adding a scenario that its code already
+  passes (fdf-adopt).
 - Never rewrite the feature's original spec, plan, or tasks, except for a
-  lexicon fix.
+  maintenance edit — a lexicon fix, a reference repair after `fdf mv`, a path
+  repair after the code moved.
+- Never resolve a bug in place. Its repair is this document, which names it in
+  `resolves`.
 - Never fork a practice per change: amend the one that exists, or supersede
   it. A practice describes today, and there is only one today.
 - Never hand-write a back-link on the feature. `affects:` is the whole link;
