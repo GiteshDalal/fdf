@@ -1,0 +1,3 @@
+exit: 1
+contains: bugs/patched.md: resolved while it still cites a scenario under `# Violates`, but no done Fix or Change names it in `resolves`
+contains: (F14)

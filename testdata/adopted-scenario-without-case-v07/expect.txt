@@ -1,0 +1,2 @@
+exit: 1
+contains: venues/card-payments.test.md: scenario "A declined card is refused" has no test case (F8)

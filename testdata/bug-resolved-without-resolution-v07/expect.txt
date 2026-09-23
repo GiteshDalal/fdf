@@ -1,0 +1,2 @@
+exit: 1
+contains: bugs/closed.md: status 'resolved' requires a `# Resolution` naming what closed it (F14)

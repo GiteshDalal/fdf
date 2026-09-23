@@ -1,0 +1,10 @@
+exit: 0
+contains: warn: venues/opening-hours.spec.md: uses banned "store" ×2 → "Venue" (F12)
+contains: warn: venues/opening-hours/01-build.md: uses banned "item" → "Product" (F12)
+contains: warn: venues/INDEX.md: uses banned "shop" → "Venue" (F12)
+contains: warn: LOG.md: uses banned "store" → "Venue" (F12)
+contains: warn: debts/hours-cache.md: uses banned "shop" → "Venue" (F12)
+not-contains: opening-hours.test.md: uses
+not-contains: opening-hours.surface.md: uses
+not-contains: SPEC.md
+not-contains: DOMAIN.md: uses

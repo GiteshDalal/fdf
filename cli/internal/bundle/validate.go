@@ -1,5 +1,5 @@
-// Package bundle validates an FDF bundle (spec v0.2 through v0.6). Rules
-// F1-F13 are format conformance; R1 is repo integrity. See SPEC.md.
+// Package bundle validates an FDF bundle (spec v0.2 through v0.7). Rules
+// F1-F14 are format conformance; R1 is repo integrity. See SPEC.md.
 package bundle
 
 import (
@@ -24,9 +24,15 @@ type Options struct {
 	// StrictDomain promotes F12's banned-word warnings to errors. Off by
 	// default: the lexicon check is the one rule that matches natural
 	// language, so a young bundle adopting a lexicon would otherwise be
-	// unable to validate until every document had been reworded.
+	// unable to validate until every document had been reworded. From v0.7 a
+	// bundle can also turn it on for itself with `strict: true` in DOMAIN.md.
 	StrictDomain bool
 }
+
+// domainReportCap bounds F12's per-document lines in `fdf validate` output:
+// a bundle that has just banned a word can report hundreds of documents, and
+// the full list is `fdf lexicon`'s job.
+const domainReportCap = 20
 
 var (
 	reserved     = map[string]bool{"INDEX.md": true, "LOG.md": true}
@@ -39,6 +45,7 @@ var (
 	structuralV4 = map[string]bool{"Surface": true, "Log": true}
 	structuralV5 = map[string]bool{"Change": true, "Fix": true}
 	structuralV6 = map[string]bool{"Practice": true, "Debt": true}
+	structuralV7 = map[string]bool{"Bug": true}
 	// changeTrailRoleRe: under changes/, only spec/plan/log are legal roles —
 	// test and surface are living documents owned by the affected feature.
 	changeTrailRoleRe = regexp.MustCompile(`^([a-z0-9][a-z0-9-]*)\.(spec|plan|log)\.md$`)
@@ -75,21 +82,39 @@ var (
 	logDateRe     = regexp.MustCompile(`^##\s+(.*\S)\s*$`)
 )
 
-// featureStatuses: "retired" is v0.5 only and gated at the check site.
+// featureStatuses: "retired" is v0.5 onward and "adopted" v0.7 onward, both
+// gated at the check site.
 var featureStatuses = []string{"draft", "specified", "planned", "implementing", "done"}
 var featureStatusesV5 = []string{"draft", "specified", "planned", "implementing", "done", "retired"}
+var featureStatusesV7 = []string{"draft", "specified", "planned", "implementing", "done", "adopted", "retired"}
 
 // changeStatuses is the Change/Fix vocabulary (v0.5); it mirrors the feature
 // lifecycle minus "retired" — a change is work, not a capability.
 var changeStatuses = []string{"draft", "specified", "planned", "implementing", "done"}
 var taskStatuses = []string{"pending", "in-progress", "done"}
 var practiceStatuses = []string{"active", "superseded"}
+
+// debtStatuses is the vocabulary of both registers: Debt (v0.6) and Bug
+// (v0.7) share it, and with it the reason for `accepted`.
 var debtStatuses = []string{"open", "accepted", "resolved"}
 var releaseStatuses = []string{"planned", "shipped"}
 
 // supportedVersions are the spec versions this validator understands; a pin
 // outside this set is an F1 error directing the user to `fdf migrate`.
-var supportedVersions = map[string]bool{"0.2": true, "0.3": true, "0.4": true, "0.5": true, "0.6": true}
+var supportedVersions = map[string]bool{"0.2": true, "0.3": true, "0.4": true, "0.5": true, "0.6": true, "0.7": true}
+
+// pinAtLeast reports whether a supported pin is spec 0.<minor> or later. An
+// empty or unsupported pin validates under v0.2 rules (F1 reports the latter).
+func pinAtLeast(pin string, minor int) bool {
+	if !supportedVersions[pin] {
+		return false
+	}
+	var n int
+	if _, err := fmt.Sscanf(pin, "0.%d", &n); err != nil {
+		return false
+	}
+	return n >= minor
+}
 
 // supportedList renders supportedVersions for error messages, so adding a
 // version never leaves a stale literal behind.
@@ -150,6 +175,17 @@ func linkScanText(text string) string {
 
 const stubSentinel = "<!-- fdf:stub -->"
 
+// placeholderRe finds the text fdf's scaffolds write for a person to replace:
+// a line, list item, declaration or frontmatter value beginning "TODO —", and
+// a group index entry still reading "- TODO.". It runs on the text with code
+// stripped (linkScanText), so an example that quotes a placeholder is not one.
+// gherkinPlaceholderRe finds the scaffold's "As a <role>", which lives inside a
+// Gherkin fence and so is matched on the raw text. A v0.7 advisory: a scaffold
+// passes every structural rule, and without this an untouched one reads as
+// done.
+var placeholderRe = regexp.MustCompile(`(?m)^\s*(?:[-*]\s+)?(?:\d+\.\s+)?(?:[a-z-]+:\s*)?TODO —|\) - TODO\.`)
+var gherkinPlaceholderRe = regexp.MustCompile(`(?m)^\s*As an? <role>\s*$`)
+
 // readPin returns the fdf_version pinned by the bundle's root INDEX.md, or ""
 // if absent/unreadable. It runs before the walk because version-gated rules
 // (Context documents, feature-directory LOG.md) must be known for every file,
@@ -180,7 +216,10 @@ func in(list []string, s string) bool {
 	return false
 }
 
-type featureInfo struct{ rel, status, version, body string }
+type featureInfo struct {
+	rel, status, version, body string
+	resource                   []string // v0.7: the code an adopted feature documents
+}
 type pairInfo struct {
 	spec, plan, test  bool
 	planRel, planBody string
@@ -215,21 +254,25 @@ func Validate(root string, opts Options) int {
 	practiceTrails := map[string]string{} // practice ID -> rel of its .log.md
 	debts := map[string]*debtInfo{}
 	debtTrails := map[string]string{} // debt ID -> rel of its .log.md
+	bugs := map[string]*bugInfo{}
+	bugTrails := map[string]string{} // bug ID -> rel of its .log.md
+	texts := map[string]string{}     // v0.7: every .md file's text, for F12's scan
 	featureDeps := map[string][]string{}
 	documents := 0
 
 	// Version gate: Context docs / F9 apply on v0.3+; stem-trail layout and
-	// SURFACES.md on v0.4 only. Anything else validates under v0.2 rules.
+	// SURFACES.md on v0.4+. Anything else validates under v0.2 rules.
 	pinnedVer := readPin(rootAbs)
-	// specStem: stem-qualified trail layout (v0.4 onward). specV5 additionally
-	// enables changes/, the Change/Fix types, `retired`, feature depends-on,
-	// and F10.
-	specStem := pinnedVer == "0.4" || pinnedVer == "0.5" || pinnedVer == "0.6"
+	// specStem: the stem-qualified trail layout (v0.4 onward).
+	specStem := pinAtLeast(pinnedVer, 4)
 	// specV5: v0.5 and later — changes/, Change/Fix, `retired`, feature
-	// depends-on, F10. specV6 adds practices/, DOMAIN.md, F11 and F12.
-	specV5 := pinnedVer == "0.5" || pinnedVer == "0.6"
-	specV6 := pinnedVer == "0.6"
-	specHasContext := pinnedVer == "0.3" || specStem
+	// depends-on, F10. specV6 adds practices/, debts/, DOMAIN.md, F11-F13.
+	// specV7 adds bugs/ and F14, the `adopted` feature status, and F12's
+	// reach into every document and name.
+	specV5 := pinAtLeast(pinnedVer, 5)
+	specV6 := pinAtLeast(pinnedVer, 6)
+	specV7 := pinAtLeast(pinnedVer, 7)
+	specHasContext := pinAtLeast(pinnedVer, 3)
 	// contextDocs[name] records a seen root Context document and whether it is
 	// still an unfilled stub, for F9.
 	contextDocs := map[string]bool{} // name -> isStub
@@ -263,6 +306,12 @@ func Validate(root string, opts Options) int {
 			return nil
 		}
 		text := strings.TrimPrefix(string(raw), "\uFEFF")
+		if specV7 {
+			texts[filepath.ToSlash(rel)] = string(raw) // F12 reads it again, from here
+			if rel != "SPEC.md" && (placeholderRe.MatchString(linkScanText(text)) || gherkinPlaceholderRe.MatchString(text)) {
+				warns = append(warns, fmt.Sprintf("%s: still holds a scaffold's placeholder text (`TODO —`, `<role>`) — fill it in, or delete what does not apply", rel))
+			}
+		}
 		for _, m := range linkRe.FindAllStringSubmatch(linkScanText(text), -1) {
 			links = append(links, link{rel, m[1]})
 		}
@@ -278,9 +327,10 @@ func Validate(root string, opts Options) int {
 			inChangeGroup := specV5 && len(parts) == 3 && parts[0] == "changes" &&
 				!exists(filepath.Join(rootAbs, "changes", parts[1]+".md"))
 			// Every directory under practices/ is a group: a practice owns no
-			// task directory, so there is no ambiguity to resolve.
+			// task directory, so there is no ambiguity to resolve. The same
+			// holds for the debts/ and (v0.7) bugs/ registers.
 			inPracticeGroup := specV6 && len(parts) == 3 &&
-				(parts[0] == "practices" || parts[0] == "debts")
+				(parts[0] == "practices" || parts[0] == "debts" || (specV7 && parts[0] == "bugs"))
 			inChangeGroup = inChangeGroup || inPracticeGroup
 			// Trap 12: v0.4 task directories may contain only NN-slug.md tasks —
 			// reject INDEX.md/LOG.md here (reserved returns before len==3 case).
@@ -417,6 +467,7 @@ func Validate(root string, opts Options) int {
 				changes[cid] = &changeInfo{
 					rel: rel, id: cid, docType: docType, status: status, version: version, body: body,
 					affects: asList(data["affects"]), retires: asList(data["retires"]),
+					resolves: asList(data["resolves"]),
 				}
 				if len(fenceRe.FindAllStringSubmatch(body, -1)) > 0 {
 					errs = append(errs, fmt.Sprintf("%s: %s documents carry no Gherkin — behavior statements belong in the features they amend (F5)", rel, docType))
@@ -443,20 +494,26 @@ func Validate(root string, opts Options) int {
 			default:
 				errs = append(errs, fmt.Sprintf("%s: nested deeper than FDF structure allows (F3)", rel))
 			}
-		case specV6 && parts[0] == "debts" && len(parts) > 1:
-			// Positions under debts/ mirror practices/: <slug>.md, its
-			// optional <slug>.log.md, and one level of groups. No tasks.
+		case specV6 && (parts[0] == "debts" || (specV7 && parts[0] == "bugs")) && len(parts) > 1:
+			// Positions under the two registers mirror practices/: <slug>.md,
+			// its optional <slug>.log.md, and one level of groups. No tasks.
+			// debts/ holds Debt documents; bugs/ (v0.7) holds Bug documents.
+			register := parts[0]
+			wantType, noun := "Debt", "debt"
+			if register == "bugs" {
+				wantType, noun = "Bug", "bug"
+			}
 			rest := parts[1:]
-			dir := "debts"
+			dir := register
 			if len(rest) > 1 {
 				if !lowerDirRe.MatchString(rest[0]) {
-					errs = append(errs, fmt.Sprintf("%s: debts/ group names are lowercase [a-z0-9-] (F3)", rel))
+					errs = append(errs, fmt.Sprintf("%s: %s/ group names are lowercase [a-z0-9-] (F3)", rel, register))
 					return nil
 				}
-				dir, rest = "debts/"+rest[0], rest[1:]
+				dir, rest = register+"/"+rest[0], rest[1:]
 			}
 			if len(rest) != 1 {
-				errs = append(errs, fmt.Sprintf("%s: debts/ holds a debt, its optional <slug>.log.md, and one level of groups — nothing nests deeper (F3)", rel))
+				errs = append(errs, fmt.Sprintf("%s: %s/ holds a %s, its optional <slug>.log.md, and one level of groups — nothing nests deeper (F3)", rel, register, noun))
 				return nil
 			}
 			base := rest[0]
@@ -465,26 +522,37 @@ func Validate(root string, opts Options) int {
 					errs = append(errs, fmt.Sprintf("%s: expected `type: Log`, got %q (F3)", rel, docType))
 				}
 				checkLogBody(rel, text, &errs, &warns)
-				debtTrails[dir+"/"+m[1]] = rel
+				if register == "bugs" {
+					bugTrails[dir+"/"+m[1]] = rel
+				} else {
+					debtTrails[dir+"/"+m[1]] = rel
+				}
 				return nil
 			}
 			if m := anyTrailAttemptRe.FindStringSubmatch(base); m != nil {
-				errs = append(errs, fmt.Sprintf("%s: unknown trail role %q under debts/ — a debt is a register entry, not a unit of work; `log` is the only role (F3)", rel, m[2]))
+				errs = append(errs, fmt.Sprintf("%s: unknown trail role %q under %s/ — a %s is a register entry, not a unit of work; `log` is the only role (F3)", rel, m[2], register, noun))
 				return nil
 			}
-			if docType != "Debt" {
-				errs = append(errs, fmt.Sprintf("%s: expected `type: Debt`, got %q (F3)", rel, docType))
+			if docType != wantType {
+				errs = append(errs, fmt.Sprintf("%s: expected `type: %s`, got %q (F3)", rel, wantType, docType))
 				return nil
 			}
 			if !in(debtStatuses, status) {
-				errs = append(errs, fmt.Sprintf("%s: Debt `status` must be one of %s, got %q (F2)", rel, strings.Join(debtStatuses, "|"), status))
+				errs = append(errs, fmt.Sprintf("%s: %s `status` must be one of %s, got %q (F2)", rel, wantType, strings.Join(debtStatuses, "|"), status))
 			}
-			did := dir + "/" + strings.TrimSuffix(base, ".md")
+			id := dir + "/" + strings.TrimSuffix(base, ".md")
 			title, _ := data["title"].(string)
 			timestamp, _ := data["timestamp"].(string)
-			debts[did] = &debtInfo{
-				rel: rel, id: did, status: status, body: body,
-				title: title, timestamp: timestamp, resource: asList(data["resource"]),
+			if register == "bugs" {
+				bugs[id] = &bugInfo{
+					rel: rel, id: id, status: status, body: body,
+					affects: asList(data["affects"]), resource: asList(data["resource"]),
+				}
+			} else {
+				debts[id] = &debtInfo{
+					rel: rel, id: id, status: status, body: body,
+					title: title, timestamp: timestamp, resource: asList(data["resource"]),
+				}
 			}
 			for _, res := range asList(data["resource"]) {
 				resources = append(resources, struct{ rel, field, path string }{rel, "resource", res})
@@ -550,7 +618,7 @@ func Validate(root string, opts Options) int {
 				contextDocs[name] = strings.Contains(text, stubSentinel)
 			case docType == "Context":
 				errs = append(errs, fmt.Sprintf("%s: `type: Context` is reserved for %s at the bundle root (F3)", rel, contextList))
-			case structural[docType] || (specStem && structuralV4[docType]) || (specV5 && structuralV5[docType]) || (specV6 && structuralV6[docType]):
+			case structural[docType] || (specStem && structuralV4[docType]) || (specV5 && structuralV5[docType]) || (specV6 && structuralV6[docType]) || (specV7 && structuralV7[docType]):
 				errs = append(errs, fmt.Sprintf("%s: `type: %s` documents cannot live at the bundle root — move it to its FDF position (F3)", rel, docType))
 			}
 		case parts[0] == "releases" && len(parts) == 2:
@@ -602,7 +670,10 @@ func Validate(root string, opts Options) int {
 				errs = append(errs, fmt.Sprintf("%s: expected `type: Feature`, got %q (F3)", rel, docType))
 			}
 			vocab := featureStatuses
-			if specV5 {
+			switch {
+			case specV7:
+				vocab = featureStatusesV7
+			case specV5:
 				vocab = featureStatusesV5
 			}
 			if !in(vocab, status) {
@@ -610,11 +681,22 @@ func Validate(root string, opts Options) int {
 			}
 			version, _ := data["version"].(string)
 			fid := strings.TrimSuffix(filepath.ToSlash(rel), ".md")
-			features[fid] = &featureInfo{rel, status, version, body}
+			f := &featureInfo{rel: rel, status: status, version: version, body: body}
+			if specV7 {
+				// A feature's own `resource` is v0.7: required on an adopted
+				// feature, which has no tasks to reach its code through.
+				f.resource = asList(data["resource"])
+				for _, res := range f.resource {
+					resources = append(resources, struct{ rel, field, path string }{rel, "resource", res})
+				}
+			}
+			features[fid] = f
 			if specV5 {
 				featureDeps[fid] = asList(data["depends-on"])
 			}
-			checkFeatureBody(rel, body, &errs)
+			// An adopted feature may be a map entry: a Feature: block and no
+			// scenarios yet.
+			checkFeatureBody(rel, body, specV7 && status == "adopted", &errs)
 		case len(parts) == 3:
 			fid := parts[0] + "/" + parts[1]
 			switch {
@@ -689,10 +771,21 @@ func Validate(root string, opts Options) int {
 				}
 			}
 			continue
+		case specV7 && f.status == "adopted":
+			checkAdopted(fid, f, p, &errs)
+			continue
 		case f.status == "retired":
 			// The behavior is gone; the document stays as the record. Its
 			// build trail must still be there, but F8 live-test coverage no
-			// longer applies — that is the point of retiring.
+			// longer applies — that is the point of retiring. From v0.7 a
+			// retired feature keeps the trail it had: one that was adopted
+			// never had a spec, so only a built one (plan or tasks) needs it.
+			if specV7 {
+				if built := p != nil && (p.plan || len(p.tasks) > 0); built && !p.spec {
+					errs = append(errs, fmt.Sprintf("%s: status 'retired' with a build trail requires %s.spec.md — the record of what was built (F4)", f.rel, fid))
+				}
+				continue
+			}
 			if p == nil || !p.spec {
 				errs = append(errs, fmt.Sprintf("%s: status 'retired' requires %s.spec.md — the record of what was built (F4)", f.rel, fid))
 			}
@@ -775,7 +868,13 @@ func Validate(root string, opts Options) int {
 	if specV6 {
 		checkPracticeIntegrity(practices, practiceTrails, &errs, &warns)
 		checkDebtIntegrity(debts, debtTrails, &errs, &warns)
-		checkDomain(rootAbs, features, changes, opts.StrictDomain, &errs, &warns)
+		if specV7 {
+			resolvedBy := checkResolves(changes, bugs, clearedBugs(rootAbs), &errs)
+			checkBugIntegrity(bugs, bugTrails, features, resolvedBy, &errs, &warns)
+			checkDomainV7(rootAbs, opts.StrictDomain, texts, &errs, &warns)
+		} else {
+			checkDomain(rootAbs, features, changes, opts.StrictDomain, &errs, &warns)
+		}
 	}
 
 	// F9: from the first feature onward, Context documents must exist and be
@@ -947,7 +1046,9 @@ func Validate(root string, opts Options) int {
 	return 0
 }
 
-func checkFeatureBody(rel, body string, errs *[]string) {
+// checkFeatureBody is F5. mapEntry allows a feature with no scenarios, which
+// is legal only for an adopted feature (v0.7).
+func checkFeatureBody(rel, body string, mapEntry bool, errs *[]string) {
 	fences := fenceRe.FindAllStringSubmatch(body, -1)
 	if len(fences) == 0 {
 		*errs = append(*errs, fmt.Sprintf("%s: Feature document has no ```gherkin fence (F5)", rel))
@@ -971,7 +1072,7 @@ func checkFeatureBody(rel, body string, errs *[]string) {
 	if decls != 1 {
 		*errs = append(*errs, fmt.Sprintf("%s: expected exactly one `Feature:` declaration across gherkin fences, found %d (F5)", rel, decls))
 	}
-	if scenarios < 1 {
+	if scenarios < 1 && !mapEntry {
 		*errs = append(*errs, fmt.Sprintf("%s: no `Scenario:` in any gherkin fence (F5)", rel))
 	}
 }

@@ -20,6 +20,7 @@ func toSlash(p string) string { return filepath.ToSlash(p) }
 type changeInfo struct {
 	rel, id, docType, status, version, body string
 	affects, retires                        []string
+	resolves                                []string // v0.7: bug IDs this work repairs
 }
 
 // changeDecl holds one affected feature's declared effects.
@@ -187,7 +188,9 @@ func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*f
 				*errs = append(*errs, fmt.Sprintf("%s: `affects` names unknown feature %q (F10)", c.rel, fid))
 				continue
 			}
-			if f.status != "done" && f.status != "retired" {
+			// Delivered: done, retired, or (v0.7) adopted — a capability that
+			// existed before its document. `adopted` fails F2 on older pins.
+			if f.status != "done" && f.status != "retired" && f.status != "adopted" {
 				*errs = append(*errs, fmt.Sprintf("%s: `affects` names %s with status '%s' — a feature that is not delivered is edited directly, not change-requested (F10)", c.rel, fid, f.status))
 			}
 		}
