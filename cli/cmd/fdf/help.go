@@ -20,10 +20,10 @@ var helpPreamble = banner + `
 
 FDF documents each software feature as a Markdown + Gherkin file whose design
 spec, implementation plan, acceptance tests and tasks live beside it as
-stem-qualified siblings, with four bundle-root Context documents holding the
-project's stack, architecture, surfaces and infrastructure. The fdf CLI
-scaffolds those bundles, validates them, and teaches AI harnesses the
-workflow.
+stem-qualified siblings, with five bundle-root Context documents holding the
+project's stack, architecture, surfaces, infrastructure and domain language.
+The fdf CLI scaffolds those bundles, validates them, and teaches AI harnesses
+the workflow.
 
 BUNDLE ROOT
   Every command resolves the bundle root the same way:
@@ -41,7 +41,7 @@ BUNDLE ROOT
 
 TYPICAL FLOW
       fdf init                             # scaffold bundle + Context stubs
-      # fill STACK/ARCHITECTURE/SURFACES/INFRA via the fdf-init skill
+      # fill STACK/ARCHITECTURE/SURFACES/INFRA/DOMAIN via the fdf-init skill
       fdf new payments/instant-refunds     # a draft feature; write Gherkin
       # add slug.spec.md -> specified, slug.plan.md + slug.test.md -> planned,
       # tasks under slug/ -> implementing -> done
@@ -56,18 +56,20 @@ EXIT CODES
 var helpTopics = []helpTopic{
 	{
 		name:  "validate",
-		usage: "fdf validate [--root <dir>] [--repo-root <dir>]",
+		usage: "fdf validate [--root <dir>] [--repo-root <dir>] [--strict-domain]",
 		body: "Check the bundle against the spec version pinned in its root INDEX.md.\n" +
-			"Every violation is reported with its rule code — F1-F9 for format\n" +
+			"Every violation is reported with its rule code — F1-F13 for format\n" +
 			"conformance, R1 for repo integrity. Exit 0 means conformant. Run this\n" +
 			"after every bundle edit; it is the gate the fdf skills rely on.",
 		flags: []string{
 			"--root <dir>       bundle root (overrides FDF_ROOT_DIR; default docs/features)",
 			"--repo-root <dir>  project root for R1 resource checks (default: auto-detect)",
+			"--strict-domain    report F12 banned domain words as errors, not warnings",
 		},
 		examples: []string{
 			"fdf validate",
 			"fdf validate --root docs/features",
+			"fdf validate --strict-domain",
 			"FDF_ROOT_DIR=wiki/features fdf validate",
 		},
 	},
@@ -76,9 +78,10 @@ var helpTopics = []helpTopic{
 		usage: "fdf init [--root <dir>]",
 		body: "Scaffold a new bundle at the resolved root: INDEX.md carrying the\n" +
 			"fdf_version pin, LOG.md, a vendored copy of the spec at SPEC.md, and the\n" +
-			"four Context stubs (STACK.md, ARCHITECTURE.md, SURFACES.md, INFRA.md).\n" +
-			"Existing files are never overwritten. Fill the Context stubs with the\n" +
-			"fdf-init skill before starting feature work — F9 blocks it otherwise.",
+			"five Context stubs (STACK.md, ARCHITECTURE.md, SURFACES.md, INFRA.md,\n" +
+			"DOMAIN.md). Existing files are never overwritten. Fill the Context stubs\n" +
+			"with the fdf-init skill before starting feature work — F9 blocks it\n" +
+			"otherwise.",
 		flags:    []string{"--root <dir>  bundle root (default docs/features)"},
 		examples: []string{"fdf init", "fdf init --root docs/features"},
 	},

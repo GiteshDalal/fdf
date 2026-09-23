@@ -19,6 +19,10 @@ Run `fdf validate` (it respects `--root`/`FDF_ROOT_DIR`):
 - After **any** write to a file under the bundle — including a one-word
   status flip, a ticked task checkbox, or a typo fix. Especially then: those
   are the edits made without a workflow skill loaded, where drift goes unseen.
+  The one exception is a set of edits that are only valid together — a spec
+  and the status flip it enables, a plan and its tasks, a final task and its
+  feature's `done`. Make the whole set, then validate; the workflow skills say
+  which sets these are.
 - Before telling the user a feature, task, or bundle change is done.
 - After `fdf init`, `fdf new`, or `fdf migrate`.
 - Whenever you are about to reason about bundle state — validate first, so
@@ -46,7 +50,7 @@ Bundle is NOT conformant with FDF v0.6.
 | Code | Broke | Usual fix |
 |---|---|---|
 | **F1** | Frontmatter missing/unterminated, missing `type`, bad log date, unsupported `fdf_version` | Restore the `---` block and required fields. An unsupported pin means run `fdf migrate` — never hand-edit the pin. |
-| **F2** | `status` is not a legal value for that `type` | Use a real status: Feature `draft→specified→planned→implementing→done→retired`; Change/Fix `draft→specified→planned→implementing→done`; Task per the spec. Set it to what is **true**, not what clears the error. |
+| **F2** | `status` is not a legal value for that `type` | Use a real status: Feature `draft→specified→planned→implementing→done→retired`; Change/Fix `draft→specified→planned→implementing→done`; Task `pending→in-progress→done`; Release `planned→shipped`. Set it to what is **true**, not what clears the error. |
 | **F3** | Wrong `type`, wrong position, bad casing, illegal file in a task directory | Move the file to its FDF position. Directories and filenames are lowercase; uppercase is reserved. Task dirs hold **only** `NN-slug.md` — a trail doc nested there belongs at `<group>/<slug>.<role>.md`. Roles are only `spec`, `plan`, `test`, `surface`, `log` under a group — and only `spec`, `plan`, `log` under `changes/`, because `test` and `surface` belong to the affected feature. |
 | **F4** | Status ↔ artifact mismatch | The status claims work the trail does not show, or vice versa. See "Which way to fix" below. |
 | **F5** | Feature Gherkin malformed | One ```gherkin fence with exactly one `Feature:`, at least one `Scenario:`. |
@@ -56,9 +60,9 @@ Bundle is NOT conformant with FDF v0.6.
 | **F9** | A Context doc is missing or still an unfilled stub | Stop. Run the **fdf-init** interview. Do not invent STACK/ARCHITECTURE/SURFACES/INFRA/DOMAIN content to clear this. |
 | **F10** | A Change/Fix under `changes/` does not match reality | See "F10" below. |
 | **F11** | A practice under `practices/` is malformed | A practice needs a non-empty `# Rules` section and carries no Gherkin. A `superseded` one must name an existing replacement in `superseded-by`; an `active` one must not carry that field. Its only legal sibling is `<slug>.log.md` — there is no practice spec, plan, test or task directory. |
-| **F12** | The domain lexicon is inconsistent, or a banned word reached a feature's Gherkin | See "F12" below. |
+| **F12** | The domain lexicon is inconsistent, or a banned word reached a feature's Gherkin or a Change/Fix declaration | See "F12" below. |
 | **F13** | A debt under `debts/` is malformed | A debt needs a non-empty `# Gap`, concrete enough that someone else could confirm it, and carries no Gherkin. `accepted` requires a `# Rationale` (keeping a gap is a decision); `resolved` requires a `# Resolution` (what closed it). A debt owns no spec, plan, test or tasks — only `<slug>.log.md`. |
-| **R1** | A `resource:` (task/change/fix/debt) or `applies-to:` (practice) path does not exist in the repo | The document points at a file that isn't there. Correct the path, or create the file if the task's work is what creates it. For a **debt**, a vanished path usually means the gap is gone: check, and if so flip it to `resolved` with a `# Resolution` rather than editing the path. |
+| **R1** | A `resource:` (task/change/fix/debt) or `applies-to:` (practice) path does not exist in the repo | The document points at a path that isn't there. **A task that will create the file:** the path does not belong in `resource:` yet — list the existing directory it goes into, and never create a placeholder file to satisfy R1. **A path that moved under a refactor:** update it to where that code lives now, even on a `done` task — a path is bookkeeping, not the record an episodic document keeps — and note the move in the log. **A debt:** a vanished path usually means the gap is gone; check, and if so flip it to `resolved` with a `# Resolution`, then `fdf debt --cleanup` — a resolved debt is still checked until cleanup retires it. |
 
 ## Which way to fix
 
@@ -72,8 +76,11 @@ An F4/F8 failure has two shapes, and they take opposite fixes:
 - **The status is ahead of reality** — someone marked `done` early. Set the
   status to what is actually true. That is the rule working as intended.
 
-`implementing` with every task done is the one case with a single fix:
-promote to `done`.
+`implementing` with every task done: promote to `done` — once it is true.
+For a feature, every `slug.test.md` case has been run and passes (fdf-execute's
+completion gate); if one has not, the final task is not really done, so set it
+back to `in-progress`. For a Change or Fix, its declared effects must have
+landed in the affected features first, or F10 fails next.
 
 ## F10
 
@@ -88,7 +95,7 @@ landed**. The declaration is the contract; the features are the evidence.
 | `<feature>.test.md has no case for "X"` | The regression case never reached the feature's living test doc | Add it there. That case is the whole point of the Fix. |
 | `affects names <feature> with status '<s>'` | The feature is not delivered | Edit it directly through the normal workflow; a change request is for `done`/`retired` features. |
 | `requires a # Scenario changes section` (or `# Regression cases`) | Wrong declaration section for the type | A `Change` declares scenario changes; a `Fix` declares regression cases. Never both. |
-| `status 'retired' but no done Change ... retires it` | A capability went dark with no reason recorded | Write the retiring `Change` with a `# Rationale`. |
+| `status 'retired' but no done Change ... retires it` | A capability went dark with no reason recorded | Write the retiring `Change` with a `# Rationale`. If it exists but is not `done` yet, land it: its `retires:`, its `done`, and the feature's `retired` go in one edit (fdf-change). |
 
 The fix for F10 is almost always **do the work you declared**, never edit the
 declaration to match what you happened to do. If the declaration turned out
@@ -105,8 +112,9 @@ claimed by two terms. These are errors in `DOMAIN.md` and the fix is in
 `DOMAIN.md`: decide which term owns the word, and say so. Do not resolve it by
 deleting the term someone will still use.
 
-**A banned word reached a feature's Gherkin** — reported as a `warn:` by
-default and as a FAIL under `fdf validate --strict-domain`:
+**A banned word reached a feature's Gherkin**, or a Change's
+`# Scenario changes` or a Fix's `# Regression cases` — reported as a `warn:`
+by default and as a FAIL under `fdf validate --strict-domain`:
 
 ```
 warn: payments/refunds.md: Gherkin uses "store", which DOMAIN.md bans in
@@ -133,6 +141,13 @@ A rewording that touches a **delivered** feature's Gherkin is a `Change`, not
 an edit: scenario names are the join F8 and F10 both check, and renaming one
 in place breaks that trail. Report the warning and route to fdf-change.
 
+That Change has to name the old scenario in `- remove: <old name>`, banned
+word and all — so F12 reports the Change itself, and so does every `done`
+Change written before the word was banned. Both are expected: a declaration
+must quote the name it removes, and a finished episode is never rewritten.
+Report them as such. Under `--strict-domain` they fail and cannot be cleared
+honestly; say so to the user rather than bending the declaration.
+
 ## Never silence a rule
 
 The bundle exists so the next agent can trust it. These "fixes" all pass
@@ -143,7 +158,8 @@ validate and all make the bundle lie:
 | Delete a `Scenario:` so F8 stops asking for a test case | You removed documented behavior instead of testing it. |
 | Trim `slug.test.md` down to the scenarios you wrote | Same lie, other end. |
 | Demote `done` → `implementing` to dodge an open-task error | Only correct if the feature is genuinely unfinished. |
-| Drop a task's `resource:` line to clear R1 | The task now has no verifiable target. |
+| Drop an existing path from a task's `resource:` to clear R1 | The task now has no verifiable target. (A path the task will *create* never belonged there — list its existing directory instead.) |
+| Create an empty placeholder file so a `resource:` path exists | The bundle now claims work that has not happened. |
 | Write plausible-sounding STACK.md text to clear F9 | Invented context is worse than no context — every later feature is designed against it. |
 | Hand-edit `fdf_version` to a supported value | Migration is mechanical; `fdf migrate` exists for this. |
 | Delete the file the error names | The error was about the file's content, not its existence. |

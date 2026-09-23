@@ -13,9 +13,9 @@ tool manages exist in *other* projects.
 FDF (Feature Document Format) is "documentation-as-a-directory": each software feature is a
 Markdown + Gherkin document whose design spec, plan, acceptance tests, and optional surface/log
 trail live as **stem-qualified siblings** (`slug.spec.md`, `slug.plan.md`, `slug.test.md`,
-optional `slug.surface.md` / `slug.log.md`); tasks live only under a `slug/` directory. Four
-bundle-root Context docs (`STACK.md`, `ARCHITECTURE.md`, `SURFACES.md`, `INFRA.md`) hold
-project context. Post-delivery work lives under `changes/` as a `Change` (alters what a
+optional `slug.surface.md` / `slug.log.md`); tasks live only under a `slug/` directory. Five
+bundle-root Context docs (`STACK.md`, `ARCHITECTURE.md`, `SURFACES.md`, `INFRA.md`,
+`DOMAIN.md`) hold project context. Post-delivery work lives under `changes/` as a `Change` (alters what a
 delivered feature does) or a `Fix` (the code drifted from what the document already says).
 This repo ships:
 
@@ -23,7 +23,9 @@ This repo ships:
 2. Harness-neutral **skills** (`skills/`) that teach AI agents the brainstorm → plan →
    execute workflow and the post-delivery `fdf-change` workflow, plus `fdf-help`
    (routing), `fdf-debug` (root-cause-first triage that routes a defect to a Fix,
-   Change, feature, or task) and `fdf-validate` (the post-edit gate).
+   Change, feature, or task), `fdf-checkpoint` (the periodic audit of the Context
+   docs, the vendored `SPEC.md` and the agent instruction files) and
+   `fdf-validate` (the post-edit gate).
    Skills are the *only* agent-facing surface — there are deliberately no slash commands
    or per-harness adapters, since a command is user-typed and cannot be a reliable gate.
 3. **Versioned specs** (`spec/`) that are normative for the bundles pinning each version.

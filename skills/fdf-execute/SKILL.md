@@ -24,41 +24,73 @@ Stem paths for a feature `<group>/<slug>`:
 
 ## Choose a mode
 
-- **Serial** (default; required when subagents are unavailable): work tasks
-  one at a time in `slug.plan.md` `# Tasks` order.
-- **Subagent-driven**: compute topological batches from `depends-on`; all
-  tasks whose dependencies are `done` run in parallel (one subagent each);
-  join; validate; next batch. Plan order breaks ties. **You own the
-  bundle**: you flip every status, update every timestamp, and run every
-  `fdf validate`; subagents never edit files under the bundle. One writer
-  means no races and a serialized validate after each change.
+Say which mode you are using, and why, in one line.
+
+- **Subagent-driven** — recommended whenever the harness has subagents and
+  the plan has more than two tasks. Compute topological batches from
+  `depends-on`; all tasks whose dependencies are `done` run in parallel (one
+  subagent each); join; validate; next batch. Plan order breaks ties. Each
+  subagent starts from a clean context, which is what the plan was written
+  for, and your own context stays free to oversee the whole feature.
+- **Workflow** — where the harness offers scripted multi-agent workflows, a
+  plan with several parallel batches can run as one. It starts many agents at
+  once, so offer it and start one only when the user agrees.
+- **Serial** — one task at a time in `slug.plan.md` `# Tasks` order: for a
+  one- or two-task plan, or when the harness has no subagents.
+
+In every mode **you own the bundle**: you flip every status, update every
+timestamp, and run every `fdf validate`; subagents never edit files under the
+bundle. One writer means no races and a serialized validate after each change.
 
 ## Per task
 
 1. Set `status: in-progress` in the task file; feature to `implementing` if
    this is the first task. `fdf validate` after every frontmatter change.
 2. **Check the practices that govern those paths** before writing anything:
-   a practice whose `applies-to` covers a path in this task's `resource:` is
-   binding, and its `# Rules` are what the code must do. Follow them; if you
+   a practice whose `applies-to` covers a path this task touches — its
+   `resource:`, or where its `# Steps` create files — is binding, and its
+   `# Rules` are what the code must do. Follow them; if you
    believe a rule is wrong here, stop and raise it rather than quietly doing
    it your way.
-3. Do the work per `# Steps`; touch only paths consistent with `resource:`.
+3. Do the work per `# Steps`; touch only paths consistent with `resource:`
+   and `# Steps`.
 4. Verify `# Acceptance`; set `status: done`; update `timestamp`. When
    completing the FINAL task, flip the task and the feature status in the
    same edit before validating — a lone final-task flip fails F4
    ("implementing but every task is done").
 
-## Dispatching a subagent
+## Delegating a task
 
-The implementer prompt contains, in order:
+**Pick the agent.** If the project or harness defines specialized agents (in
+Claude Code, those under `.claude/agents/`), use the one whose description
+fits the task — a test-writing agent for test work, a frontend agent for UI
+work. Otherwise use a general-purpose agent.
+
+**Pick the model**, where the harness lets you, by what the task demands:
+
+- **Mechanical** — the `# Steps` leave nothing to decide: exact files,
+  signatures and payloads, following a pattern the code already has (wiring,
+  a fully written-out migration, tests for a given list of cases). Use a fast
+  model; in Claude, a Sonnet-class one.
+- **Judgment** — the steps leave design latitude, or the task crosses module
+  boundaries, touches concurrency, security or a data migration, or is the
+  final task that proves `slug.test.md`. Use the most capable model; in
+  Claude, an Opus-class one.
+
+A mechanical task that fails its acceptance gets one re-run on the most
+capable model, with the failure output. A second failure is a blocker (see
+Blockers).
+
+**Write the prompt.** The implementer prompt contains, in order:
 
 1. Its task file path plus `slug.spec.md`, `slug.plan.md`, the feature doc,
    `slug.surface.md` if present, and **every practice whose `applies-to`
-   covers a path in the task's `resource:`** — read these first, task file
-   foremost. A subagent has no other way to learn that a practice binds it.
-2. The scope rule: touch only paths consistent with the task's `resource:`;
-   siblings run in parallel and staying in-scope is what prevents
-   collisions. Never edit anything under the bundle directory.
+   covers a path the task touches** (its `resource:`, and where its
+   `# Steps` create files) — read these first, task file foremost. A
+   subagent has no other way to learn that a practice binds it.
+2. The scope rule: touch only paths consistent with the task's `resource:`
+   and `# Steps`; siblings run in parallel and staying in-scope is what
+   prevents collisions. Never edit anything under the bundle directory.
 3. The exit contract: verify every `# Acceptance` item by actually running
    it, then report files changed, the exact command and output per
    acceptance item, and anything unverified — stop and report a blocker
@@ -74,18 +106,27 @@ The implementer prompt contains, in order:
 - Independent siblings continue; batches needing the blocked task stall.
 - Report with a specific question ("Acceptance requires X; SPEC section Y
   implies Z — which wins?"), never just "it's broken".
+- If the user decides the blocked work will not be done in this feature,
+  descope it rather than hold the feature at `implementing` indefinitely:
+  delete the task file, its `# Tasks` link and every sibling's `depends-on`
+  entry for it (F6); remove any scenario only it would have proven, along
+  with that scenario's `slug.test.md` case — the feature must not promise
+  what it will not do; log the decision in `slug.log.md`; and file a debt
+  (`fdf debt [<group>/]<slug>`) naming what was left undone. Never mark a
+  blocked task `done`.
 
 ## Completion gate
 
 - The final task (the `slug.test.md`-satisfying one) can only be `done` when
   every test case in `slug.test.md` passes — run the commands it names; UI
-  cases are verified in a real browser (Playwright) when specified.
+  cases are verified in a real browser, with the tool the case names.
 - All tasks done → feature `status: done`, `fdf validate` exit 0 (fdf-validate
-  on failure). Never flip a
-  feature to done with a failing or unrun `slug.test.md` case.
-- Log the completion in the feature's optional `slug.log.md` (stem sibling;
-  not a nested `LOG.md` inside the task directory) — major decisions and
-  notable user interactions — and note it in the bundle-root LOG.md.
+  on failure). Never flip a feature to done with a failing or unrun
+  `slug.test.md` case.
+- Log the completion in the feature's `slug.log.md` (stem sibling; not a
+  nested `LOG.md` inside the task directory) — major decisions and notable
+  user interactions. It is feature-scoped, so it stays out of the root
+  `LOG.md` (see Rules).
 - The completion report shows evidence, not claims: per `slug.test.md` case,
   the command run and its actual output (screenshot for browser checks). A
   case you didn't run is reported as unrun — and the feature stays
@@ -93,10 +134,11 @@ The implementer prompt contains, in order:
 
 ## Project-document review (after the feature is done)
 
-The Context docs and the practices are **critical and immutable without
-explicit approval** — this is one of only two places they may change (the
-other is fdf-init). After completing the feature, ask four questions in
-order.
+The Context docs and the practices are **critical and change only with
+explicit approval**. This review is where one piece of work proposes such
+changes: fdf-change ends with the same four questions, and fdf-checkpoint
+audits everything periodically for what no single piece of work caught.
+After completing the feature, ask four questions in order.
 
 **1. Is a Context document now stale?**
 
@@ -132,32 +174,8 @@ A practice is **extracted, not authored**: the decision was already made, in
 the specs of the features that made it. Read them and lift the rules out. The
 spec stays frozen as the episode ("we decided X for this feature"); the
 practice carries the present tense ("X is how this project does it") and is
-the one later work amends.
-
-```markdown
----
-type: Practice
-status: active
-title: Permission checks
-description: Where authorization decisions are made, and how they are expressed.
-applies-to: [internal/authz, internal/http]
-timestamp: 2026-09-16T00:00:00Z
----
-
-# Rules
-
-- Every handler resolves permission through `authz.Can(ctx, action, resource)`.
-  No handler reads roles or plan flags directly.
-- A denial on a resource the caller may not know exists returns 404, not 403.
-
-# How
-
-`authz.Middleware` resolves the principal once per request onto the context.
-
-# Boundaries
-
-Background jobs run as the system principal and do not call `Can`.
-```
+the one later work amends. `fdf practice` scaffolds its sections, and
+`fdf spec` shows a complete example.
 
 `# Rules` is required and non-empty (F11): imperative, short, what code MUST
 do. `applies-to` lists the existing repo paths it governs (R1) and is how
@@ -181,9 +199,9 @@ the paths, which is how later work finds it.
 This is the question that keeps `done` honest. A feature that shipped without
 its batch import is genuinely done *and* has left a gap, and those are two
 facts, not a contradiction — the debt is what lets you state both instead of
-quietly rounding one off. A blocked task is the other case: file the debt, and
-the feature stops being held at `implementing` by something the project has
-decided not to solve now.
+quietly rounding one off. A task descoped because it was blocked (see
+Blockers) is the other case: its debt is what lets the feature reach `done`
+without pretending the work happened.
 
 Debt is a register entry, not a unit of work, so it gets no plan and no tasks.
 When it is paid, flip it to `resolved` with a `# Resolution` saying what closed
@@ -191,12 +209,13 @@ it; `fdf debt --cleanup` clears resolved entries into `debts/LOG.md` so the
 register stays a list worth reading.
 
 If something changed, **propose** the specific edit to the user and wait for
-explicit approval. Only on approval: make the edit, and log it (what changed
-and why) in `slug.log.md` (if used), `practices/<slug>.log.md` for a practice,
-and the bundle LOG.md. If nothing changed, say so in one line. Never edit a
-Context document or a practice silently, and never edit one the user didn't
-approve. Remind the user, briefly, that keeping these accurate is what keeps
-the work grounded — agentic engineering, not vibe coding.
+explicit approval. Only on approval: make the edit (a Context document gets a
+new `timestamp`) and log what changed and why at its scope — the root
+`LOG.md` for a Context document, `practices/<slug>.log.md` for a practice. If
+nothing changed, say so in one line. Never edit a Context document or a
+practice silently, and never edit one the user didn't approve. Remind the
+user, briefly, that keeping these accurate is what keeps the work grounded —
+agentic engineering, not vibe coding.
 
 ## After a feature is done
 
@@ -213,6 +232,7 @@ capability, and do not edit a delivered feature's Gherkin directly.
   rewritten, so the only thing that keeps the root log readable is not writing
   feature-scoped entries into it.
 - Statuses reflect reality, not intent — flip in-progress before working.
-- A blocked task stays in-progress with the blocker noted in the task body.
+- A blocked task stays in-progress with the blocker noted in the task body —
+  until it is unblocked or, on the user's decision, descoped (see Blockers).
 - Context docs and practices change only with explicit user approval, and
   every change is logged.

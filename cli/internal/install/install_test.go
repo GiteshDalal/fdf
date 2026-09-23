@@ -14,7 +14,7 @@ func TestInstallClaudeCodePlacesSkillsPrimerAndUpgrades(t *testing.T) {
 	if code := Run("claude-code", home, "", false, &out); code != 0 {
 		t.Fatalf("install: %d\n%s", code, out.String())
 	}
-	for _, skill := range []string{"fdf-help", "fdf-init", "fdf-brainstorm", "fdf-plan", "fdf-execute", "fdf-change", "fdf-debug", "fdf-validate"} {
+	for _, skill := range []string{"fdf-help", "fdf-init", "fdf-brainstorm", "fdf-plan", "fdf-execute", "fdf-change", "fdf-debug", "fdf-checkpoint", "fdf-validate"} {
 		if _, err := os.Stat(filepath.Join(home, ".claude", "skills", skill, "SKILL.md")); err != nil {
 			t.Fatalf("missing skill %s", skill)
 		}
@@ -323,6 +323,36 @@ func TestUpgradeRefreshesShippedV06Primer(t *testing.T) {
 	}
 	if !strings.Contains(got, "does not govern what a person reads on a surface") {
 		t.Fatalf("refreshed primer must scope the lexicon to internal language:\n%s", got)
+	}
+	if !strings.Contains(out.String(), "updated") {
+		t.Fatalf("report should say the primer was updated:\n%s", out.String())
+	}
+}
+
+func TestUpgradeRefreshesShippedV061Primer(t *testing.T) {
+	home := t.TempDir()
+	// Seed the exact primer the v0.6.1 release wrote (untouched managed
+	// content): no fdf-checkpoint, no warning against hand edits.
+	path := filepath.Join(home, ".claude", "CLAUDE.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(primerV061("docs/features")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if code := Run("claude-code", home, "", false, &out); code != 0 {
+		t.Fatalf("install: %d\n%s", code, out.String())
+	}
+	got := string(mustRead(t, path))
+	if !strings.Contains(got, "fdf-checkpoint skill") {
+		t.Fatalf("refreshed primer must point at the fdf-checkpoint skill:\n%s", got)
+	}
+	if !strings.Contains(got, "Never hand-edit this section") {
+		t.Fatalf("refreshed primer must warn that hand edits freeze it:\n%s", got)
+	}
+	if strings.Count(got, primerHeading) != 1 {
+		t.Fatalf("refresh must replace the section, not append a second one:\n%s", got)
 	}
 	if !strings.Contains(out.String(), "updated") {
 		t.Fatalf("report should say the primer was updated:\n%s", out.String())
