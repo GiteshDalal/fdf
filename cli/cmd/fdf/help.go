@@ -58,13 +58,13 @@ var helpTopics = []helpTopic{
 		name:  "validate",
 		usage: "fdf validate [--root <dir>] [--repo-root <dir>] [--strict-domain]",
 		body: "Check the bundle against the spec version pinned in its root INDEX.md.\n" +
-			"Every violation is reported with its rule code — F1-F13 for format\n" +
+			"Every violation is reported with its rule code — F1-F14 for format\n" +
 			"conformance, R1 for repo integrity. Exit 0 means conformant. Run this\n" +
 			"after every bundle edit; it is the gate the fdf skills rely on.",
 		flags: []string{
 			"--root <dir>       bundle root (overrides FDF_ROOT_DIR; default docs/features)",
 			"--repo-root <dir>  project root for R1 resource checks (default: auto-detect)",
-			"--strict-domain    report F12 banned domain words as errors, not warnings",
+			"--strict-domain    report F12 banned domain words as errors, not warnings (DOMAIN.md's `strict: true` does it for every run)",
 		},
 		examples: []string{
 			"fdf validate",
@@ -99,6 +99,30 @@ var helpTopics = []helpTopic{
 		},
 	},
 	{
+		name:  "adopt",
+		usage: "fdf adopt [--root <dir>] [--resource <path>[,…]] [--depth <n>] [<group>/<slug>]",
+		body: "Map what a codebase already does (v0.7). With a feature ID it scaffolds\n" +
+			"an adopted feature — a capability documented from the code as it stands,\n" +
+			"never built through FDF, so it gets no spec, plan or tasks. It starts as\n" +
+			"a map entry: a Feature: block and --resource, the code it lives in (it\n" +
+			"must exist). Scenarios are backfilled later, each with a .test.md case\n" +
+			"that passes against the code as it stands.\n\n" +
+			"Without an ID it prints the adoption map: every feature with its status,\n" +
+			"scenarios and tested scenarios, then the tracked code (git ls-files) no\n" +
+			"feature, task, change or fix claims yet, grouped --depth levels deep,\n" +
+			"most unclaimed first — the list a phased adoption works down.",
+		flags: []string{
+			"--resource <paths>  comma-separated project-relative path(s) of the capability's code (required when mapping one)",
+			"--depth <n>         directory levels the unclaimed code is grouped by (default 2)",
+			"--root <dir>        bundle root (default docs/features)",
+		},
+		examples: []string{
+			"fdf adopt --resource internal/payments/card.go payments/card-payments",
+			"fdf adopt",
+			"fdf adopt --depth 3",
+		},
+	},
+	{
 		name:  "practice",
 		usage: "fdf practice [--root <dir>] [<group>/]<slug>",
 		body: "Scaffold a Practice under practices/ — the project's binding answer to\n" +
@@ -109,7 +133,7 @@ var helpTopics = []helpTopic{
 			"`applies-to` to the repo paths it governs — that is how later work is\n" +
 			"routed to it, since features never list the practices they follow.\n" +
 			"A practice binds all future code: land one only with human approval.\n" +
-			"v0.6 bundles only.",
+			"v0.6 bundles and later.",
 		flags: []string{"--root <dir>  bundle root (default docs/features)"},
 		examples: []string{
 			"fdf practice permission-checks",
@@ -122,7 +146,7 @@ var helpTopics = []helpTopic{
 		body: "Read or file the debt register under debts/ — the known gaps between\n" +
 			"what the project says and what the code does: work left undone, and\n" +
 			"rules the codebase does not follow everywhere yet.\n\n" +
-			"With a slug it scaffolds a debt (" + debtStatusList() + "); without one it\n" +
+			"With a slug it scaffolds a debt (" + registerStatusList() + "); without one it\n" +
 			"prints the register as a table of status, id, filing date and title.\n" +
 			"`resource` names the paths carrying the gap — that is how later work\n" +
 			"finds the debt, and R1 makes a debt pointing at vanished code loud.\n\n" +
@@ -130,13 +154,14 @@ var helpTopics = []helpTopic{
 			"resolved debt is recorded in debts/LOG.md as one line and its file is\n" +
 			"removed. Open and accepted debts are never touched. Use --dry-run to\n" +
 			"see the plan first, or --no-log to remove without recording.\n" +
-			"v0.6 bundles only.",
+			"v0.6 bundles and later.",
 		flags: []string{
 			"--root <dir>  bundle root (default docs/features)",
 			"--open        list only open debts",
 			"--accepted    list only accepted debts",
 			"--resolved    list only resolved debts",
 			"--cleanup     clear resolved debts, recording each in debts/LOG.md",
+			"--resource <paths>  when filing: comma-separated path(s) carrying the gap",
 			"--dry-run     with --cleanup: show what would be cleared, change nothing",
 			"--no-log      with --cleanup: remove without writing debts/LOG.md",
 		},
@@ -148,51 +173,140 @@ var helpTopics = []helpTopic{
 		},
 	},
 	{
+		name:  "bug",
+		usage: "fdf bug [--root <dir>] [--open|--accepted|--resolved] [--cleanup [--dry-run] [--no-log]] [--affects <ids>] [[<group>/]<slug>]",
+		body: "Read or file the bug register under bugs/ (v0.7) — known defects, the\n" +
+			"software doing something wrong that someone could observe, that nobody\n" +
+			"is repairing yet: undiagnosed, waiting on a decision, in code no feature\n" +
+			"documents, or deferred. A gap nothing observable shows is a debt.\n\n" +
+			"With a slug it scaffolds a bug (" + registerStatusList() + ") with `# Symptom` and\n" +
+			"`# Expected`. When a scenario already promises the expected behavior,\n" +
+			"cite it under `# Violates` and the repair is a Fix: `fdf fix --from\n" +
+			"bugs/<id> …`; when none does, the repair is a Change that decides it:\n" +
+			"`fdf change --from bugs/<id> …`. A bug is never resolved in place — the\n" +
+			"Fix or Change names it in `resolves`. Without a slug it prints the\n" +
+			"register; --cleanup folds resolved bugs into bugs/LOG.md exactly as\n" +
+			"`fdf debt --cleanup` does.",
+		flags: []string{
+			"--affects <ids>     when filing: comma-separated feature ID(s) the defect shows up in",
+			"--resource <paths>  when filing: comma-separated path(s) carrying it",
+			"--open           list only open bugs (also --accepted, --resolved)",
+			"--cleanup        clear resolved bugs, recording each in bugs/LOG.md",
+			"--dry-run        with --cleanup: show what would be cleared, change nothing",
+			"--no-log         with --cleanup: remove without writing bugs/LOG.md",
+			"--root <dir>     bundle root (default docs/features)",
+		},
+		examples: []string{
+			"fdf bug --open",
+			"fdf bug --affects payments/instant-refunds --resource internal/payments/refund.go refund-split-capture",
+			"fdf bug --cleanup --dry-run",
+		},
+	},
+	{
 		name:  "change",
-		usage: "fdf change [--root <dir>] --affects <group>/<slug>[,…] [<group>/]<slug>",
+		usage: "fdf change [--root <dir>] [--from bugs/<id>] --affects <group>/<slug>[,…] [<group>/]<slug>",
 		body: "Scaffold a post-delivery Change: a request to alter what a delivered\n" +
 			"feature does. Use it when the fix requires the feature's Gherkin to\n" +
 			"change — including when the original document was silent on a case\n" +
 			"nobody recognized. A Change carries a design gate (its .spec.md) and\n" +
 			"declares, under `# Scenario changes`, the scenarios it will add, modify\n" +
 			"or remove; F10 will not let it reach `done` until those landed.\n" +
-			"`--affects` may name several features: one Change can span them.",
+			"`--affects` may name several features: one Change can span them.\n" +
+			"--from bugs/<id> repairs a bug nobody documented the answer to: it\n" +
+			"copies the bug's analysis into `# Problem` and writes `resolves`.",
 		flags: []string{
-			"--affects <ids>  comma-separated feature ID(s) this touches (required)",
+			"--affects <ids>  comma-separated feature ID(s) this touches (required unless --from supplies them)",
+			"--from <bug>     bugs/<id> this repairs: copies its analysis, writes `resolves`",
 			"--root <dir>     bundle root (default docs/features)",
 		},
 		examples: []string{
 			"fdf change --affects payments/instant-refunds refund-window",
+			"fdf change --from bugs/export-drops-last-row export-keeps-every-row",
 			"fdf change --affects payments/instant-refunds,billing/invoices payments/tax-rounding",
 		},
 	},
 	{
 		name:  "fix",
-		usage: "fdf fix [--root <dir>] --affects <group>/<slug>[,…] [<group>/]<slug>",
+		usage: "fdf fix [--root <dir>] [--from bugs/<id>] --affects <group>/<slug>[,…] [<group>/]<slug>",
 		body: "Scaffold a post-delivery Fix: the feature document was right and the\n" +
 			"code drifted from it. No design gate — restoring documented behavior\n" +
 			"needs no approval — and no trail files are required, so the floor is a\n" +
 			"single file. Declares, under `# Regression cases`, scenarios that\n" +
 			"already exist plus the verification for each; the lasting artifact is\n" +
-			"the case added to the affected feature's .test.md.",
+			"the case added to the affected feature's .test.md. --from bugs/<id>\n" +
+			"takes over a bug's `# Symptom` and `# Root cause`, turns its `# Violates`\n" +
+			"scenarios into regression cases, and writes `resolves`.",
 		flags: []string{
-			"--affects <ids>  comma-separated feature ID(s) this touches (required)",
+			"--affects <ids>  comma-separated feature ID(s) this touches (required unless --from supplies them)",
+			"--from <bug>     bugs/<id> this repairs: copies its analysis, writes `resolves`",
 			"--root <dir>     bundle root (default docs/features)",
 		},
 		examples: []string{
 			"fdf fix --affects payments/instant-refunds refund-rounding",
+			"fdf fix --from bugs/refund-split-capture refund-split-capture",
 		},
 	},
 	{
 		name:  "history",
 		usage: "fdf history [--root <dir>] <group>/<slug>",
-		body: "List every Change and Fix that names this feature in its `affects`.\n" +
+		body: "List every Change and Fix that names this feature in its `affects`,\n" +
+			"the bugs each resolves, and the bugs on the register it shows up in.\n" +
 			"Computed from frontmatter, never from back-links the feature would have\n" +
 			"to maintain by hand — a required back-link is a standing invitation to\n" +
 			"drift. This is how you answer \"what has happened to this feature since\n" +
 			"it shipped?\".",
 		flags:    []string{"--root <dir>  bundle root (default docs/features)"},
 		examples: []string{"fdf history payments/instant-refunds"},
+	},
+	{
+		name:  "mv",
+		usage: "fdf mv [--root <dir>] [--dry-run] <from-id> <to-id>",
+		body: "Move or rename a document with everything it owns — a feature with its\n" +
+			"spec, plan, test, surface, log and task directory; a change or fix; a\n" +
+			"practice, debt or bug; a task within its directory; or a whole group —\n" +
+			"and repair every reference to it across the bundle, frozen documents\n" +
+			"included (v0.7's reference repair): links, `affects`, `depends-on`,\n" +
+			"`replaced-by`, `retires`, `superseded-by`, `resolves`, declaration\n" +
+			"headings, index listings and ID mentions. Logs keep their words and get\n" +
+			"their links repaired. A debt and a bug can be re-filed as each other.\n" +
+			"The move is logged in LOG.md and validated; references outside the\n" +
+			"bundle are listed, never edited. It never overwrites.",
+		flags: []string{
+			"--dry-run     print what would move and what would be repaired",
+			"--root <dir>  bundle root (default docs/features)",
+		},
+		examples: []string{
+			"fdf mv payments/store-hours venues/opening-hours",
+			"fdf mv --dry-run payments billing",
+			"fdf mv debts/export-drops-rows bugs/export-drops-rows",
+			"fdf mv payments/refunds/02-ui payments/refunds/03-ui",
+		},
+	},
+	{
+		name:  "lexicon",
+		usage: "fdf lexicon [--root <dir>] [--term <Term>] [--all] [--fix [--dry-run]]",
+		body: "Report every banned word F12 sees (v0.7) — file:line:col and the line\n" +
+			"around it, grouped by word — and every name using one, with a suggested\n" +
+			"`fdf mv`. Triage first: a word used in another sense is qualified and\n" +
+			"listed under the term's `except:`; a mention of a word goes in a code\n" +
+			"span. Then --fix replaces the rest with the term, one term at a time:\n" +
+			"plurals, capitals and a/an are kept right, and a scenario name is renamed\n" +
+			"everywhere it is a join, slug.test.md included. Italic mentions, labels\n" +
+			"quoted in Gherkin steps, table cells and names are left for a person and\n" +
+			"listed. The sweep is logged in LOG.md and validated.",
+		flags: []string{
+			"--term <Term>  only that term's banned words (required with --fix)",
+			"--all          list every occurrence, not the first few per word",
+			"--fix          replace them with the term (a lexicon fix)",
+			"--dry-run      with --fix: print the diff, change nothing",
+			"--root <dir>   bundle root (default docs/features)",
+		},
+		examples: []string{
+			"fdf lexicon",
+			"fdf lexicon --term Venue --all",
+			"fdf lexicon --term Venue --fix --dry-run",
+			"fdf lexicon --term Venue --fix",
+		},
 	},
 	{
 		name:  "release",

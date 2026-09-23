@@ -3,9 +3,10 @@
 //
 //	v0.1 → case renames, vendored-spec removal, link rewrites, TEST stubs
 //	v0.2/v0.3 → lift nested trail to stem-qualified siblings, rewrite links
-//	v0.4/v0.5 → nothing structural: 0.4→0.5 and 0.5→0.6 add documents, not moves
-//	any → pin current, RefreshSpec, EnsureContextStubs, changes/ and
-//	      practices/ and debts/ INDEX.md, validate
+//	v0.4/v0.5/v0.6 → nothing structural: 0.4→0.5, 0.5→0.6 and 0.6→0.7 add
+//	      documents, not moves
+//	any → pin current, RefreshSpec, EnsureContextStubs, changes/, practices/,
+//	      debts/ and bugs/ INDEX.md, validate
 //
 // Ends by validating the result with FreshStubsAdvisory so unfilled Context
 // stubs do not fail the migration (plain `fdf validate` will still enforce F9).
@@ -25,7 +26,9 @@ import (
 )
 
 const specURL = "https://github.com/GiteshDalal/fdf/blob/main/SPEC.md"
-const currentVersion = "0.6"
+
+// currentVersion is the pin migrate writes: the one `fdf init` writes too.
+var currentVersion = scaffold.CurrentVersion()
 
 // Version is the CLI version, set by the command wrapper. A migrate that
 // finds the pin already current is indistinguishable from a migrate that has
@@ -98,16 +101,28 @@ func Run(root, repoRoot string, out io.Writer) int {
 		if code := scaffold.EnsureDebtsIndex(root, out); code != 0 {
 			return code
 		}
+		if code := scaffold.EnsureBugsIndex(root, out); code != 0 {
+			return code
+		}
 		fmt.Fprintln(out, "\nvalidating bundle:")
 		return bundle.Validate(root, bundle.Options{RepoRoot: repoRoot, Out: out, FreshStubsAdvisory: true})
 	}
 
+	// v0.7 reserves bugs/ for the bug register. A bundle that already uses it
+	// as a feature group has to move that group first; nothing else here can
+	// decide its new name. Refused before anything is touched.
+	if problem := bugsGroupConflict(root); problem != "" {
+		fmt.Fprintln(out, "cannot migrate — fix this first (bundle left unchanged):")
+		fmt.Fprintln(out, "  "+problem)
+		return 1
+	}
+
 	// A bundle already in the stem-qualified layout (v0.4 onward) needs no
-	// structural work: 0.4 → 0.5 only adds changes/, and 0.5 → 0.6 only adds
-	// practices/ and DOMAIN.md. Running the pre-0.4 chain over one would be
-	// actively wrong — pre-flight reads every `slug.spec.md` as an illegal
-	// dotted basename.
-	stem := pin == "0.4" || pin == "0.5"
+	// structural work: 0.4 → 0.5 only adds changes/, 0.5 → 0.6 only adds
+	// practices/, debts/ and DOMAIN.md, and 0.6 → 0.7 only adds bugs/.
+	// Running the pre-0.4 chain over one would be actively wrong — pre-flight
+	// reads every `slug.spec.md` as an illegal dotted basename.
+	stem := pin == "0.4" || pin == "0.5" || pin == "0.6"
 	var moves map[string]string
 	if !stem {
 
@@ -215,6 +230,9 @@ func Run(root, repoRoot string, out io.Writer) int {
 	if code := scaffold.EnsureDebtsIndex(root, out); code != 0 {
 		return code
 	}
+	if code := scaffold.EnsureBugsIndex(root, out); code != 0 {
+		return code
+	}
 
 	// 9. Report what actually changed, then validate. Without this the only
 	// evidence of a migration is a scroll of per-file lines, and a migration
@@ -238,8 +256,77 @@ func Run(root, repoRoot string, out io.Writer) int {
 		fmt.Fprintln(out, "\nnext: run the fdf-init skill to fill "+scaffold.ContextDocNames()+".")
 		fmt.Fprintln(out, "warning: the next plain `fdf validate` will fail F9 until those stubs are filled (migrate passes only because FreshStubsAdvisory treats freshly scaffolded stubs as warnings).")
 	}
+	reportV07(root, out)
 	return code
 }
+
+// reportV07 says what v0.7 changes about a bundle that has just reached it:
+// F12 now reads every document and name, and the debt register may hold
+// defects that belong in the new bug register. Neither is a migration step —
+// both are judgments — so the command names the tools and stops there.
+func reportV07(root string, out io.Writer) {
+	if lex, _ := bundle.LoadLexicon(root); lex != nil {
+		docs := map[string]bool{}
+		occ := bundle.ScanBundle(root, lex)
+		for _, o := range occ {
+			docs[o.Rel] = true
+		}
+		if len(occ) > 0 {
+			fmt.Fprintf(out, "\nv0.7: the domain language now reaches every document and name — %d banned word(s) in %d place(s).\n", len(occ), len(docs))
+			fmt.Fprintln(out, "      `fdf lexicon` lists them; triage the other senses into `except:`, then sweep one term at a time")
+			fmt.Fprintln(out, "      with `fdf lexicon --term <Term> --fix --dry-run` and `--fix`.")
+		}
+	}
+	if n := countRegisterEntries(filepath.Join(root, "debts")); n > 0 {
+		fmt.Fprintf(out, "\nv0.7: of the %d debt(s) on the register, any that describes the software doing something wrong\n", n)
+		fmt.Fprintln(out, "      is a bug — re-file it with `fdf mv debts/<id> bugs/<id>`, then give it the `# Expected` a bug states.")
+	}
+}
+
+// countRegisterEntries counts the documents in a register directory, groups
+// included, leaving out its index, its log and each entry's log sibling.
+func countRegisterEntries(dir string) int {
+	n := 0
+	filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".md") {
+			return nil
+		}
+		if base := filepath.Base(p); base != "INDEX.md" && base != "LOG.md" && !strings.HasSuffix(base, ".log.md") {
+			n++
+		}
+		return nil
+	})
+	return n
+}
+
+// bugsGroupConflict reports a bundle that uses bugs/ as a feature group, which
+// v0.7 reserves for the bug register. Bug documents already there are fine.
+func bugsGroupConflict(root string) string {
+	var offender string
+	filepath.WalkDir(filepath.Join(root, "bugs"), func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || offender != "" || !strings.HasSuffix(p, ".md") {
+			return nil
+		}
+		base := filepath.Base(p)
+		if base == "INDEX.md" || base == "LOG.md" || strings.HasSuffix(base, ".log.md") {
+			return nil
+		}
+		raw, rerr := os.ReadFile(p)
+		if rerr != nil {
+			return nil
+		}
+		if m := typeLineRe.FindSubmatch(raw); m == nil || strings.Trim(string(m[1]), `"'`) != "Bug" {
+			offender = rel(root, p)
+		}
+		return nil
+	})
+	if offender == "" {
+		return ""
+	}
+	return fmt.Sprintf("bugs/ is a feature group (%s), but v0.7 reserves bugs/ for the bug register — rename the group first with `fdf mv bugs <new-group>`, then re-run fdf migrate", filepath.ToSlash(offender))
+}
+
+var typeLineRe = regexp.MustCompile(`(?m)^type:\s*(\S+)`)
 
 // preflightV4 scans for content the v0.4 layout cannot represent and that
 // this migration cannot mechanically fix: dotted group-level filenames

@@ -24,18 +24,19 @@ func splitList(v string) []string {
 // follows from it.
 func runPostDelivery(cmd, docType string, args []string, stdout io.Writer) int {
 	fs := newFlagSet(cmd, stdout)
-	affects := fs.String("affects", "", "comma-separated feature ID(s) this touches (required)")
+	affects := fs.String("affects", "", "comma-separated feature ID(s) this touches (required unless --from names a bug that has them)")
+	from := fs.String("from", "", "bugs/<id> this work repairs: copies its analysis and writes `resolves`")
 	root, source, rest, ok := resolveRootSource(fs, args, stdout)
 	if !ok {
 		return 2
 	}
 	if len(rest) != 1 {
-		fmt.Fprintf(stdout, "usage: fdf %s [--root <dir>] --affects <group>/<slug>[,…] [<group>/]<slug>\n", cmd)
+		fmt.Fprintf(stdout, "usage: fdf %s [--root <dir>] [--from bugs/<id>] --affects <group>/<slug>[,…] [<group>/]<slug>\n", cmd)
 		flagOrderHint(rest, stdout)
 		return 2
 	}
 	announce(cmd, root, source, stdout)
-	return changes.New(root, rest[0], docType, splitList(*affects), stdout)
+	return changes.NewFrom(root, rest[0], docType, splitList(*affects), *from, stdout)
 }
 
 func runChange(args []string, stdout io.Writer) int {

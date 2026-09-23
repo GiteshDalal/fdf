@@ -125,3 +125,113 @@ func TestHistoryOnUntouchedFeatureSaysSo(t *testing.T) {
 		t.Errorf("unexpected: %s", out.String())
 	}
 }
+
+func writeBug(t *testing.T, root, id, body string) {
+	t.Helper()
+	p := filepath.Join(root, filepath.FromSlash(id)+".md")
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+const splitCaptureBug = `---
+type: Bug
+status: open
+title: A full refund misses the second capture
+affects: payments/instant-refunds
+timestamp: 2026-09-23T00:00:00Z
+---
+
+# Symptom
+
+A 40.00 payment settled as two captures refunds 25.00.
+
+# Expected
+
+The whole payment is refunded.
+
+# Violates
+
+## payments/instant-refunds
+
+- Full refund of a settled payment — only the first capture is refunded
+
+# Root cause
+
+refund.go refunds the first capture only.
+`
+
+// A Fix from a bug takes over its analysis and names it in `resolves`; the
+// scenarios it violates become the regression cases, names verbatim.
+func TestNewFixFromBugTakesOverTheAnalysis(t *testing.T) {
+	root := bundle(t)
+	writeBug(t, root, "bugs/split-capture", splitCaptureBug)
+	var out bytes.Buffer
+	if code := NewFrom(root, "split-capture-fix", "Fix", nil, "bugs/split-capture", &out); code != 0 {
+		t.Fatalf("new fix from bug: %d\n%s", code, out.String())
+	}
+	raw, _ := os.ReadFile(filepath.Join(root, "changes", "split-capture-fix.md"))
+	body := string(raw)
+	for _, want := range []string{
+		"affects: payments/instant-refunds",
+		"resolves: bugs/split-capture",
+		"A 40.00 payment settled as two captures refunds 25.00.",
+		"refund.go refunds the first capture only.",
+		"- Full refund of a settled payment — TODO the command",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("fix missing %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "only the first capture is refunded") {
+		t.Fatalf("a violation's note is not part of the scenario name:\n%s", body)
+	}
+	if !strings.Contains(out.String(), "resolves bugs/split-capture") {
+		t.Fatalf("output should say what the work resolves:\n%s", out.String())
+	}
+}
+
+// A defect in code no feature documents has nothing for a Fix to amend: the
+// capability is adopted first.
+func TestNewFromBugWithoutAffectsPointsAtAdoption(t *testing.T) {
+	root := bundle(t)
+	writeBug(t, root, "bugs/orphan", "---\ntype: Bug\nstatus: open\ntitle: Orphan\n---\n\n# Symptom\n\nIt breaks.\n\n# Expected\n\nIt works.\n")
+	var out bytes.Buffer
+	if code := NewFrom(root, "orphan-fix", "Fix", nil, "bugs/orphan", &out); code != 1 {
+		t.Fatalf("want refusal, got %d\n%s", code, out.String())
+	}
+	if !strings.Contains(out.String(), "fdf adopt --resource") {
+		t.Fatalf("refusal should point at adoption:\n%s", out.String())
+	}
+}
+
+func TestNewFromRejectsWhatIsNotABug(t *testing.T) {
+	root := bundle(t)
+	var out bytes.Buffer
+	if code := NewFrom(root, "x", "Fix", nil, "bugs/missing", &out); code != 1 || !strings.Contains(out.String(), "not a bug on the register") {
+		t.Fatalf("an unknown bug must be refused: %d\n%s", code, out.String())
+	}
+	out.Reset()
+	if code := NewFrom(root, "x", "Fix", nil, "debts/gap", &out); code != 1 || !strings.Contains(out.String(), "bugs/<slug>") {
+		t.Fatalf("a non-bug ID must be refused: %d\n%s", code, out.String())
+	}
+}
+
+func TestHistoryListsKnownBugsAndWhatResolvesThem(t *testing.T) {
+	root := bundle(t)
+	writeBug(t, root, "bugs/split-capture", splitCaptureBug)
+	var out bytes.Buffer
+	NewFrom(root, "split-capture-fix", "Fix", nil, "bugs/split-capture", &out)
+	out.Reset()
+	if code := History(root, "payments/instant-refunds", &out); code != 0 {
+		t.Fatalf("history: %d", code)
+	}
+	for _, want := range []string{"resolves bugs/split-capture", "known bugs — 1 on the register", "A full refund misses the second capture"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("history missing %q:\n%s", want, out.String())
+		}
+	}
+}

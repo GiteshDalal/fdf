@@ -11,7 +11,7 @@ import (
 )
 
 // version is set by goreleaser via -ldflags "-X main.version=...".
-var version = "0.6.3"
+var version = "0.7.0"
 
 // banner is the product header both the short usage and `fdf help` print.
 // The spec version is derived, never written out, so a spec bump cannot
@@ -24,6 +24,10 @@ var commands = map[string]func(args []string, stdout io.Writer) int{
 	"new":      runNew,
 	"practice": runPractice,
 	"debt":     runDebt,
+	"bug":      runBug,
+	"adopt":    runAdopt,
+	"mv":       runMv,
+	"lexicon":  runLexicon,
 	"install":  runInstall,
 	"serve":    runServe,
 	"migrate":  runMigrate,
@@ -40,13 +44,17 @@ var usage = banner + `
 Usage: fdf <command> [flags]
 
 Commands:
-  validate   Check the bundle against the pinned SPEC (F1-F13 + R1)
+  validate   Check the bundle against the pinned SPEC (F1-F14 + R1)
   init       Scaffold a bundle at the resolved root
   new        Scaffold a draft feature: fdf new <group>/<slug>
   practice   Scaffold a Practice: fdf practice [<group>/]<slug>
   debt       Read or file the debt register: fdf debt [--open|--cleanup] [<slug>]
+  bug        Read or file the bug register: fdf bug [--open|--cleanup] [--affects <id>] [<slug>]
+  adopt      Map code that predates the bundle: fdf adopt [--resource <path>] [<group>/<slug>]
+  mv         Move or rename a document and repair every reference: fdf mv <from> <to>
+  lexicon    Report banned domain words, or replace them: fdf lexicon [--term <Term>] [--fix [--dry-run]]
   change     Scaffold a post-delivery Change: fdf change --affects <id> <slug>
-  fix        Scaffold a post-delivery Fix: fdf fix --affects <id> <slug>
+  fix        Scaffold a post-delivery Fix: fdf fix [--from bugs/<id>] --affects <id> <slug>
   history    List a delivered feature's changes and fixes
   release    Derive a release document: fdf release [--ship] <version>
   install    Install/upgrade FDF skills for an AI harness: fdf install [--project] [--root <dir>] <claude-code|codex|opencode>

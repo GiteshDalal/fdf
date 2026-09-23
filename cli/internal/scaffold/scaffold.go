@@ -16,7 +16,7 @@ import (
 	fdf "github.com/GiteshDalal/fdf"
 )
 
-const currentVersion = "0.6"
+const currentVersion = "0.7"
 const specURL = "https://github.com/GiteshDalal/fdf/blob/main/spec/" + currentVersion + ".md"
 
 // contextDocs are the bundle-root Context documents fdf init scaffolds as
@@ -45,13 +45,18 @@ var contextDocs = []struct{ file, title, purpose, headings string }{
 const domainTermsStub = "# Terms\n\n" +
 	"<!-- One `## <Term>` heading per canonical term. The first line under it is\n" +
 	"     the definition; then, optionally:\n" +
-	"       - instead-of: the words this term replaces (banned in documents and\n" +
-	"         code identifiers, not in the copy a surface shows people)\n" +
+	"       - instead-of: the words this term replaces (banned in every document\n" +
+	"         and code identifier, not in the copy a surface shows people)\n" +
+	"       - except: phrases in which a banned word means something else\n" +
+	"         (\"data store\"), never the banned word alone\n" +
 	"       - code: how the term appears in the code (type, table, field)\n" +
-	"       - see: a link to the practice that explains it in depth\n\n" +
+	"       - see: a link to the practice that explains it in depth\n" +
+	"     Once no document uses a banned word, add `strict: true` to this file's\n" +
+	"     frontmatter: every validation then treats one as an error.\n\n" +
 	"## Venue\n" +
 	"A physical location where a merchant sells.\n" +
 	"- instead-of: store, business, tenant\n" +
+	"- except: data store\n" +
 	"- code: `Venue` (model), `venues` (table)\n" +
 	"-->\n"
 
@@ -122,6 +127,27 @@ func EnsureDebtsIndex(root string, out io.Writer) int {
 		return 1
 	}
 	fmt.Fprintln(out, "wrote debts/INDEX.md (the debt register)")
+	return 0
+}
+
+// EnsureBugsIndex creates bugs/INDEX.md if absent. The bug register (v0.7)
+// records known defects nobody is repairing yet.
+func EnsureBugsIndex(root string, out io.Writer) int {
+	dir := filepath.Join(root, "bugs")
+	idx := filepath.Join(dir, "INDEX.md")
+	if _, err := os.Stat(idx); err == nil {
+		return 0
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		fmt.Fprintln(out, "error:", err)
+		return 1
+	}
+	body := "# Bugs\n\nKnown defects — the software doing something wrong that someone could\nobserve — that nobody is repairing yet. Each is repaired by a Fix or a Change\nthat names it in `resolves`. Run `fdf bug` to read the register.\n\n* [Format reference](/SPEC.md) - how bugs are structured.\n"
+	if err := os.WriteFile(idx, []byte(body), 0o644); err != nil {
+		fmt.Fprintln(out, "error:", err)
+		return 1
+	}
+	fmt.Fprintln(out, "wrote bugs/INDEX.md (the bug register)")
 	return 0
 }
 
@@ -391,10 +417,14 @@ func Init(root string, out io.Writer) int {
 	if code := EnsureDebtsIndex(root, out); code != 0 {
 		return code
 	}
+	if code := EnsureBugsIndex(root, out); code != 0 {
+		return code
+	}
 	fmt.Fprintf(out, "\ndone: initialized FDF bundle at %s\n", root)
 	fmt.Fprintf(out, "  pinned fdf_version %s; wrote INDEX.md, LOG.md, SPEC.md and %d Context stub(s)\n", currentVersion, len(contextDocs))
 	fmt.Fprintln(out, "next: run the fdf-init skill to fill "+contextDocNames()+" before adding features.")
 	fmt.Fprintln(out, "      `fdf validate` fails F9 until those stubs are filled and a feature exists.")
+	fmt.Fprintln(out, "      On an existing codebase, map what it already does with `fdf adopt` (the fdf-adopt skill).")
 	return 0
 }
 
@@ -445,9 +475,20 @@ Scenario: Replace me
 		fmt.Fprintln(out, "error:", err)
 		return 1
 	}
-	// Create or append the group index.
+	if code := appendGroupIndex(root, group, fmt.Sprintf("* [%s](/%s/%s.md) - TODO. (**draft**)\n", title, group, slug), out); code != 0 {
+		return code
+	}
+	fmt.Fprintf(out, "created %s (status: draft)\n", filepath.Join(group, slug+".md"))
+	fmt.Fprintf(out, "updated %s (now lists %q)\n", filepath.Join(group, "INDEX.md"), title)
+	fmt.Fprintf(out, "\ndone: feature %s is a draft — one Feature: fence, one Scenario: fence, no trail siblings yet\n", id)
+	fmt.Fprintln(out, "next: write the Gherkin, then add "+slug+".spec.md to reach `specified` (the fdf-brainstorm skill drives this).")
+	return 0
+}
+
+// appendGroupIndex adds one listing line to a group's INDEX.md, creating the
+// index when the group is new.
+func appendGroupIndex(root, group, entry string, out io.Writer) int {
 	gidx := filepath.Join(root, group, "INDEX.md")
-	entry := fmt.Sprintf("* [%s](/%s/%s.md) - TODO. (**draft**)\n", title, group, slug)
 	if raw, err := os.ReadFile(gidx); err == nil {
 		if err := os.WriteFile(gidx, append(raw, []byte(entry)...), 0o644); err != nil {
 			fmt.Fprintln(out, "error:", err)
@@ -463,9 +504,75 @@ Scenario: Replace me
 		fmt.Fprintln(out, "error:", err)
 		return 1
 	}
-	fmt.Fprintf(out, "created %s (status: draft)\n", filepath.Join(group, slug+".md"))
+	return 0
+}
+
+// Adopt scaffolds an adopted feature (v0.7) at <group>/<slug>.md: a
+// capability the software already has, documented from the code rather than
+// built through the lifecycle. It starts as a map entry — a Feature: block
+// and the code it lives in, no scenarios — and gets no spec, plan or tasks,
+// ever. resources are the project-relative paths of that code; projectRoot,
+// when set, is where they must exist.
+func Adopt(root, projectRoot, id string, resources []string, out io.Writer) int {
+	if !idRe.MatchString(id) {
+		fmt.Fprintf(out, "error: feature id must be <group>/<slug>, lowercase [a-z0-9-]; got %q\n", id)
+		return 1
+	}
+	if len(resources) == 0 {
+		fmt.Fprintln(out, "error: --resource is required — name the code this capability lives in; with no tasks, it is the feature's only link to the code")
+		return 1
+	}
+	if projectRoot != "" {
+		for _, r := range resources {
+			if _, err := os.Stat(filepath.Join(projectRoot, filepath.FromSlash(r))); err != nil {
+				fmt.Fprintf(out, "error: --resource %s does not exist under %s — adoption documents code that exists\n", r, projectRoot)
+				return 1
+			}
+		}
+	}
+	group, slug, _ := strings.Cut(id, "/")
+	featurePath := filepath.Join(root, group, slug+".md")
+	if _, err := os.Stat(featurePath); err == nil {
+		fmt.Fprintf(out, "error: %s already exists\n", filepath.Join(group, slug+".md"))
+		return 1
+	}
+	if err := os.MkdirAll(filepath.Join(root, group), 0o755); err != nil {
+		fmt.Fprintln(out, "error:", err)
+		return 1
+	}
+	title := strings.ToUpper(slug[:1]) + strings.ReplaceAll(slug[1:], "-", " ")
+	feature := fmt.Sprintf(`---
+type: Feature
+title: %s
+description: TODO — one sentence on what this capability does today.
+status: adopted
+resource: [%s]
+timestamp: %s
+---
+
+# Feature
+
+`+"```gherkin"+`
+Feature: %s
+  As a <role>
+  I want <capability>
+  So that <value>
+`+"```"+`
+
+Built before this bundle existed and documented from the code as it stands.
+Scenarios are backfilled as work reaches it: each describes what the code
+already does, and its case in %s passes today.
+`, title, strings.Join(resources, ", "), time.Now().UTC().Format("2006-01-02T15:04:05Z"), title, "`"+slug+".test.md`")
+	if err := os.WriteFile(featurePath, []byte(feature), 0o644); err != nil {
+		fmt.Fprintln(out, "error:", err)
+		return 1
+	}
+	if code := appendGroupIndex(root, group, fmt.Sprintf("* [%s](/%s/%s.md) - TODO. (**adopted**)\n", title, group, slug), out); code != 0 {
+		return code
+	}
+	fmt.Fprintf(out, "created %s (status: adopted — a map entry: a Feature: block and its code, no scenarios yet)\n", filepath.Join(group, slug+".md"))
 	fmt.Fprintf(out, "updated %s (now lists %q)\n", filepath.Join(group, "INDEX.md"), title)
-	fmt.Fprintf(out, "\ndone: feature %s is a draft — one Feature: fence, one Scenario: fence, no trail siblings yet\n", id)
-	fmt.Fprintln(out, "next: write the Gherkin, then add "+slug+".spec.md to reach `specified` (the fdf-brainstorm skill drives this).")
+	fmt.Fprintln(out, "\nnext: fill the Feature: block — who uses this, and for what. Scenarios come later, one at a time,")
+	fmt.Fprintln(out, "      each with its case in "+slug+".test.md, passing against the code as it stands (the fdf-adopt skill).")
 	return 0
 }

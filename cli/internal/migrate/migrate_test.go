@@ -476,3 +476,76 @@ func TestMigrateSummaryReportsTransitionAndCount(t *testing.T) {
 		t.Errorf("summary should count lifted trail files:\n%s", msg)
 	}
 }
+
+// buildV06Bundle writes a filled v0.6 bundle: five Context documents, a
+// lexicon banning "shop", one delivered feature whose spec still says "shop",
+// and a grouped debt.
+func buildV06Bundle(t *testing.T, root string) {
+	write(t, root, "INDEX.md", "---\nfdf_version: \"0.6\"\n---\n\n# Bundle\n\n* [Venues](/venues/INDEX.md) - group.\n")
+	write(t, root, "LOG.md", "# Bundle Update Log\n\n## 2026-09-16\n* **Initialization**: v0.6.\n")
+	for _, name := range []string{"STACK", "ARCHITECTURE", "SURFACES", "INFRA"} {
+		write(t, root, name+".md", "---\ntype: Context\ntitle: "+name+"\ndescription: Filled.\ntimestamp: 2026-09-16T00:00:00Z\n---\n\n# "+name+"\n\nFilled.\n")
+	}
+	write(t, root, "DOMAIN.md", "---\ntype: Context\ntitle: Domain\ndescription: Filled.\ntimestamp: 2026-09-16T00:00:00Z\n---\n\n# Terms\n\n## Venue\nA physical location where a merchant sells.\n- instead-of: shop\n")
+	write(t, root, "venues/INDEX.md", "# Venues\n\n* [Hours](/venues/hours.md) - opening hours.\n")
+	write(t, root, "venues/hours.md", "---\ntype: Feature\nstatus: specified\ntitle: Hours\ndescription: Opening hours.\ntimestamp: 2026-09-16T00:00:00Z\n---\n\n# Feature\n\n```gherkin\nFeature: Hours\n  As a Venue owner\n  I want hours\n  So that people know\n```\n\n# Scenarios\n\n```gherkin\nScenario: Owner sets hours\n  Given a Venue\n  When the owner sets hours\n  Then they show\n```\n")
+	write(t, root, "venues/hours.spec.md", "---\ntype: Spec\ntitle: Design\ndescription: d.\ntimestamp: 2026-09-16T00:00:00Z\n---\n\n# Approach\n\nEach shop keeps its own hours.\n")
+	write(t, root, "debts/INDEX.md", "# Debt\n\n* [x](/debts/INDEX.md) - register.\n")
+	write(t, root, "debts/backend/slow-hours.md", "---\ntype: Debt\nstatus: open\ntitle: Slow\ndescription: d.\nresource: []\ntimestamp: 2026-09-16T00:00:00Z\n---\n\n# Gap\n\nHours are read twice.\n")
+	write(t, root, "practices/INDEX.md", "# Practices\n\n* [x](/practices/INDEX.md) - practices.\n")
+	write(t, root, "changes/INDEX.md", "# Changes\n\n* [x](/changes/INDEX.md) - changes.\n")
+}
+
+func TestMigrateV06ToV07(t *testing.T) {
+	root := t.TempDir()
+	buildV06Bundle(t, root)
+	var out bytes.Buffer
+	if code := Run(root, "", &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
+	}
+	idx, _ := os.ReadFile(filepath.Join(root, "INDEX.md"))
+	if !strings.Contains(string(idx), `fdf_version: "0.7"`) {
+		t.Fatalf("pin not upgraded:\n%s", idx)
+	}
+	if _, err := os.Stat(filepath.Join(root, "bugs", "INDEX.md")); err != nil {
+		t.Fatalf("bugs/INDEX.md not scaffolded: %v", err)
+	}
+	spec, _ := os.ReadFile(filepath.Join(root, "SPEC.md"))
+	if !strings.Contains(string(spec), "Feature Document Format (FDF) — v0.7") {
+		t.Fatal("SPEC.md not re-vendored to v0.7")
+	}
+	for _, want := range []string{
+		"fdf_version 0.6 -> 0.7",
+		"0 trail file(s) lifted",
+		"the domain language now reaches every document and name — 1 banned word(s) in 1 place(s)",
+		"of the 1 debt(s) on the register",
+		"`fdf mv debts/<id> bugs/<id>`",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output missing %q\n%s", want, out.String())
+		}
+	}
+	// Nothing moved: the feature and its spec are where they were.
+	if _, err := os.Stat(filepath.Join(root, "venues", "hours.spec.md")); err != nil {
+		t.Fatal("a v0.6 → v0.7 migration must not move documents")
+	}
+}
+
+func TestMigrateRefusesBugsFeatureGroup(t *testing.T) {
+	root := t.TempDir()
+	buildV06Bundle(t, root)
+	write(t, root, "bugs/INDEX.md", "# Bugs\n\n* [Tracker](/bugs/tracker.md) - a feature group named bugs.\n")
+	write(t, root, "bugs/tracker.md", "---\ntype: Feature\nstatus: draft\ntitle: Tracker\ndescription: d.\ntimestamp: 2026-09-16T00:00:00Z\n---\n\n# Feature\n\n```gherkin\nFeature: Tracker\n  As a user\n  I want it\n  So that it helps\n```\n\n# Scenarios\n\n```gherkin\nScenario: It works\n  Given it\n  When it runs\n  Then it works\n```\n")
+	var out bytes.Buffer
+	if code := Run(root, "", &out); code != 1 {
+		t.Fatalf("migrate exit %d, want 1\n%s", code, out.String())
+	}
+	if !strings.Contains(out.String(), "bugs/ is a feature group (bugs/tracker.md)") ||
+		!strings.Contains(out.String(), "`fdf mv bugs <new-group>`") {
+		t.Fatalf("refusal does not name the conflict and its fix:\n%s", out.String())
+	}
+	idx, _ := os.ReadFile(filepath.Join(root, "INDEX.md"))
+	if !strings.Contains(string(idx), `fdf_version: "0.6"`) {
+		t.Fatal("a refused migration must leave the bundle untouched")
+	}
+}
