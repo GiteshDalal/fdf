@@ -85,9 +85,10 @@ propose — designing in ignorance of one is not.
    - **Names**: short, distinct, stable — `slug.test.md` will reference them
      verbatim later.
    - **Surface details stay out of Gherkin** when they are not user-
-     observable outcomes (layout choreography, API envelope rationale, CLI
-     flag set). Put those in the spec, optional `slug.surface.md`, or
-     SURFACES.md — not in scenario steps.
+     observable outcomes (layout choreography, API envelope, CLI flag set).
+     Put them in `slug.surface.md` (step 7), or in SURFACES.md when they hold
+     for every surface, and the reasons for them in the spec. Never in
+     scenario steps.
 5. **Present the design** section by section — approach, then alternatives
    with trade-offs (lead with your recommendation), then accepted
    trade-offs. Every decision you made yourself while writing the Gherkin
@@ -102,21 +103,33 @@ propose — designing in ignorance of one is not.
    `<group>/<slug>/`. In the same edit, flip the feature's `status` to
    `specified`: a `draft` may carry no trail siblings (F4), so the spec and
    the flip land together.
-7. **Optional surface doc.** When the feature exposes non-trivial interface
-   decisions that Gherkin cannot hold (API envelope for this feature, CLI
-   flag set, UI choreography, event shapes, copy/a11y for this flow), after
-   SPEC approval write `<group>/<slug>.surface.md` (`type: Surface`) with
-   that rationale. A **surface** is any interface (UI, API, CLI, events) —
-   not visual design only. Skip when SURFACES.md already covers it and the
-   feature adds nothing feature-specific. Validation never requires
-   `.surface.md` for a status.
+7. **Surface document.** Ask one question: does this feature add or change
+   anything a person or another system uses directly? That is a screen,
+   dialog or flow; an endpoint, RPC or webhook; a command or flag; an event,
+   message, email or notification; a file format or export. If yes, write
+   `<group>/<slug>.surface.md` (`type: Surface`) beside the spec, with one
+   `#` heading per interface:
+   - an API: request and response shapes, status and error codes, following
+     SURFACES.md's conventions;
+   - a UI: layout, states (empty, loading, error), copy, accessibility;
+   - a command: arguments, flags, output, exit codes;
+   - an event or message: its fields, and when it is sent.
+
+   It describes the interfaces the approved design gives the feature, and it
+   is living: every later Change that alters them amends it. It never adds an
+   outcome the Gherkin does not name, since a new outcome is a scenario
+   first. The *why* goes in the spec; the *what* goes here. Only a feature
+   with none of these interfaces skips it (a background job whose output
+   nobody reads directly, a change to how data is stored). Validation never
+   requires it; the next person to change the interface does.
 8. **Self-review** before validating: re-read the feature doc against the
    conversation. Any user decision that no scenario or SPEC line records?
    Any two scenarios whose names could be confused? Fix silently; don't
    re-ask.
-9. **Log and gate.** Update the feature's `timestamp`; log the approval in
-   the feature's `slug.log.md` (create it on first use: `type: Log`, a
-   `## YYYY-MM-DD` heading, one line). Feature-scoped entries stay out of the
+9. **Log and gate.** Update the feature's `timestamp`, then log the approval
+   in the feature's own log:
+   `fdf log <group>/<slug> "**Specified**: design approved by <who>; <the approach in one line>."`
+   It creates the log on first use. Feature-scoped entries stay out of the
    root `LOG.md`, which is for bundle-wide events. **Gate**: `fdf validate`
    exit 0 — use fdf-validate if it fails.
 
@@ -132,6 +145,6 @@ Next: the feature is `specified` — fdf-plan is the next skill.
 - A feature that builds on a delivered one may record that with `depends-on`
   (feature IDs, must exist, acyclic). Use it for lineage — not as a substitute
   for a Change when you are really altering the existing capability.
-- Write `slug.spec.md` (and optional `slug.surface.md`) as stem siblings —
+- Write `slug.spec.md` (and `slug.surface.md`) as stem siblings —
   never `slug/SPEC.md` or other nested trail paths (those are the v0.3
   layout; the task directory holds only tasks).

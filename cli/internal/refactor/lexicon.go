@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/GiteshDalal/fdf/cli/internal/bundle"
+	"github.com/GiteshDalal/fdf/cli/internal/logs"
 )
 
 // LexiconOptions selects what `fdf lexicon` does.
@@ -537,5 +538,5 @@ func logLexiconFix(rootAbs string, occ []bundle.Occurrence, total, renamed int) 
 	if err != nil {
 		body = "# Bundle Update Log\n"
 	}
-	return os.WriteFile(p, []byte(insertLogLine(body, line)), 0o644)
+	return os.WriteFile(p, []byte(logs.Insert(body, line)), 0o644)
 }

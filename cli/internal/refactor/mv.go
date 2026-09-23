@@ -16,7 +16,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"time"
+
+	"github.com/GiteshDalal/fdf/cli/internal/logs"
 )
 
 var (
@@ -26,7 +27,6 @@ var (
 	linkRe     = regexp.MustCompile(`\]\(([^)\s]+)((?:\s+"[^"]*")?)\)`)
 	refDefRe   = regexp.MustCompile(`(?m)^[ \t]{0,3}\[[^\]\n]+\]:[ \t]*(\S+)`)
 	typeLineRe = regexp.MustCompile(`(?m)^type:\s*(\S+)\s*$`)
-	dateHeadRe = regexp.MustCompile(`(?m)^##\s+\d{4}-\d{2}-\d{2}\s*$`)
 	fenceRe    = regexp.MustCompile("^(`{3,}|~{3,})")
 	codeSpanRe = regexp.MustCompile("`+[^`\n]*?`+")
 )
@@ -752,22 +752,7 @@ func logMove(rootAbs, from, to string, refs, docs int) error {
 		body = "# Bundle Update Log\n"
 	}
 	line := fmt.Sprintf("* **Moved**: `%s` → `%s` (fdf mv; %d reference(s) repaired in %d document(s)).\n", from, to, refs, docs)
-	return os.WriteFile(p, []byte(insertLogLine(body, line)), 0o644)
-}
-
-// insertLogLine adds a line under today's heading, creating the heading above
-// every older one — every FDF log is newest first.
-func insertLogLine(body, line string) string {
-	today := time.Now().UTC().Format("2006-01-02")
-	if idx := strings.Index(body, "## "+today+"\n"); idx >= 0 {
-		insert := idx + len("## "+today+"\n")
-		return body[:insert] + line + body[insert:]
-	}
-	block := "## " + today + "\n" + line + "\n"
-	if loc := dateHeadRe.FindStringIndex(body); loc != nil {
-		return body[:loc[0]] + block + body[loc[0]:]
-	}
-	return strings.TrimRight(body, "\n") + "\n\n" + block
+	return os.WriteFile(p, []byte(logs.Insert(body, line)), 0o644)
 }
 
 // externalRefs finds files outside the bundle that still name a moved path:

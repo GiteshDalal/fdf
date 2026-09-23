@@ -111,7 +111,8 @@ Blockers).
   delete the task file, its `# Tasks` link and every sibling's `depends-on`
   entry for it (F6); remove any scenario only it would have proven, along
   with that scenario's `slug.test.md` case — the feature must not promise
-  what it will not do; log the decision in `slug.log.md`; and file a debt
+  what it will not do; log the decision
+  (`fdf log <group>/<slug> "**Decision**: …"`); and file a debt
   (`fdf debt [<group>/]<slug>`) naming what was left undone. Never mark a
   blocked task `done`.
 
@@ -123,9 +124,14 @@ Blockers).
 - All tasks done → feature `status: done`, `fdf validate` exit 0 (fdf-validate
   on failure). Never flip a feature to done with a failing or unrun
   `slug.test.md` case.
-- Log the completion in the feature's `slug.log.md` (stem sibling; not a
-  nested `LOG.md` inside the task directory) — major decisions and notable
-  user interactions. It is feature-scoped, so it stays out of the root
+- Bring `slug.surface.md` up to date. The build settles interface detail the
+  design left open (an error code, a flag, a label, an event field), and the
+  surface document describes the interfaces as they now are. A feature that
+  exposes an interface and has no surface document yet gets one now (see
+  fdf-brainstorm, *Surface document*).
+- Log the completion: `fdf log <group>/<slug> "**Done**: …"`. Say what
+  shipped, and any decision the build took that the spec does not record, with
+  who agreed to it. The entry goes in the feature's own log, never the root
   `LOG.md` (see Rules).
 - The completion report shows evidence, not claims: per `slug.test.md` case,
   the command run and its actual output (screenshot for browser checks). A
@@ -217,8 +223,9 @@ next task.
 
 If something changed, **propose** the specific edit to the user and wait for
 explicit approval. Only on approval: make the edit (a Context document gets a
-new `timestamp`) and log what changed and why at its scope — the root
-`LOG.md` for a Context document, `practices/<slug>.log.md` for a practice. If
+new `timestamp`) and log what changed and why at its scope: the root
+`LOG.md` for a Context document (`fdf log "**Context**: …"`), the practice's
+own log for a practice (`fdf log practices/<slug> "…"`). If
 nothing changed, say so in one line. Never edit a Context document or a
 practice silently, and never edit one the user didn't approve. Remind the
 user, briefly, that keeping these accurate is what keeps the work grounded —
@@ -237,7 +244,8 @@ capability, and do not edit a delivered feature's Gherkin directly.
   in its `slug.log.md`, one about a group in that group's `LOG.md`, and only a
   bundle-wide decision in the root `LOG.md`. Logs are newest-first and never
   rewritten, so the only thing that keeps the root log readable is not writing
-  feature-scoped entries into it.
+  feature-scoped entries into it. `fdf log <id> "<entry>"` finds the right
+  log and creates it on first use; a task's entry goes in its feature's log.
 - Statuses reflect reality, not intent — flip in-progress before working.
 - A blocked task stays in-progress with the blocker noted in the task body —
   until it is unblocked or, on the user's decision, descoped (see Blockers).

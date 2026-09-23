@@ -90,10 +90,10 @@ every later piece of work find the capability it is about to touch.
    Filing a bug is part of mapping. Proposing a debt waits for approval like
    any other debt. If the user limited the session to mapping alone, list
    each finding with the command that would file it instead.
-6. **Log and gate**: one bundle-root `LOG.md` line per batch, under today's
-   `## YYYY-MM-DD` heading (added above the older ones: newest first) —
-   `* **Adopted**: 14 capabilities mapped in payments/ and orders/.` — link any
-   new group from the root `INDEX.md`, then `fdf validate` exit 0.
+6. **Log and gate**: one bundle-root `LOG.md` entry per batch, since a batch
+   concerns the bundle rather than one feature —
+   `fdf log "**Adopted**: 14 capabilities mapped in payments/ and orders/."` —
+   link any new group from the root `INDEX.md`, then `fdf validate` exit 0.
 
 ### Phase 2 — Backfill on touch
 
@@ -133,7 +133,7 @@ the proof that it already does it is part of the same edit.
    existing test's command or path, or an explicit manual procedure.
 4. **Run it against the code as it stands.** No code change in this edit.
 5. **It passes** → keep both; `fdf validate`. Log the batch in the feature's
-   `slug.log.md` when it is worth the next reader's time.
+   own log: `fdf log <group>/<slug> "**Backfilled**: 3 scenarios, each proven by an existing test."`
 6. **It fails** → stop. Either you misread the code (rewrite the scenario to
    what the code actually does, and run again), or you found a defect. A defect
    is never backfilled — not as it is, which would promise it, and not as it
@@ -143,6 +143,17 @@ the proof that it already does it is part of the same edit.
 Backfill only **adds**. Once written, a scenario is a promise like any other:
 modifying or removing one is a `Change` with its design gate, exactly as for a
 `done` feature.
+
+## Recording an adopted capability's surface
+
+When the capability has an interface — an endpoint, a screen, a command, an
+event — its `slug.surface.md` records that interface as the code has it today:
+the request and response shapes and codes, the screen's states and copy, the
+flags and exit codes, the event's fields. Read it from the code and the
+existing API descriptions; never design it. Like a backfilled scenario, it
+describes what is, and anything wrong it shows is a bug to file, not a surface
+to correct. Write it when backfilling reaches the capability, or before a
+Change alters its interface — that Change then amends what is already there.
 
 ## Defects in adopted and undocumented code
 

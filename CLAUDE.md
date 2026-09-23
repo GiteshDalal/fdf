@@ -61,7 +61,7 @@ goreleaser (`.goreleaser.yaml`) on tag push.
 ## Architecture
 
 The CLI is a flat command dispatcher (`cli/cmd/fdf/main.go`: a `map[string]func` over
-`validate|init|new|practice|debt|bug|adopt|mv|lexicon|install|serve|migrate|spec|help|change|fix|history|release|version`).
+`validate|init|new|practice|debt|bug|adopt|mv|lexicon|log|install|serve|migrate|spec|help|change|fix|history|release|version`).
 Each command is a thin wrapper around one
 `cli/internal/` package. Commands write usage/errors to stdout (not stderr) so tests capture
 everything, and flags must precede positional args (`ContinueOnError` FlagSets).
@@ -154,7 +154,12 @@ everything, and flags must precede positional args (`ContinueOnError` FlagSets).
   listings, log, and report references outside the bundle) and `Lexicon`
   (`fdf lexicon`, and `--fix` one `--term` at a time: plurals, capitals and a/an kept,
   scenario names renamed across their joins; italic mentions, quoted Gherkin labels,
-  table cells and names are left for a person).
+  table cells and names are left for a person). **`cli/internal/logs`** is `fdf log`
+  and the one newest-first `Insert` every log writer shares (`mv`, `lexicon`, the
+  registers' `--cleanup`): an entry goes in the log of the document it is about —
+  a feature's, change's, practice's, debt's or bug's `<slug>.log.md`, created on
+  first use (never beside a `draft`, which F4 keeps sibling-free), a group's
+  `LOG.md`, or the root `LOG.md` for the bundle as a whole.
 
 ### Layout the validator expects (v0.7)
 

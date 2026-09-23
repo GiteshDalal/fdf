@@ -43,8 +43,10 @@ TYPICAL FLOW
       fdf init                             # scaffold bundle + Context stubs
       # fill STACK/ARCHITECTURE/SURFACES/INFRA/DOMAIN via the fdf-init skill
       fdf new payments/instant-refunds     # a draft feature; write Gherkin
-      # add slug.spec.md -> specified, slug.plan.md + slug.test.md -> planned,
+      # add slug.spec.md (+ slug.surface.md when it exposes an interface)
+      # -> specified, slug.plan.md + slug.test.md -> planned,
       # tasks under slug/ -> implementing -> done
+      fdf log payments/instant-refunds "**Specified**: design approved."
       fdf validate                         # the gate after every bundle edit
 
 EXIT CODES
@@ -306,6 +308,26 @@ var helpTopics = []helpTopic{
 			"fdf lexicon --term Venue --all",
 			"fdf lexicon --term Venue --fix --dry-run",
 			"fdf lexicon --term Venue --fix",
+		},
+	},
+	{
+		name:  "log",
+		usage: "fdf log [--root <dir>] [<id>] \"<entry>\"",
+		body: "Add one entry to the log it belongs in, under today's `## YYYY-MM-DD`\n" +
+			"heading, newest first. An entry goes in the log of the one document it\n" +
+			"is about: a feature, change, fix, practice, debt or bug ID puts it in\n" +
+			"that document's <slug>.log.md, created on first use, and a task or trail\n" +
+			"document's entry goes in its owner's log. A group ID puts it in the\n" +
+			"group's LOG.md. With no ID, or for a Context document or a release, it\n" +
+			"goes in the bundle-root LOG.md, which is for the bundle as a whole. A\n" +
+			"draft feature has no log yet: its first entry comes with its approved\n" +
+			"spec. Start an entry with a bold label naming the event (**Specified**,\n" +
+			"**Decision**, **Done**), then say what happened and, for a decision, why.",
+		flags: []string{"--root <dir>  bundle root (default docs/features)"},
+		examples: []string{
+			"fdf log payments/instant-refunds \"**Specified**: design approved; synchronous PSP call, reconciled from the webhook.\"",
+			"fdf log changes/payments/refund-window \"**Decision**: refunds already in flight keep the 180-day window.\"",
+			"fdf log \"**Checkpoint**: Context documents re-read against the code; STACK.md updated.\"",
 		},
 	},
 	{

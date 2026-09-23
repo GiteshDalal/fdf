@@ -232,9 +232,9 @@ When the repair is not happening now, all of this goes into a `Bug` instead
 (see *Not repairing it now*), and the Fix or Change that eventually repairs it
 takes it over with `--from`.
 
-Record the conclusion in the feature's `slug.log.md` when it is worth the next
-agent's time — a decision, or a dead end the next investigator should not
-repeat. A filed bug needs no log line: `fdf history` lists it from its
+Record the conclusion in the feature's log when it is worth the next agent's
+time — a decision, or a dead end the next investigator should not repeat:
+`fdf log <group>/<slug> "**Investigated**: …"`. A filed bug needs no log line: `fdf history` lists it from its
 `affects`, and a hand-written pointer to it is a back-link that drifts. Never edit the feature's frozen
 `slug.spec.md`, `slug.plan.md`, or tasks — they record how it was built,
 which is the context that made this diagnosis possible.

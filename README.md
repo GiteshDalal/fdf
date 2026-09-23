@@ -42,8 +42,8 @@ docs/features/
     ├── instant-refunds.spec.md   # approved design (type: Spec)
     ├── instant-refunds.plan.md   # links every task (type: Plan)
     ├── instant-refunds.test.md   # scenario -> concrete proof (type: Test)
-    ├── instant-refunds.surface.md  # optional (type: Surface)
-    ├── instant-refunds.log.md    # optional feature decisions
+    ├── instant-refunds.surface.md  # its endpoint, screens and events as they are today (type: Surface)
+    ├── instant-refunds.log.md    # what happened to it and why, newest first (fdf log)
     └── instant-refunds/          # task directory ONLY
         ├── 01-refund-api.md
         └── 02-refund-ui.md
@@ -192,6 +192,8 @@ fdf bug --affects payments/instant-refunds refund-split-capture  # file a known 
 fdf mv payments/store-hours venues/opening-hours  # move/rename with its trail; every reference repaired
 fdf lexicon                  # every banned domain word, with file:line:col
 fdf lexicon --term Venue --fix --dry-run  # …sweep one term, reviewing the diff first
+fdf log payments/instant-refunds "**Specified**: design approved"  # into the feature's own log, created on first use
+fdf log "**Checkpoint**: Context documents current"  # the root LOG.md: bundle-wide events only
 fdf spec                     # print the format spec (-v 0.4 for an older one)
 fdf help                     # every command with examples
 fdf serve                    # browse the bundle (bun x mdts)

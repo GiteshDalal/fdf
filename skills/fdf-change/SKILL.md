@@ -126,7 +126,11 @@ Fix body's `# Symptom` and `# Root cause` sections are waiting for.
      `DOMAIN.md` — the lexicon stops at the surface.
    - The feature's **`slug.test.md`** — a case for every scenario (F8), and
      for a `Fix` the regression case you named.
-   - The feature's **`slug.surface.md`**, when the interface changed.
+   - The feature's **`slug.surface.md`**, when the work changed or added an
+     interface: an endpoint's codes, a screen's copy, a flag, an event's
+     fields. It describes the interfaces as they are today, so the old shape
+     is replaced, not kept beside the new one. A feature that has an interface
+     but no surface document gets one now.
 
    Do **not** touch the feature's `slug.spec.md`, `slug.plan.md`, or tasks.
    Those are the frozen record of how it was first built — the context someone
@@ -139,8 +143,12 @@ Fix body's `# Symptom` and `# Root cause` sections are waiting for.
    still reads as open.
    **Gate**: `fdf validate` exit 0. F10 refuses a `done` change whose declared
    effects are not reality.
-10. **Log it** in each affected feature's `slug.log.md` — what changed and
-    why. The work is feature-scoped, so it stays out of the root `LOG.md`.
+10. **Log it** in each affected feature's own log, one entry naming this
+    document, so the feature's log tells its whole life:
+    `fdf log <group>/<slug> "**Changed**: [<id>](/changes/<id>.md) <what now differs>."`
+    (`**Fixed**` for a Fix). Decisions taken while doing the work go in this
+    document's own log (`fdf log changes/<id> "**Decision**: …"`). Both are
+    feature-scoped, so neither goes in the root `LOG.md`.
 11. **Project-document review**, exactly as in fdf-execute — all four
     questions. Did this make a Context document stale (including a term in
     DOMAIN.md)? Did the code diverge from a practice that governs its paths,
@@ -177,8 +185,8 @@ project now does something a *different* way, the practice must change too. It
 is a **living** document, so amend it in place — the practice always describes
 today — and let the Change document record why. Two shapes:
 
-- *The mechanism is refined* — edit the `# Rules`, log it in
-  `practices/<slug>.log.md`.
+- *The mechanism is refined* — edit the `# Rules`, log it in the practice's
+  own log (`fdf log practices/<slug> "**Amended**: …"`).
 - *The mechanism is replaced* — set the old practice to
   `status: superseded` with `superseded-by: practices/<new-slug>` and write
   the replacement. Never delete it: code in the tree still follows it, and the

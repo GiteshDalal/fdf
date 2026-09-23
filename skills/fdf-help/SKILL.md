@@ -18,8 +18,8 @@ beside it at the group level:
 | Spec | `<group>/<slug>.spec.md` | `specified` |
 | Plan | `<group>/<slug>.plan.md` | `planned` |
 | Test | `<group>/<slug>.test.md` | `planned` |
-| Surface | `<group>/<slug>.surface.md` | optional (`type: Surface`) |
-| Log | `<group>/<slug>.log.md` | optional |
+| Surface | `<group>/<slug>.surface.md` | when the feature has an interface: screens, endpoints, commands, events |
+| Log | `<group>/<slug>.log.md` | its first entry (`fdf log <group>/<slug> "…"`) |
 | Tasks | `<group>/<slug>/NN-….md` | task directory only |
 
 Position and stem are the link — no frontmatter pointers. The task directory
@@ -89,8 +89,11 @@ You are not expected to know FDF. Two commands tell you everything:
 | What can the CLI do, with examples? | `fdf help` (or `fdf help <command>`) |
 
 The CLI keeps the bundle honest: `fdf validate` must exit 0 after any bundle
-edit. Scaffold with `fdf new <group>/<slug>`, `fdf change`, `fdf fix`. The
-rules the fdf skills cite by number (F1–F14, R1) are defined in the spec.
+edit. Scaffold with `fdf new <group>/<slug>`, `fdf change`, `fdf fix`. Record
+what happened with `fdf log <id> "<entry>"`, which writes to the log of the
+document the entry is about (the root `LOG.md` only for the bundle as a whole)
+and creates that log on first use. The rules the fdf skills cite by number
+(F1–F14, R1) are defined in the spec.
 
 The bundle is the source of truth for what the software does. Code that
 changes behavior without touching the bundle makes the bundle lie — that is

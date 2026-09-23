@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/GiteshDalal/fdf/cli/internal/logs"
 	"github.com/GiteshDalal/fdf/cli/internal/scaffold"
 )
 
@@ -29,7 +30,6 @@ var (
 	titleRe   = regexp.MustCompile(`(?m)^title:\s*(.+)$`)
 	stampRe   = regexp.MustCompile(`(?m)^timestamp:\s*(\S+)`)
 	trailRe   = regexp.MustCompile(`\.[a-z]+\.md$`)
-	dateHead  = regexp.MustCompile(`(?m)^##\s+\d{4}-\d{2}-\d{2}\s*$`)
 )
 
 // Statuses is the vocabulary both registers share, in lifecycle order.
@@ -367,7 +367,6 @@ func (k Kind) appendLog(root string, done []entry) error {
 	if err != nil {
 		body = k.logTitle
 	}
-	today := time.Now().UTC().Format("2006-01-02")
 	var b strings.Builder
 	for _, e := range done {
 		res := e.resolution
@@ -376,20 +375,7 @@ func (k Kind) appendLog(root string, done []entry) error {
 		}
 		fmt.Fprintf(&b, "* **%s** — %s. %s\n", e.id, e.title, res)
 	}
-
-	if idx := strings.Index(body, "## "+today+"\n"); idx >= 0 {
-		// Same-day run: extend the existing heading rather than repeat it.
-		insert := idx + len("## "+today+"\n")
-		body = body[:insert] + b.String() + body[insert:]
-	} else {
-		// New heading goes above every older one (newest first).
-		entryBlock := "## " + today + "\n" + b.String() + "\n"
-		if loc := dateHead.FindStringIndex(body); loc != nil {
-			body = body[:loc[0]] + entryBlock + body[loc[0]:]
-		} else {
-			body = strings.TrimRight(body, "\n") + "\n\n" + entryBlock
-		}
-	}
+	body = logs.Insert(body, b.String())
 	return os.WriteFile(path, []byte(body), 0o644)
 }
 

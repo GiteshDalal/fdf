@@ -126,12 +126,13 @@ it appears as a link to that home, not a copy.
 6. **Apply only what the user approves** — a document edit, a debt filed with
    `fdf debt`, a practice scaffolded with `fdf practice`, an `fdf install` or
    `fdf migrate`. A Context document you edit gets a new `timestamp`; a
-   practice edit is logged in `practices/<slug>.log.md`.
+   practice edit is logged in the practice's own log
+   (`fdf log practices/<slug> "**Amended**: …"`).
    What the user declines stays as it is — do not propose it again in this
    checkpoint.
 7. **Log and gate.** Once the user has decided, one entry in the root
-   `LOG.md`, newest first: what changed, and what was checked and found
-   current. The entry records decisions already made, so it needs no approval
+   `LOG.md` (`fdf log "**Checkpoint**: …"`): what changed, and what was
+   checked and found current. The entry records decisions already made, so it needs no approval
    of its own. Log a clean checkpoint too — it is the next one's baseline.
 
    ```markdown

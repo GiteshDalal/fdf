@@ -91,8 +91,9 @@ Spec/Architecture territory.
    build commands, conventions — propose replacing each with a one-line
    pointer, so every fact has one home from day one. fdf-checkpoint's
    *Agent instruction files* section is the full check.
-9. **Log and gate.** Add a root `LOG.md` entry noting the interview and key
-   decisions — the interview is bundle-wide, so it is logged at the root.
+9. **Log and gate.** Log the interview and its key decisions in the root
+   `LOG.md` — it is bundle-wide:
+   `fdf log "**Context**: the five Context documents filled by the fdf-init interview; <key decisions>."`
    Run `fdf validate` — exit 0 (F9 now satisfied) before you're done. If it
    fails on anything else, use fdf-validate.
 10. **Hand off the responsibility.** Tell the user plainly (see Closing).

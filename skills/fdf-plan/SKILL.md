@@ -22,8 +22,11 @@ Plan within the documented project context: `STACK.md`, `ARCHITECTURE.md`,
 `SURFACES.md`, `INFRA.md`, and `DOMAIN.md` at the bundle root tell you the
 real technologies, code organization, surface conventions, infrastructure, and
 vocabulary — task `resource:` paths, tools, and test commands must match them,
-not invented ones. When the feature has an optional `slug.surface.md`, ground
-interface choices (API shapes, CLI flags, UI flows) there and in SURFACES.md.
+not invented ones. When the feature has a `slug.surface.md`, ground interface
+choices (API shapes, CLI flags, UI flows) there and in SURFACES.md. A feature
+that adds or changes something a person or another system uses directly, and
+has no surface document yet, gets one before its tasks dictate the interface
+(what goes in it: fdf-brainstorm, *Surface document*).
 Name things in tasks the way `DOMAIN.md` names them: the identifiers a task
 dictates are the ones that end up in the code. The lexicon stops at the
 surface, though — when a task dictates user-facing copy (a screen title, a
@@ -122,8 +125,10 @@ and "similar to task 01" are plan failures.
    list linking every task file with **relative paths from the plan** (e.g.
    `instant-refunds/01-refund-api.md` → `slug/01-….md`). Plan order is the
    readable order; depends-on is execution truth.
-10. Flip feature status to `planned`; log it in the feature's `slug.log.md`
-    (feature-scoped, so not the root `LOG.md`); `fdf validate` exit 0 —
+10. Flip feature status to `planned` and log it in the feature's own log,
+    not the root `LOG.md`:
+    `fdf log <group>/<slug> "**Planned**: <n> tasks; <what planning decided>."`
+    Then `fdf validate` exit 0 —
     fdf-validate on failure (F8 enforces `slug.test.md` scenario coverage).
     Validate here, not between steps 6 and 9: tasks, test document and plan
     are only valid together — a task directory fails F6 until its plan

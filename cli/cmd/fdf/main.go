@@ -28,6 +28,7 @@ var commands = map[string]func(args []string, stdout io.Writer) int{
 	"adopt":    runAdopt,
 	"mv":       runMv,
 	"lexicon":  runLexicon,
+	"log":      runLog,
 	"install":  runInstall,
 	"serve":    runServe,
 	"migrate":  runMigrate,
@@ -53,6 +54,7 @@ Commands:
   adopt      Map code that predates the bundle: fdf adopt [--resource <path>] [<group>/<slug>]
   mv         Move or rename a document and repair every reference: fdf mv <from> <to>
   lexicon    Report banned domain words, or replace them: fdf lexicon [--term <Term>] [--fix [--dry-run]]
+  log        Add an entry to the log it belongs in: fdf log [<id>] "<entry>"
   change     Scaffold a post-delivery Change: fdf change --affects <id> <slug>
   fix        Scaffold a post-delivery Fix: fdf fix [--from bugs/<id>] --affects <id> <slug>
   history    List a delivered feature's changes and fixes
