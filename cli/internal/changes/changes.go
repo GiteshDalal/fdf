@@ -272,7 +272,7 @@ func ensureIndex(root, id, title, docType string, out io.Writer) int {
 		listedIn = "changes/" + m[1] + "/INDEX.md"
 	}
 	idx := filepath.Join(idxDir, "INDEX.md")
-	entry := fmt.Sprintf("* [%s](%s) - %s. (**draft**)\n", title, rel, strings.ToLower(docType))
+	entry := fmt.Sprintf("* [%s](%s) - %s.\n", title, rel, strings.ToLower(docType))
 	raw, err := os.ReadFile(idx)
 	if err != nil {
 		raw = []byte("# Changes\n\nPost-delivery changes and fixes for delivered features.\n\n")

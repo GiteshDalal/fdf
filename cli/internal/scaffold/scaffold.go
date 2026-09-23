@@ -475,7 +475,7 @@ Scenario: Replace me
 		fmt.Fprintln(out, "error:", err)
 		return 1
 	}
-	if code := appendGroupIndex(root, group, fmt.Sprintf("* [%s](/%s/%s.md) - TODO. (**draft**)\n", title, group, slug), out); code != 0 {
+	if code := appendGroupIndex(root, group, fmt.Sprintf("* [%s](/%s/%s.md) - TODO.\n", title, group, slug), out); code != 0 {
 		return code
 	}
 	fmt.Fprintf(out, "created %s (status: draft)\n", filepath.Join(group, slug+".md"))
@@ -567,7 +567,7 @@ already does, and its case in %s passes today.
 		fmt.Fprintln(out, "error:", err)
 		return 1
 	}
-	if code := appendGroupIndex(root, group, fmt.Sprintf("* [%s](/%s/%s.md) - TODO. (**adopted**)\n", title, group, slug), out); code != 0 {
+	if code := appendGroupIndex(root, group, fmt.Sprintf("* [%s](/%s/%s.md) - TODO.\n", title, group, slug), out); code != 0 {
 		return code
 	}
 	fmt.Fprintf(out, "created %s (status: adopted — a map entry: a Feature: block and its code, no scenarios yet)\n", filepath.Join(group, slug+".md"))
