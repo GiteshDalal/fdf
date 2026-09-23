@@ -108,7 +108,7 @@ func NewFrom(root, id, docType string, affects []string, fromBug string, out io.
 		for _, f := range affects {
 			fmt.Fprintf(&sb, "## %s\n\n- add: TODO — a scenario name that must exist once this is done\n- modify: TODO — an existing scenario whose steps change (name unchanged)\n- remove: TODO — a scenario name that must not exist once this is done\n\n", f)
 		}
-		sb.WriteString("Delete the lines that do not apply. Names are matched verbatim against\nthe feature's Gherkin (F10).\n\n# Impact\n\nTODO — migrations, compatibility, rollout. Optional.\n")
+		sb.WriteString("TODO — delete the lines that do not apply, and this one. Names are matched\nverbatim against the feature's Gherkin (F10).\n\n# Impact\n\nTODO — migrations, compatibility, rollout. Optional.\n")
 	} else {
 		symptom, cause := "TODO — the observed wrong behavior, with a reproduction.", "TODO — why the code diverged from the documented behavior."
 		if b != nil {

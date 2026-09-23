@@ -205,7 +205,9 @@ Work deferred to ship, a rule the new code follows that older code does not, a
 task that ended blocked on something outside the project. `fdf debt
 [<group>/]<slug>` files it: `# Gap` states it concretely (files and counts, not
 impressions — F13), `# Cost` says what carrying it risks, and `resource` names
-the paths, which is how later work finds it.
+the paths, which is how later work finds it. When the new code repeats a gap
+an open debt already names, amend that debt's `# Gap` and `resource` instead
+of filing a second one: the register says what the tree does.
 
 This is the question that keeps `done` honest. A feature that shipped without
 its batch import is genuinely done *and* has left a gap, and those are two

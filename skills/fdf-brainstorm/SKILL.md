@@ -71,8 +71,10 @@ propose — designing in ignorance of one is not.
    user, what capability, what value, what are the edge cases? Prefer
    multiple-choice questions. **Chase ambiguous words**: when the user says
    "newest", "duplicate", "fast", ask which meaning they intend (newest =
-   later in the file, or by a timestamp column?). Every ambiguous term you
-   resolve silently is a design decision nobody approved.
+   later in the file, or by a timestamp column?). Chase precedence the same
+   way: when two rules can reject the same request (not the owner, and the
+   date has passed), which answer does the caller get? Every ambiguous term
+   or order you resolve silently is a design decision nobody approved.
 4. **Write the Gherkin**: one `Feature:` fence (As-a / I-want / So-that), one
    fence per `Scenario:`, prose context between fences, link related docs.
    - **Coverage**: one happy path, one scenario per edge case the dialogue

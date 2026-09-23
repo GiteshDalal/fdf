@@ -66,9 +66,10 @@ Fix body's `# Symptom` and `# Root cause` sections are waiting for.
    cases — defaults `affects` to the bug's, and writes `resolves: bugs/<id>`.
    A bug is never resolved in place; this is how it is resolved.
 
-   Group it (`payments/refund-window`) when `changes/` is getting long. The
-   group is filing only — nothing ties it to the affected feature's group, and
-   nothing checks that it does. Below, `<id>` is the document's path under
+   Group it (`payments/refund-window`, usually after the affected feature's
+   group) once `changes/` holds more than about ten documents; below that,
+   flat is fine. The group is filing only — nothing ties it to the affected
+   feature's group, and nothing checks that it does. Below, `<id>` is the document's path under
    `changes/` without `.md` — `refund-window` or `payments/refund-window`.
 3. **Understand the change** through questions, ONE at a time: what is wrong,
    for whom, what should happen instead, what must not break? Chase ambiguous
@@ -87,8 +88,9 @@ Fix body's `# Symptom` and `# Root cause` sections are waiting for.
    A rename is `remove:` the old plus `add:` the new. A rename whose only
    reason is a word `DOMAIN.md` bans is not a Change at all: it is a lexicon
    fix, made in place across the bundle — `fdf lexicon --term <Term> --fix`
-   renames a scenario everywhere it is a join (fdf-validate, F12). Delete the
-   scaffold's TODO lines that do not apply.
+   renames a scenario everywhere it is a join (fdf-validate, F12). Delete
+   every scaffold line that starts `TODO —` once it is answered or does not
+   apply; `fdf validate` warns about any left behind.
 
    For a `Fix`, under `# Regression cases`, one heading per affected feature
    and one entry per scenario it proves:
@@ -157,7 +159,9 @@ Fix body's `# Symptom` and `# Root cause` sections are waiting for.
     and is that a defect or an approved `# Exceptions` entry? Did it establish
     a mechanism a second feature now repeats, which should become a practice?
     Did it knowingly leave something undone — `fdf debt [<group>/]<slug>` —
-    or find a defect it is not repairing — `fdf bug [<group>/]<slug>`?
+    or find a defect it is not repairing — `fdf bug [<group>/]<slug>`? When
+    the work spread a gap an open debt already names to new code, amend that
+    debt's `# Gap` and `resource` instead of filing a second one.
     *Propose* each edit and wait for explicit approval. Never edit a Context
     document or a practice silently. See *Practices and a change* below —
     post-delivery work is where practice drift actually surfaces.
