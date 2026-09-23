@@ -178,9 +178,16 @@ A physical location where a merchant sells. Owns its own inventory and staff.
 One `## <Term>` per canonical term; the first line under it is the definition;
 `instead-of` lists the banned words. F12 rejects a duplicate term, a term with
 no definition, a banned word that is itself a term, and a word claimed by two
-terms. Banned words found in a feature's Gherkin are reported as warnings —
-`fdf validate --strict-domain` makes them errors, worth turning on in CI once
-the lexicon has settled.
+terms. Banned words found in a feature's Gherkin or a declared scenario name
+are reported as warnings — `fdf validate --strict-domain` makes them errors,
+worth turning on in CI once the lexicon has settled.
+
+A bundle that already uses a word you ban — any bundle migrated from an
+earlier version — gets swept in the same approved edit: a **lexicon fix** in
+every document that uses the word for the concept, frozen specs, plans, tasks,
+changes and logs included. A lexicon fix changes words, never what was
+delivered, so it needs no Change; fdf-validate (F12) says how to do it without
+breaking the scenario-name joins.
 
 Depth does not belong here: a term needing more than a definition gets a
 practice, and the term links to it with `see:`.

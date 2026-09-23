@@ -1,0 +1,7 @@
+flags: --strict-domain
+exit: 1
+contains: FAIL: changes/holiday-closures.md: `add: Store closes for a public holiday` uses "store", which DOMAIN.md bans in favour of "Venue" (F12)
+contains: FAIL: changes/holiday-closures.md: `modify: Store owner sets opening hours` uses "store", which DOMAIN.md bans in favour of "Venue" (F12)
+contains: FAIL: changes/holiday-closures.md: `remove: Store owner opens late` uses "store", which DOMAIN.md bans in favour of "Venue" (F12)
+contains: FAIL: changes/opening-hours-timezone.md: regression case "Store owner sets opening hours" uses "store", which DOMAIN.md bans in favour of "Venue" (F12)
+contains: FAIL: venues/opening-hours.md: Gherkin uses "store", which DOMAIN.md bans in favour of "Venue" (F12)

@@ -757,7 +757,7 @@ func Validate(root string, opts Options) int {
 
 	if specV5 {
 		checkChangeLifecycle(changes, pairs, &errs)
-		checkChangeIntegrity(changes, features, pairs, &errs)
+		checkChangeIntegrity(changes, features, pairs, specV6, &errs)
 		// Feature depends-on: existing IDs, acyclic. A separate graph from the
 		// task one — these are bundle-relative feature IDs, not siblings.
 		for fid, deps := range featureDeps {

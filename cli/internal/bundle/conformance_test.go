@@ -27,8 +27,24 @@ func TestConformanceFixtures(t *testing.T) {
 				t.Fatal(err)
 			}
 			var out bytes.Buffer
-			exit := Validate(bundleRoot, Options{RepoRoot: repoRoot, Out: &out})
-			for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+			opts := Options{RepoRoot: repoRoot, Out: &out}
+			lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
+			// `flags:` runs the fixture as `fdf validate <flags>` would.
+			for _, line := range lines {
+				if !strings.HasPrefix(line, "flags: ") {
+					continue
+				}
+				for _, flag := range strings.Fields(strings.TrimPrefix(line, "flags: ")) {
+					switch flag {
+					case "--strict-domain":
+						opts.StrictDomain = true
+					default:
+						t.Fatalf("expect.txt: unknown flag %q", flag)
+					}
+				}
+			}
+			exit := Validate(bundleRoot, opts)
+			for _, line := range lines {
 				switch {
 				case strings.HasPrefix(line, "exit: "):
 					want := strings.TrimSpace(strings.TrimPrefix(line, "exit: "))

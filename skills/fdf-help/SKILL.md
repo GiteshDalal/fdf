@@ -96,12 +96,18 @@ This is the distinction that decides what you touch when something changes:
 | | Documents | When the software changes |
 |---|---|---|
 | **Living** — the system **today** | Feature Gherkin, `slug.test.md`, `slug.surface.md`, practices, debts, Context docs | **Amend in place.** A living document describing behavior the software no longer has makes the bundle lie. |
-| **Episodic** — a record of **one piece of work** | `slug.spec.md`, `slug.plan.md`, tasks, Change/Fix, log entries | **Never rewrite.** New work gets a new episode; the old one records why things were done that way. |
+| **Episodic** — a record of **one piece of work** | `slug.spec.md`, `slug.plan.md`, tasks, Change/Fix, log entries | **Never rewrite**, except by a lexicon fix. New work gets a new episode; the old one records why things were done that way. |
 
 So a delivered feature that changes keeps **one** feature document, whose
 Gherkin you edit, and gains a **new** Change document with its own spec, plan
 and tasks. Never fork a second feature document for the same capability: two
 documents describing one capability is exactly the drift FDF exists to stop.
+
+One edit is allowed on every document, living or episodic, at any status: a
+**lexicon fix** — a word `DOMAIN.md` bans replaced by its term, and nothing
+else. It changes nothing that was delivered, so it needs no Change or Fix:
+when a word is banned, sweep it out of the whole bundle, frozen documents
+included. fdf-validate (F12) has the details.
 
 ## The Rule
 
@@ -217,7 +223,7 @@ and so is the shortcut of doing it first and asking later.
 | "It's just a bug, no doc needed" | A bug fix is a `Fix` under `changes/`. Ten lines of markdown, and the regression case is what stops it recurring. |
 | "It's a bug, so it's a Fix" | Only when a scenario already says otherwise. A bug in a case the document never covered is a `Change` — fdf-debug decides that, after the root cause. |
 | "This feature is done, I'll make a v2 feature doc" | Two documents for one capability is the drift FDF exists to stop. Amend the feature; record the work as a Change. |
-| "The feature is done, I'll just edit its Gherkin" | Then nothing records why it changed, and F10 never checked that the code followed. Open a Change. |
+| "The feature is done, I'll just edit its Gherkin" | Then nothing records why it changed, and F10 never checked that the code followed. Open a Change — unless the edit is only a lexicon fix. |
 | "The user said just do it" | Offer the two-minute path first. Only an explicit opt-out after that counts. |
 | "I'll backfill the docs later" | The bundle lies the whole interim. Draft first, code second. |
 | "The full pipeline is process theater" | The trail is what the next agent trusts. Scale it down, don't skip it. |

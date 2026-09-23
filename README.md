@@ -46,7 +46,8 @@ software changes. Living documents describe the system *today* — the feature's
 Gherkin, `slug.test.md`, `slug.surface.md`, practices, debts, the Context docs — and are amended
 in place. Episodic documents are frozen records of one piece of work —
 `slug.spec.md`, `slug.plan.md`, tasks, changes, log entries — and are never
-rewritten. So a delivered feature that changes keeps **one** feature document,
+rewritten, except by a lexicon fix (a word `DOMAIN.md` bans replaced by its
+term). So a delivered feature that changes keeps **one** feature document,
 whose Gherkin is edited, and gains a **new** episode under `changes/`. Its
 original spec and plan stay untouched: they record how it was first built,
 which is the context you need to judge the change.
@@ -76,8 +77,10 @@ reader, and that drift reaches schemas and endpoints. It is the project's
 *internal* vocabulary — the bundle and the code's identifiers — not the words
 a surface shows to people: a UI label or locale string may say "store" for a
 Venue on purpose, and the skills treat that as a surface decision, never as
-drift. Rule **F12** reports a banned word found in a feature's Gherkin — a
-warning by default, an error under `fdf validate --strict-domain`.
+drift. Rule **F12** reports a banned word found in a feature's Gherkin or in
+the scenario names a change declares — a warning by default, an error under
+`fdf validate --strict-domain`. A lexicon fix clears it in place, in any
+document, frozen ones included: it changes words, not behavior.
 
 **Practices** (`practices/<slug>.md`, `type: Practice`) are the project's
 binding answers to *how do we do X* for one recurring mechanism —

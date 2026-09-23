@@ -7,7 +7,10 @@ version. The current version is the highest-numbered file.
   holding the project's domain language), `Practice` documents under
   `practices/`, `Debt` documents under `debts/`, and rules F11 (practice
   integrity), F12 (domain integrity) and F13 (debt integrity). Additive over
-  0.5 except that F9 now requires `DOMAIN.md`.
+  0.5 except that F9 now requires `DOMAIN.md`. Erratum 2026-09-23: a lexicon
+  fix (a banned word replaced by its term) is allowed in every document,
+  frozen ones included, and F12 scans declared scenario names rather than
+  whole declaration sections (see the file's `# Errata`).
 - [`0.5.md`](0.5.md) — superseded. Still validated for back-compat. Adds
   post-delivery documents: `Change` and `Fix` under `changes/` (flat or
   grouped), rule F10 (change integrity), the `retired` feature status,
@@ -26,3 +29,8 @@ version. The current version is the highest-numbered file.
 `fdf init` and `fdf migrate` vendor the pinned version's spec into the bundle
 at `docs/features/SPEC.md`, so old-version specs also live inside the bundles
 that pin them. Do not edit a released version's file; add a new one instead.
+The one exception is an **erratum**: a correction that resolves a
+contradiction in the text by relaxing a rule, so that no bundle which
+conformed stops conforming. It is recorded, dated, in that file's `# Errata`
+section. Anything that could fail a bundle that passed before is a new
+version.

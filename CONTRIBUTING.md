@@ -35,14 +35,17 @@ shellcheck install.sh
 
 `testdata/*/` fixtures are the executable spec. **If your change alters
 validation behavior, it must add or update a fixture** — a `bundle/` directory
-plus an `expect.txt` of `exit:`/`contains:` assertions. The fixtures, not the
+plus an `expect.txt` of `exit:`/`contains:`/`not-contains:` assertions (and an
+optional `flags: --strict-domain` line). The fixtures, not the
 Go test assertions, are where conformance is pinned. Name fixtures after the
 case they lock in (e.g. `done-with-open-task`).
 
 ## Changing the spec
 
-`spec/<version>.md` files are normative and frozen once released. Format
-changes start as an issue; a version bump touches the new spec file,
+`spec/<version>.md` files are normative and frozen once released — except
+for an erratum, which resolves a contradiction in the text by relaxing a rule
+and is recorded, dated, in the file's `# Errata` (see `spec/README.md`).
+Format changes start as an issue; a version bump touches the new spec file,
 `supportedVersions` in the validator, a `migrate` path, `currentVersion`,
 fixtures for the new rules, and the skills/primer — see CLAUDE.md for the
 full checklist.

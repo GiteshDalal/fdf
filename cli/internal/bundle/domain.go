@@ -3,8 +3,11 @@ package bundle
 // v0.6 domain language. DOMAIN.md is the fifth Context document: the canonical
 // name for each thing the software is about, plus the words that must not be
 // used for it instead. F12 checks the lexicon for internal consistency and
-// reports banned words found where the project's vocabulary must agree —
-// a feature's Gherkin, and a change's or fix's declaration section.
+// reports banned words in the names the bundle chooses — every feature's
+// Gherkin, and every scenario name a change or fix declares. Each finding is
+// cleared by a lexicon fix, the one edit any document takes, frozen ones
+// included; text quoting what the lexicon does not govern (a document ID, a
+// command, a surface string) is not scanned.
 
 import (
 	"fmt"
@@ -167,12 +170,43 @@ func checkDomain(rootAbs string, features map[string]*featureInfo, changes map[s
 	sort.Strings(cids)
 	for _, cid := range cids {
 		c := changes[cid]
+		isFix := c.docType == "Fix"
 		heading := scenarioChangesHeading
-		if c.docType == "Fix" {
+		if isFix {
 			heading = regressionCasesHeading
 		}
-		if decl, ok := sectionText(c.body, heading); ok {
-			scan(c.rel, "`# "+heading+"`", decl)
+		// Only the scenario names a declaration carries are scanned, at any
+		// status: a lexicon fix corrects them in a finished document as in an
+		// open one. The `## <feature-id>` headings and a regression case's
+		// verification quote a document ID, a command, a path or a surface
+		// string as it stands, which no lexicon fix may change.
+		decls := parseDecls(c.body, heading, !isFix)
+		declFids := make([]string, 0, len(decls))
+		for fid := range decls {
+			declFids = append(declFids, fid)
+		}
+		sort.Strings(declFids)
+		seen := map[string]bool{}
+		entry := func(where, name string) {
+			if !seen[where] {
+				seen[where] = true
+				scan(c.rel, where, name)
+			}
+		}
+		for _, fid := range declFids {
+			d := decls[fid]
+			for _, n := range d.adds {
+				entry("`add: "+n+"`", n)
+			}
+			for _, n := range d.modifies {
+				entry("`modify: "+n+"`", n)
+			}
+			for _, n := range d.removes {
+				entry("`remove: "+n+"`", n)
+			}
+			for _, n := range append(append([]string{}, d.regressions...), d.missingVerification...) {
+				entry(fmt.Sprintf("regression case %q", n), n)
+			}
 		}
 	}
 }
