@@ -75,8 +75,8 @@ Spec/Architecture territory.
    moment they're written — so the user must genuinely agree now.
 5. **Write the five files.** Replace the entire stub (remove the
    `<!-- fdf:stub -->` sentinel and the ⚠️ banner — their presence is what
-   F9 treats as "unfilled"). Keep `type: Context` and the frontmatter; update
-   `timestamp`.
+   F9 treats as "unfilled"). Keep `type: Context` and the frontmatter; set
+   `timestamp` to now, in UTC.
 6. **Surface the practices the project already follows.** On an existing
    codebase this is the highest-value part of the whole interview — see
    *Practices in an existing project* below. On a greenfield project there is

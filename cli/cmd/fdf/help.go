@@ -315,15 +315,16 @@ var helpTopics = []helpTopic{
 		name:  "log",
 		usage: "fdf log [--root <dir>] [<id>] \"<entry>\"",
 		body: "Add one entry to the log it belongs in, under today's `## YYYY-MM-DD`\n" +
-			"heading, newest first. An entry goes in the log of the one document it\n" +
-			"is about: a feature, change, fix, practice, debt or bug ID puts it in\n" +
-			"that document's <slug>.log.md, created on first use, and a task or trail\n" +
-			"document's entry goes in its owner's log. A group ID puts it in the\n" +
-			"group's LOG.md. With no ID, or for a Context document or a release, it\n" +
-			"goes in the bundle-root LOG.md, which is for the bundle as a whole. A\n" +
-			"log is the one sibling a draft feature may have (v0.7). Start an entry\n" +
-			"with a bold label naming the event (**Specified**, **Decision**,\n" +
-			"**Done**), then say what happened and, for a decision, why.",
+			"heading, newest first; the date is UTC, as every date fdf writes is. An\n" +
+			"entry goes in the log of the one document it is about: a feature,\n" +
+			"change, fix, practice, debt or bug ID puts it in that document's\n" +
+			"<slug>.log.md, created on first use, and a task or trail document's\n" +
+			"entry goes in its owner's log. A group ID puts it in the group's LOG.md.\n" +
+			"With no ID, or for a Context document or a release, it goes in the\n" +
+			"bundle-root LOG.md, which is for the bundle as a whole. A log is the one\n" +
+			"sibling a draft feature may have (v0.7). Start an entry with a bold\n" +
+			"label naming the event (**Specified**, **Decision**, **Done**), then say\n" +
+			"what happened and, for a decision, why.",
 		flags: []string{"--root <dir>  bundle root (default docs/features)"},
 		examples: []string{
 			"fdf log payments/instant-refunds \"**Specified**: design approved; synchronous PSP call, reconciled from the webhook.\"",

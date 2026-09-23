@@ -119,6 +119,28 @@ func TestRootEntryGoesAboveOlderDays(t *testing.T) {
 	validates(t, root, "LOG.md")
 }
 
+// A date written by hand ahead of UTC can already head a log; today's UTC
+// entry goes below it, so the log stays newest first.
+func TestEntryKeepsDateOrderBelowALaterDate(t *testing.T) {
+	root := fixture(t, "valid-bugs-v07")
+	log := "# Bundle Update Log\n\n## 2027-01-16\n* ahead of UTC\n\n## 2027-01-10\n* older\n"
+	if err := os.WriteFile(filepath.Join(root, "LOG.md"), []byte(log), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	logEntry(t, root, "", "today")
+	if got, want := read(t, root, "LOG.md"), "# Bundle Update Log\n\n## 2027-01-16\n* ahead of UTC\n\n## 2027-01-15\n* today\n\n## 2027-01-10\n* older\n"; got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+	validates(t, root, "LOG.md")
+
+	clock = func() time.Time { return time.Date(2027, 1, 9, 9, 30, 0, 0, time.UTC) }
+	logEntry(t, root, "", "oldest")
+	if got := read(t, root, "LOG.md"); !strings.HasSuffix(got, "## 2027-01-10\n* older\n\n## 2027-01-09\n* oldest\n\n") {
+		t.Errorf("a date older than every heading goes last:\n%s", got)
+	}
+	validates(t, root, "LOG.md")
+}
+
 func TestOwnersTakeTheirTasksAndTrailsEntries(t *testing.T) {
 	root := fixture(t, "valid-bugs-v07")
 	out := logEntry(t, root, "venues/opening-hours/01-build", "task entry")

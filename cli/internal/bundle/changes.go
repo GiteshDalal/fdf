@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 )
 
 // toSlash normalizes a relative path for ID comparison.
@@ -436,7 +437,8 @@ func laterIn(hist []stamped, c *changeInfo) bool {
 
 // later reports whether timestamp a is strictly after b. An order that cannot
 // be told — a missing timestamp, or the same day without times on both — is
-// not later, so the check it would excuse still applies.
+// not later, so the check it would excuse still applies. Times compare as the
+// instants they name, whatever offset each was written with.
 func later(a, b string) bool {
 	da, db := day(a), day(b)
 	switch {
@@ -444,10 +446,10 @@ func later(a, b string) bool {
 		return false
 	case da != db:
 		return da > db
-	case len(a) > 10 && len(b) > 10:
-		return a > b
 	}
-	return false
+	ta, errA := time.Parse(time.RFC3339, a)
+	tb, errB := time.Parse(time.RFC3339, b)
+	return errA == nil && errB == nil && ta.After(tb)
 }
 
 // stamp reads a `timestamp` field, a date or an RFC 3339 time, as text.
@@ -462,8 +464,12 @@ func stamp(v any) string {
 	}
 }
 
-// day is the YYYY-MM-DD a timestamp falls on, or "" when it has none.
+// day is the UTC date a timestamp falls on, or "" when it has none. A date is
+// a UTC date; a time with an offset falls on the UTC date of its instant.
 func day(ts string) string {
+	if t, err := time.Parse(time.RFC3339, ts); err == nil {
+		return t.UTC().Format("2006-01-02")
+	}
 	if len(ts) >= 10 && isoDateRe.MatchString(ts[:10]) {
 		return ts[:10]
 	}

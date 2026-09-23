@@ -127,8 +127,9 @@ propose — designing in ignorance of one is not.
    conversation. Any user decision that no scenario or SPEC line records?
    Any two scenarios whose names could be confused? Fix silently; don't
    re-ask.
-9. **Log and gate.** Update the feature's `timestamp`, then log the approval
-   in the feature's own log:
+9. **Log and gate.** Set the feature's `timestamp` to now (in UTC, like every
+   date and time in the bundle), then log the approval in the feature's own
+   log:
    `fdf log <group>/<slug> "**Specified**: design approved by <who>; <the approach in one line>."`
    It creates the log on first use. Feature-scoped entries stay out of the
    root `LOG.md`, which is for bundle-wide events. **Gate**: `fdf validate`

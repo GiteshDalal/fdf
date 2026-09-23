@@ -138,11 +138,11 @@ Fix body's `# Symptom` and `# Root cause` sections are waiting for.
    Those are the frozen record of how it was first built — the context someone
    needs to judge this change and the next one.
 9. **Flip to `done`** — with tasks, the last task and the document in the
-   same edit, as fdf-execute does — and update timestamps. If the work closes
-   an open debt, flip it to `resolved` with a `# Resolution` now too. Every bug
-   this document `resolves` is flipped to `resolved` in the same edit, its
-   `# Resolution` naming this document — F10 refuses a done repair whose bug
-   still reads as open.
+   same edit, as fdf-execute does — and set their timestamps to now, in UTC.
+   If the work closes an open debt, flip it to `resolved` with a
+   `# Resolution` now too. Every bug this document `resolves` is flipped to
+   `resolved` in the same edit, its `# Resolution` naming this document — F10
+   refuses a done repair whose bug still reads as open.
    **Gate**: `fdf validate` exit 0. F10 refuses a `done` change whose declared
    effects are not reality.
 10. **Log it** in each affected feature's own log, one entry naming this

@@ -41,7 +41,7 @@ docs/features/
     ├── instant-refunds.md        # Feature: Gherkin scenarios + status
     ├── instant-refunds.spec.md   # approved design (type: Spec)
     ├── instant-refunds.plan.md   # links every task (type: Plan)
-    ├── instant-refunds.test.md   # scenario -> concrete proof (type: Test)
+    ├── instant-refunds.test.md   # one `## <scenario name>` case per scenario, with its proof (type: Test)
     ├── instant-refunds.surface.md  # its endpoint, screens and events as they are today (type: Surface)
     ├── instant-refunds.log.md    # what happened to it and why, newest first (fdf log)
     └── instant-refunds/          # task directory ONLY

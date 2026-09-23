@@ -125,8 +125,8 @@ it appears as a link to that home, not a copy.
    current" rests on.
 6. **Apply only what the user approves** — a document edit, a debt filed with
    `fdf debt`, a practice scaffolded with `fdf practice`, an `fdf install` or
-   `fdf migrate`. A Context document you edit gets a new `timestamp`; a
-   practice edit is logged in the practice's own log
+   `fdf migrate`. A Context document you edit gets a new `timestamp` (now,
+   in UTC); a practice edit is logged in the practice's own log
    (`fdf log practices/<slug> "**Amended**: …"`).
    What the user declines stays as it is — do not propose it again in this
    checkpoint.

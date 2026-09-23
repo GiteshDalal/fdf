@@ -30,24 +30,26 @@ var (
 // clock is the time source; tests pin it.
 var clock = time.Now
 
-// Today is the heading a new entry goes under.
+// Today is the heading a new entry goes under: the UTC date, as every date
+// and time an fdf command writes is UTC.
 func Today() string { return clock().UTC().Format("2006-01-02") }
 
-// Insert adds lines (each ending in a newline) under today's heading, creating
-// the heading above every older one, since every FDF log is newest first. The
-// newest entry of a day goes first under its heading.
+// Insert adds lines (each ending in a newline) under today's heading, the
+// newest entry of a day first. Every FDF log is newest first, so a new heading
+// goes above the first older date — below any later one, such as a date
+// written by hand in a time zone ahead of UTC.
 func Insert(body, lines string) string {
-	todayRe := regexp.MustCompile(`(?m)^##[ \t]+` + Today() + `[ \t]*$\n?`)
-	if loc := todayRe.FindStringIndex(body); loc != nil {
-		head := body[:loc[1]]
-		if !strings.HasSuffix(head, "\n") {
-			head += "\n"
+	today := Today()
+	block := "## " + today + "\n" + lines + "\n"
+	for _, loc := range dateHeadRe.FindAllStringIndex(body, -1) {
+		date := strings.TrimSpace(strings.TrimPrefix(body[loc[0]:loc[1]], "##"))
+		switch {
+		case date == today:
+			head, rest := body[:loc[1]]+"\n", strings.TrimPrefix(body[loc[1]:], "\n")
+			return head + lines + rest
+		case date < today:
+			return body[:loc[0]] + block + body[loc[0]:]
 		}
-		return head + lines + body[loc[1]:]
-	}
-	block := "## " + Today() + "\n" + lines + "\n"
-	if loc := dateHeadRe.FindStringIndex(body); loc != nil {
-		return body[:loc[0]] + block + body[loc[0]:]
 	}
 	return strings.TrimRight(body, "\n") + "\n\n" + block
 }

@@ -42,6 +42,14 @@ memory, no neighboring tasks. Every name, signature, path, endpoint, and
 payload shape a task needs must be written in the task itself. "As discussed"
 and "similar to task 01" are plan failures.
 
+**When the work reaches into another feature.** A plan may add to something
+another feature built — a page, an endpoint, a table — as long as every
+scenario of that feature stays true. The addition is this feature's behavior:
+its interface goes in this feature's `slug.surface.md` and its proof in this
+feature's `slug.test.md`. When a scenario of a `done` feature would stop being
+true, that is not a task. Stop and tell the user: that feature changes only
+through a Change (fdf-change), and they decide whether it comes first.
+
 ## Process
 
 1. Read the feature doc and `<group>/<slug>.spec.md` (and
@@ -129,8 +137,9 @@ and "similar to task 01" are plan failures.
    list linking every task file with **relative paths from the plan** (e.g.
    `instant-refunds/01-refund-api.md` → `slug/01-….md`). Plan order is the
    readable order; depends-on is execution truth.
-10. Flip feature status to `planned` and log it in the feature's own log,
-    not the root `LOG.md`:
+10. Flip feature status to `planned`, set its `timestamp` to now (in UTC,
+    like every date and time in the bundle), and log it in the feature's own
+    log, not the root `LOG.md`:
     `fdf log <group>/<slug> "**Planned**: <n> tasks; <what planning decided>."`
     Then `fdf validate` exit 0 —
     fdf-validate on failure (F8 enforces `slug.test.md` scenario coverage).
