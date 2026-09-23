@@ -237,3 +237,42 @@ func TestNewBugScaffoldsAffectsAndChecksThem(t *testing.T) {
 		t.Fatalf("next step must not ask for what was already given:\n%s", out.String())
 	}
 }
+
+// A new entry is listed in the index beside it — a group's index is created
+// and listed on first use — and a cleared entry's listing goes with its file.
+func TestNewListsTheEntryAndCleanupUnlistsIt(t *testing.T) {
+	root := t.TempDir()
+	var out bytes.Buffer
+	for _, id := range []string{"venues/slow-hours", "venues/stale-cache", "loose-config"} {
+		if code := Debt.New(root, id, nil, nil, &out); code != 0 {
+			t.Fatalf("fdf debt %s: exit %d\n%s", id, code, out.String())
+		}
+	}
+	read := func(rel string) string {
+		raw, _ := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+		return string(raw)
+	}
+	group := read("debts/venues/INDEX.md")
+	if want := "# Venues\n\n* [Slow hours](/debts/venues/slow-hours.md) - debt.\n* [Stale cache](/debts/venues/stale-cache.md) - debt.\n"; group != want {
+		t.Errorf("debts/venues/INDEX.md:\n%s\nwant:\n%s", group, want)
+	}
+	top := read("debts/INDEX.md")
+	if n := strings.Count(top, "](/debts/venues/INDEX.md) - debts in venues."); n != 1 {
+		t.Errorf("the group should be listed once in debts/INDEX.md, got %d:\n%s", n, top)
+	}
+	if !strings.Contains(top, "* [Loose config](/debts/loose-config.md) - debt.\n") {
+		t.Errorf("an ungrouped debt is listed in debts/INDEX.md:\n%s", top)
+	}
+
+	seed(t, root, "venues/slow-hours", "resolved", "\n# Resolution\n\nCached in changes/x.\n")
+	out.Reset()
+	if code := Debt.Cleanup(root, false, false, &out); code != 0 {
+		t.Fatalf("cleanup: exit %d\n%s", code, out.String())
+	}
+	if strings.Contains(read("debts/venues/INDEX.md"), "slow-hours") {
+		t.Errorf("a cleared debt's listing should go:\n%s", read("debts/venues/INDEX.md"))
+	}
+	if !strings.Contains(out.String(), "unlisted it from debts/venues/INDEX.md") {
+		t.Errorf("cleanup should say it unlisted the entry:\n%s", out.String())
+	}
+}

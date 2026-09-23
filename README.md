@@ -247,19 +247,29 @@ the **project** root.
 ### Upgrading to v0.7
 
 1. Run `fdf migrate`. From **v0.6** nothing moves: the pin moves, `SPEC.md`
-   is re-vendored, and `bugs/INDEX.md` appears. What changes is what F12
-   sees — every document and name now, not only the Gherkin — so a bundle
-   that swept only its features reports the rest, as warnings (or errors, for
-   a project already running `--strict-domain`). The migration prints the
-   count; `fdf lexicon` lists them. A feature group already named `bugs/` must
-   be moved first (`fdf mv bugs <new-group>`): that name is now reserved.
-2. **Triage, then sweep**: qualify the words used in another sense and list
+   is re-vendored, `bugs/INDEX.md` appears, the status tags older versions
+   wrote after index listings (` (**draft**)`) are dropped, and the migration
+   is logged in `LOG.md`. A feature group already named `bugs/` must be moved
+   first (`fdf mv bugs <new-group>`): that name is now reserved. The
+   migration then validates and counts what v0.7 checks that v0.6 did not.
+2. **Rewrite test cases as headings**: a case is a `## <scenario name>`
+   heading under `# Test Cases`, matched exactly (F8). Bullets and table rows
+   that name a scenario no longer count, so rewrite them by hand.
+3. **Decide each surface**: a feature from `specified` on has a
+   `slug.surface.md`, or says `surface: none` in its frontmatter (a warning
+   otherwise).
+4. **Fix timestamps without a zone** (F1): give each the `Z` or offset it was
+   written in, or keep only its date.
+5. **Triage, then sweep** the domain language: F12 now reads every document
+   and name, not only the Gherkin, so a bundle that swept only its features
+   reports the rest, as warnings (or errors under `--strict-domain`).
+   `fdf lexicon` lists them. Qualify the words used in another sense and list
    them under `except:` in `DOMAIN.md`, put mentions of a word in code spans,
    then `fdf lexicon --term <Term> --fix --dry-run` and `--fix`, one term at a
    time. When the report is empty, set `strict: true` in `DOMAIN.md`.
-3. **Re-file defects**: a debt that describes the software doing something
+6. **Re-file defects**: a debt that describes the software doing something
    wrong is a bug — `fdf mv debts/<id> bugs/<id>`, then write its `# Expected`.
-4. **Re-run `fdf install`** so the skills (now ten, with `fdf-adopt`) and the
+7. **Re-run `fdf install`** so the skills (now ten, with `fdf-adopt`) and the
    primer teach v0.7.
 
 ### Upgrading to v0.6

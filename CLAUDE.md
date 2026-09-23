@@ -85,7 +85,8 @@ everything, and flags must precede positional args (`ContinueOnError` FlagSets).
     stem-trail layout (v0.4 onward); `specV5` `changes/`, the `Change`/`Fix` types,
     `retired`, feature `depends-on`, and F10; `specV6` `practices/`, the `Practice` and
     `Debt` types, `DOMAIN.md`, F11, F12 and F13; `specV7` `bugs/` and F14, `resolves`,
-    the `adopted` status and feature `resource`, and F12's full reach. Every gate means
+    the `adopted` status and feature `resource`, F12's full reach, and F1's check of a
+    `timestamp`'s form (a date, or an RFC 3339 time with `Z` or an offset). Every gate means
     "this version **and later**". v0.2/v0.3 keep the nested paired-directory layout.
   - **`practices.go`** holds F11 (practice body shape, `superseded-by` graph) and the
     `sectionText` helper that `domain.go`, `debts.go` and `bugs.go` also use.
@@ -141,7 +142,9 @@ everything, and flags must precede positional args (`ContinueOnError` FlagSets).
   0.5→0.6 moves nothing but adds a fifth Context stub, so F9 holds the bundle to filling
   `DOMAIN.md` before its next feature; migrate itself passes via `FreshStubsAdvisory`.
   0.6→0.7 scaffolds `bugs/INDEX.md`, refuses a bundle whose `bugs/` is a feature group,
-  and reports the new F12 count and the debts that may be bugs).
+  drops the status tags older tools wrote after index listings, logs the migration in
+  the root `LOG.md`, and reports the new F12, F8, surface and timestamp counts and the
+  debts that may be bugs).
   **`cli/internal/register`** (`fdf debt` and `fdf bug`: `register.Debt` and
   `register.Bug` are two `Kind`s over one implementation — list with optional status
   filter, scaffold, and `--cleanup`, which folds resolved entries into `<dir>/LOG.md`

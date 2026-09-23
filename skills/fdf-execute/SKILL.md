@@ -41,11 +41,14 @@ Say which mode you are using, and why, in one line.
 In every mode **you own the bundle**: you flip every status, update every
 timestamp, and run every `fdf validate`; subagents never edit files under the
 bundle. One writer means no races and a serialized validate after each change.
+Every document you edit, a status flip included, gets its `timestamp` set to
+now, in UTC — the task, the feature and the surface document alike.
 
 ## Per task
 
 1. Set `status: in-progress` in the task file; feature to `implementing` if
-   this is the first task. `fdf validate` after every frontmatter change.
+   this is the first task (each with a new `timestamp`). `fdf validate` after
+   every frontmatter change.
 2. **Check the practices that govern those paths** before writing anything:
    a practice whose `applies-to` covers a path this task touches — its
    `resource:`, or where its `# Steps` create files — is binding, and its
@@ -54,7 +57,7 @@ bundle. One writer means no races and a serialized validate after each change.
    it your way.
 3. Do the work per `# Steps`; touch only paths consistent with `resource:`
    and `# Steps`.
-4. Verify `# Acceptance`; set `status: done`; update `timestamp`. When
+4. Verify `# Acceptance`; set `status: done` and a new `timestamp`. When
    completing the FINAL task, flip the task and the feature status in the
    same edit before validating — a lone final-task flip fails F4
    ("implementing but every task is done").
@@ -189,7 +192,8 @@ do. `applies-to` lists the existing repo paths it governs (R1) and is how
 later work finds it — a feature never lists the practices it follows, so a
 practice with no `applies-to` is a document nothing routes to. No Gherkin, no
 spec, no plan, no tasks; the only sibling it may have is `<slug>.log.md`.
-Link it from `practices/INDEX.md`.
+`fdf practice` lists it in `practices/INDEX.md`; give the listing a real
+description.
 
 Write only what the code **already does**. If the feature revealed a better
 way nobody has adopted yet, that is a proposal for the user, not a practice

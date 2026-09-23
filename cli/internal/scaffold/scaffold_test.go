@@ -120,3 +120,28 @@ func TestNewScaffoldsDraftFeature(t *testing.T) {
 		t.Fatal("uppercase id must fail")
 	}
 }
+
+// A new practice is listed in practices/INDEX.md, or in its group's index,
+// which is created and listed on first use.
+func TestPracticeIsListed(t *testing.T) {
+	root := t.TempDir()
+	var out bytes.Buffer
+	for _, id := range []string{"permission-checks", "payments/capture"} {
+		if code := Practice(root, id, &out); code != 0 {
+			t.Fatalf("fdf practice %s: exit %d\n%s", id, code, out.String())
+		}
+	}
+	top, _ := os.ReadFile(filepath.Join(root, "practices", "INDEX.md"))
+	for _, want := range []string{
+		"* [Permission checks](/practices/permission-checks.md) - practice.\n",
+		"* [Payments](/practices/payments/INDEX.md) - practices in payments.\n",
+	} {
+		if !strings.Contains(string(top), want) {
+			t.Errorf("practices/INDEX.md should contain %q:\n%s", want, top)
+		}
+	}
+	group, _ := os.ReadFile(filepath.Join(root, "practices", "payments", "INDEX.md"))
+	if want := "# Payments\n\n* [Capture](/practices/payments/capture.md) - practice.\n"; string(group) != want {
+		t.Errorf("practices/payments/INDEX.md:\n%s\nwant:\n%s", group, want)
+	}
+}

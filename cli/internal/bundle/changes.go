@@ -464,6 +464,34 @@ func stamp(v any) string {
 	}
 }
 
+// checkTimestamp is F1's timestamp rule (v0.7): a `timestamp` is a date or an
+// RFC 3339 time with `Z` or an offset, since F10 orders documents by it. An
+// empty value is a missing one, which is only a warning.
+func checkTimestamp(rel string, v any, errs, warns *[]string) {
+	switch t := v.(type) {
+	case nil:
+		return
+	case string:
+		if t == "" {
+			*warns = append(*warns, fmt.Sprintf("%s: missing recommended `timestamp`", rel))
+			return
+		}
+		if _, err := time.Parse(time.DateOnly, t); err == nil {
+			return
+		}
+		if _, err := time.Parse(time.RFC3339, t); err == nil {
+			return
+		}
+		*errs = append(*errs, fmt.Sprintf("%s: `timestamp` %q is neither a date (2026-02-14) nor an RFC 3339 time with Z or an offset (2026-02-14T09:30:00Z) (F1)", rel, t))
+	case []string:
+		if len(t) == 0 {
+			*warns = append(*warns, fmt.Sprintf("%s: missing recommended `timestamp`", rel))
+			return
+		}
+		*errs = append(*errs, fmt.Sprintf("%s: `timestamp` is a list; it is one date or RFC 3339 time (F1)", rel))
+	}
+}
+
 // day is the UTC date a timestamp falls on, or "" when it has none. A date is
 // a UTC date; a time with an offset falls on the UTC date of its instant.
 func day(ts string) string {

@@ -385,12 +385,14 @@ var helpTopics = []helpTopic{
 		usage: "fdf migrate [--root <dir>]",
 		body: "Upgrade a bundle to the spec version this binary ships: rewrite the\n" +
 			"fdf_version pin, lift nested trail files to stem-qualified siblings,\n" +
-			"re-vendor SPEC.md, scaffold any missing Context stubs, then validate.\n" +
-			"A pre-flight refuses to start on content the new layout cannot hold and\n" +
-			"leaves the bundle untouched, so a refused run is always safe to retry\n" +
-			"after fixing what it names. Freshly scaffolded Context stubs are warnings\n" +
-			"here, not errors — a plain `fdf validate` still fails F9 until you fill\n" +
-			"them. Re-run `fdf install` afterwards.",
+			"re-vendor SPEC.md, scaffold any missing Context stubs and indexes, drop\n" +
+			"the status tags older versions wrote after index listings, log the\n" +
+			"migration in LOG.md, then validate. A pre-flight refuses to start on\n" +
+			"content the new layout cannot hold and leaves the bundle untouched, so a\n" +
+			"refused run is always safe to retry after fixing what it names. Freshly\n" +
+			"scaffolded Context stubs are warnings here, not errors — a plain `fdf\n" +
+			"validate` still fails F9 until you fill them. Re-run `fdf install`\n" +
+			"afterwards.",
 		flags:    []string{"--root <dir>  bundle root (default docs/features)"},
 		examples: []string{"fdf migrate", "fdf migrate --root docs/features"},
 	},

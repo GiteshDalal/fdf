@@ -355,7 +355,10 @@ Optional.
 		return code
 	}
 	fmt.Fprintf(out, "wrote practices/%s.md (type: Practice, status: active)\n", id)
-	fmt.Fprintln(out, "next: fill `# Rules` and set `applies-to` to the paths this governs, then link it from practices/INDEX.md.")
+	if code := ListEntry(root, "practices", id, title, "practice", out); code != 0 {
+		return code
+	}
+	fmt.Fprintln(out, "next: fill `# Rules` and set `applies-to` to the paths this governs.")
 	fmt.Fprintln(out, "      a practice binds all future code — get human approval before it lands.")
 	return 0
 }

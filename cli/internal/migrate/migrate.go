@@ -6,7 +6,7 @@
 //	v0.4/v0.5/v0.6 → nothing structural: 0.4→0.5, 0.5→0.6 and 0.6→0.7 add
 //	      documents, not moves
 //	any → pin current, RefreshSpec, EnsureContextStubs, changes/, practices/,
-//	      debts/ and bugs/ INDEX.md, validate
+//	      debts/ and bugs/ INDEX.md, drop index status tags, log, validate
 //
 // Ends by validating the result with FreshStubsAdvisory so unfilled Context
 // stubs do not fail the migration (plain `fdf validate` will still enforce F9).
@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/GiteshDalal/fdf/cli/internal/bundle"
+	"github.com/GiteshDalal/fdf/cli/internal/logs"
 	"github.com/GiteshDalal/fdf/cli/internal/scaffold"
 )
 
@@ -235,18 +236,37 @@ func Run(root, repoRoot string, out io.Writer) int {
 		return code
 	}
 
-	// 9. Report what actually changed, then validate. Without this the only
-	// evidence of a migration is a scroll of per-file lines, and a migration
-	// that moved nothing is indistinguishable from one that did.
+	// 9. Drop the status tag older tools put after an index listing
+	// (` (**draft**)`). Nothing kept it current, so it went stale as soon as
+	// the document moved on; a status lives only in its document.
+	tags := stripIndexStatusTags(root)
+
+	// 10. Log the migration in the bundle-root log, where every bundle-wide
+	// event goes.
 	from := pin
 	if from == "" {
 		from = "unpinned"
 	}
+	entry := fmt.Sprintf("**Migrated**: fdf_version %s → %s with `fdf migrate`.", from, currentVersion)
+	if tags > 0 {
+		entry += fmt.Sprintf(" Removed the status tag from %d index listing(s); a document's status lives only in its frontmatter.", tags)
+	}
+	logged := logMigration(root, entry)
+
+	// 11. Report what actually changed, then validate. Without this the only
+	// evidence of a migration is a scroll of per-file lines, and a migration
+	// that moved nothing is indistinguishable from one that did.
 	fmt.Fprintf(out, "\ndone: migrated bundle at %s\n", rootAbs)
 	fmt.Fprintf(out, "  fdf_version %s -> %s\n", from, currentVersion)
 	fmt.Fprintf(out, "  %d trail file(s) lifted to stem-qualified siblings\n", len(moves))
 	if len(moves) == 0 {
 		fmt.Fprintln(out, "  (no nested trail files were present — layout already matched)")
+	}
+	if tags > 0 {
+		fmt.Fprintf(out, "  %d status tag(s) removed from index listings\n", tags)
+	}
+	if logged {
+		fmt.Fprintln(out, "  logged in LOG.md")
 	}
 
 	// Freshly scaffolded Context stubs are advisory here — migration
@@ -284,6 +304,10 @@ func reportV07(root, validation string, out io.Writer) {
 		fmt.Fprintf(out, "      %d scenario(s) have none (F8). Rewrite those test documents' cases as headings, by hand:\n", n)
 		fmt.Fprintln(out, "      bullets and tables naming a scenario no longer count.")
 	}
+	if n := strings.Count(validation, "is neither a date (2026-02-14) nor an RFC 3339 time"); n > 0 {
+		fmt.Fprintf(out, "\nv0.7: %d timestamp(s) are neither a date nor an RFC 3339 time with Z or an offset (F1).\n", n)
+		fmt.Fprintln(out, "      Give each the Z or offset it was written in, or keep only its date.")
+	}
 	if n := strings.Count(validation, ".surface.md — write one"); n > 0 {
 		fmt.Fprintf(out, "\nv0.7: %d feature(s) have no slug.surface.md. Write one where the feature adds or changes an interface,\n", n)
 		fmt.Fprintln(out, "      or say `surface: none` in its frontmatter.")
@@ -292,6 +316,71 @@ func reportV07(root, validation string, out io.Writer) {
 		fmt.Fprintf(out, "\nv0.7: of the %d debt(s) on the register, any that describes the software doing something wrong\n", n)
 		fmt.Fprintln(out, "      is a bug — re-file it with `fdf mv debts/<id> bugs/<id>`, then give it the `# Expected` a bug states.")
 	}
+}
+
+// statusTagRe matches an index listing that ends in the status tag `fdf new`,
+// `fdf change`, `fdf fix` and `fdf adopt` wrote before v0.7, or one a person
+// kept up by hand: ` (**draft**)`. Only a status word counts, so other bold
+// text in parentheses stays.
+var statusTagRe = regexp.MustCompile(`^([ \t]*[-*+][ \t].*\]\(.*\).*?)[ \t]*\(\*\*(?:draft|specified|planned|implementing|done|retired|adopted|pending|in-progress|active|superseded|open|accepted|resolved|shipped)\*\*\)[ \t]*(\r?)$`)
+
+// stripIndexStatusTags removes the status tag from every listing in every
+// INDEX.md, outside code, and says how many it removed.
+func stripIndexStatusTags(root string) int {
+	n := 0
+	filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if p != root && strings.HasPrefix(d.Name(), ".") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.Name() != "INDEX.md" {
+			return nil
+		}
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			return nil
+		}
+		lines := strings.Split(string(raw), "\n")
+		fence, removed := "", 0
+		for i, line := range lines {
+			t := strings.TrimSpace(line)
+			if fence != "" {
+				if strings.HasPrefix(t, fence) {
+					fence = ""
+				}
+				continue
+			}
+			if strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~") {
+				fence = t[:3]
+				continue
+			}
+			if m := statusTagRe.FindStringSubmatch(line); m != nil {
+				lines[i] = m[1] + m[2]
+				removed++
+			}
+		}
+		if removed > 0 && os.WriteFile(p, []byte(strings.Join(lines, "\n")), 0o644) == nil {
+			n += removed
+		}
+		return nil
+	})
+	return n
+}
+
+// logMigration adds entry to the bundle-root LOG.md, creating it if missing,
+// and reports whether it was written.
+func logMigration(root, entry string) bool {
+	p := filepath.Join(root, "LOG.md")
+	body := "# Bundle Update Log\n"
+	if raw, err := os.ReadFile(p); err == nil {
+		body = string(raw)
+	}
+	return os.WriteFile(p, []byte(logs.Insert(body, logs.Entry(entry))), 0o644) == nil
 }
 
 // countRegisterEntries counts the documents in a register directory, groups

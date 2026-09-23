@@ -337,6 +337,14 @@ func (k Kind) Cleanup(root string, dryRun, noLog bool, out io.Writer) int {
 			return 1
 		}
 		removed++
+		// So does its listing: a link to a cleared entry would be broken.
+		rel, _ := filepath.Rel(root, e.path)
+		if idx, err := scaffold.Unlist(root, filepath.ToSlash(rel)); err != nil {
+			fmt.Fprintln(out, "error:", err)
+			return 1
+		} else if idx != "" {
+			fmt.Fprintf(out, "unlisted it from %s\n", idx)
+		}
 		// An entry's only legal sibling goes with it.
 		if log := strings.TrimSuffix(e.path, ".md") + ".log.md"; fileExists(log) {
 			if err := os.Remove(log); err != nil {
@@ -435,6 +443,9 @@ func (k Kind) New(root, id string, affects, resources []string, out io.Writer) i
 		return code
 	}
 	fmt.Fprintf(out, "wrote %s/%s.md (type: %s, status: open)\n", k.Dir, id, k.Type)
+	if code := scaffold.ListEntry(root, k.Dir, id, title, k.noun, out); code != 0 {
+		return code
+	}
 	fmt.Fprintln(out, k.next(id, affects, resources))
 	return 0
 }

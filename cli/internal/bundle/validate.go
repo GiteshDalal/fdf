@@ -435,6 +435,9 @@ func Validate(root string, opts Options) int {
 				warns = append(warns, fmt.Sprintf("%s: missing recommended `%s`", rel, f))
 			}
 		}
+		if specV7 {
+			checkTimestamp(rel, data["timestamp"], &errs, &warns)
+		}
 		status, _ := data["status"].(string)
 
 		switch {

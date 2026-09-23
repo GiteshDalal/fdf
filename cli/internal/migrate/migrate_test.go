@@ -554,12 +554,47 @@ func TestMigrateRefusesBugsFeatureGroup(t *testing.T) {
 // `# Test Cases`. A 0.6 bundle that lists its cases as bullets migrates, but
 // its validation then fails F8, and migrate says what to rewrite by hand —
 // and which features still owe a surface decision.
+// Older tools wrote a status tag after each index listing and nothing kept it
+// current; migration removes it, leaves other bold text and code alone, and
+// logs the migration in the bundle-root log.
+func TestMigrateV06ToV07DropsIndexStatusTags(t *testing.T) {
+	root := t.TempDir()
+	buildV06Bundle(t, root)
+	write(t, root, "venues/INDEX.md", "# Venues\n\n* [Hours](/venues/hours.md) - opening hours. (**draft**)\n* [Menu](/venues/hours.md) - the menu. (**important**)\n\n```\n* [Sample](/venues/hours.md) - a sample. (**done**)\n```\n")
+	write(t, root, "changes/INDEX.md", "# Changes\n\n* [x](/changes/INDEX.md) - changes. (**specified**)\n")
+	var out bytes.Buffer
+	if code := Run(root, "", &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
+	}
+	venues, _ := os.ReadFile(filepath.Join(root, "venues", "INDEX.md"))
+	for _, want := range []string{
+		"* [Hours](/venues/hours.md) - opening hours.\n",
+		"* [Menu](/venues/hours.md) - the menu. (**important**)\n",
+		"* [Sample](/venues/hours.md) - a sample. (**done**)\n",
+	} {
+		if !strings.Contains(string(venues), want) {
+			t.Errorf("venues/INDEX.md should contain %q:\n%s", want, venues)
+		}
+	}
+	changes, _ := os.ReadFile(filepath.Join(root, "changes", "INDEX.md"))
+	if strings.Contains(string(changes), "(**specified**)") {
+		t.Errorf("changes/INDEX.md keeps its tag:\n%s", changes)
+	}
+	log, _ := os.ReadFile(filepath.Join(root, "LOG.md"))
+	if !strings.Contains(string(log), "* **Migrated**: fdf_version 0.6 → 0.7 with `fdf migrate`. Removed the status tag from 2 index listing(s)") {
+		t.Errorf("LOG.md should record the migration:\n%s", log)
+	}
+	if !strings.Contains(out.String(), "2 status tag(s) removed from index listings") {
+		t.Errorf("output should count the tags:\n%s", out.String())
+	}
+}
+
 func TestMigrateV06ToV07ReportsBulletCasesAndSurfaces(t *testing.T) {
 	root := t.TempDir()
 	buildV06Bundle(t, root)
 	write(t, root, "venues/hours.md", "---\ntype: Feature\nstatus: planned\ntitle: Hours\ndescription: Opening hours.\ntimestamp: 2026-09-16T00:00:00Z\n---\n\n# Feature\n\n```gherkin\nFeature: Hours\n  As a Venue owner\n  I want hours\n  So that people know\n```\n\n# Scenarios\n\n```gherkin\nScenario: Owner sets hours\n  Given a Venue\n  When the owner sets hours\n  Then they show\n```\n")
 	write(t, root, "venues/hours.plan.md", "---\ntype: Plan\ntitle: Plan\ndescription: d.\ntimestamp: 2026-09-16T00:00:00Z\n---\n\n# Tasks\n")
-	write(t, root, "venues/hours.test.md", "---\ntype: Test\ntitle: Tests\ndescription: d.\ntimestamp: 2026-09-16T00:00:00Z\n---\n\n# Test Cases\n\n- Scenario: Owner sets hours — `go test ./... -run TestHours`\n")
+	write(t, root, "venues/hours.test.md", "---\ntype: Test\ntitle: Tests\ndescription: d.\ntimestamp: 2026-09-16 09:30\n---\n\n# Test Cases\n\n- Scenario: Owner sets hours — `go test ./... -run TestHours`\n")
 	var out bytes.Buffer
 	if code := Run(root, "", &out); code != 1 {
 		t.Fatalf("a bundle whose cases are bullets fails F8 once migrated; want exit 1, got %d\n%s", code, out.String())
@@ -572,6 +607,7 @@ func TestMigrateV06ToV07ReportsBulletCasesAndSurfaces(t *testing.T) {
 		`venues/hours.test.md: scenario "Owner sets hours" has no test case`,
 		"1 scenario(s) have none (F8). Rewrite those test documents' cases as headings, by hand",
 		"1 feature(s) have no slug.surface.md",
+		"1 timestamp(s) are neither a date nor an RFC 3339 time with Z or an offset (F1)",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output missing %q\n%s", want, out.String())

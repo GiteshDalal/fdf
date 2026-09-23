@@ -144,9 +144,10 @@ Next: the feature is `specified` — fdf-plan is the next skill.
   the design is approved — however simple the feature seems.
 - One feature per brainstorm. If the idea spans independent subsystems,
   decompose it into features first, then brainstorm one.
-- A feature that builds on a delivered one may record that with `depends-on`
-  (feature IDs, must exist, acyclic). Use it for lineage — not as a substitute
-  for a Change when you are really altering the existing capability.
+- A feature that builds on a delivered one — adds to its page, endpoint or
+  table — names it in `depends-on` (feature IDs, must exist, acyclic). That is
+  lineage, not a substitute for a Change: when a scenario of the delivered
+  feature would stop being true, you are altering it, and that is a Change.
 - Write `slug.spec.md` (and `slug.surface.md`) as stem siblings —
   never `slug/SPEC.md` or other nested trail paths (those are the v0.3
   layout; the task directory holds only tasks).

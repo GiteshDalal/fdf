@@ -361,8 +361,8 @@ do; everything else explains it. `applies-to` lists the repo paths it governs
 and those paths must exist (R1); it is how later work is routed to the
 practice, since a feature never lists the practices it follows. A practice
 carries no Gherkin, no spec, no plan, no tasks. Get each one approved before
-writing it, exactly like a Context document, and link it from
-`practices/INDEX.md`.
+writing it, exactly like a Context document. `fdf practice` lists it in
+`practices/INDEX.md`; give the listing a real description.
 
 ## Closing (say this explicitly)
 

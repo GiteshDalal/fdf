@@ -245,7 +245,7 @@ feature, change and fix that ships, run fdf-checkpoint, then
 
 **When is it a new feature instead of a Change?** If the new behavior reads as
 its own `Feature:` block with its own As-a / I-want / So-that, it is a new
-feature, and it may record its lineage with `depends-on`. If it alters an
+feature, and it names the feature it builds on in `depends-on`. If it alters an
 existing capability's observable behavior, it is a Change.
 
 ## "It's tiny, just do it"
