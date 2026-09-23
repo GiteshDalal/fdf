@@ -118,8 +118,30 @@ func scenarioNames(body string) map[string]bool {
 	return out
 }
 
-// checkChangeIntegrity is F10. It runs only for bundles pinning v0.5.
-func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*featureInfo, pairs map[string]*pairInfo, errs *[]string) {
+// removals returns the names a declaration takes out of its feature. With
+// replaces set (v0.6), a name the same declaration also adds is replaced, not
+// removed: a lexicon fix turns a finished rename's `remove: Store owner X` and
+// `add: Venue owner X` into one name, and the record must stay valid.
+func removals(d *changeDecl, replaces bool) []string {
+	if !replaces {
+		return d.removes
+	}
+	added := map[string]bool{}
+	for _, n := range d.adds {
+		added[n] = true
+	}
+	var out []string
+	for _, n := range d.removes {
+		if !added[n] {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// checkChangeIntegrity is F10. It runs for bundles pinning v0.5 and later;
+// replaces is v0.6's reading of a name both removed and added (see removals).
+func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*featureInfo, pairs map[string]*pairInfo, replaces bool, errs *[]string) {
 	ids := make([]string, 0, len(changes))
 	for id := range changes {
 		ids = append(ids, id)
@@ -140,7 +162,7 @@ func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*f
 			continue
 		}
 		for fid, d := range parseDecls(c.body, scenarioChangesHeading, true) {
-			for _, nm := range d.removes {
+			for _, nm := range removals(d, replaces) {
 				superseded[fid+"\x00"+nm] = true
 			}
 		}
@@ -230,7 +252,7 @@ func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*f
 					*errs = append(*errs, fmt.Sprintf("%s: done, but %s has no scenario %q (F10)", c.rel, fid, n))
 				}
 			}
-			for _, n := range d.removes {
+			for _, n := range removals(d, replaces) {
 				if names[n] {
 					*errs = append(*errs, fmt.Sprintf("%s: done, but %s still has scenario %q (F10)", c.rel, fid, n))
 				}

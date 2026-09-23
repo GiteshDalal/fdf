@@ -359,6 +359,33 @@ func TestUpgradeRefreshesShippedV061Primer(t *testing.T) {
 	}
 }
 
+func TestUpgradeRefreshesShippedV062Primer(t *testing.T) {
+	home := t.TempDir()
+	// Seed the exact primer the v0.6.2 release wrote (untouched managed
+	// content): episodic documents never rewritten, no lexicon fix.
+	path := filepath.Join(home, ".claude", "CLAUDE.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(primerV062("docs/features")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if code := Run("claude-code", home, "", false, &out); code != 0 {
+		t.Fatalf("install: %d\n%s", code, out.String())
+	}
+	got := string(mustRead(t, path))
+	if !strings.Contains(got, "**lexicon fix**") {
+		t.Fatalf("refreshed primer must allow the lexicon fix on every document:\n%s", got)
+	}
+	if strings.Count(got, primerHeading) != 1 {
+		t.Fatalf("refresh must replace the section, not append a second one:\n%s", got)
+	}
+	if !strings.Contains(out.String(), "updated") {
+		t.Fatalf("report should say the primer was updated:\n%s", out.String())
+	}
+}
+
 func mustRead(t *testing.T, path string) []byte {
 	t.Helper()
 	raw, err := os.ReadFile(path)

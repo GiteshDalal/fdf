@@ -22,9 +22,10 @@ every later feature is designed against it. This is the sweep that finds it.
 
 It **proposes; the user decides.** Nothing is edited without explicit
 approval. It edits documents, never code. It never writes into `SPEC.md` or the
-managed primer — `fdf migrate` and `fdf install` rewrite them. And it never
-touches episodic documents: `slug.spec.md`, plans, tasks, changes and logs
-record the past, and a past that disagrees with today is not drift.
+managed primer — `fdf migrate` and `fdf install` rewrite them. And it touches
+episodic documents — `slug.spec.md`, plans, tasks, changes and logs — only for
+a lexicon fix: they record the past, and a past that disagrees with today is
+not drift, except in the words `DOMAIN.md` bans.
 
 Most of the work is judgment — which copy is the original, whether the
 document or the code moved — so where you can choose the model, run it on the
@@ -64,8 +65,9 @@ it appears as a link to that home, not a copy.
    fdf-init's job; any other failure goes through fdf-validate first — audit a
    bundle that validates. Its `warn:` lines are findings too: carry them into
    the report — routed as fdf-validate says when they carry a rule code, and
-   simply listed when they do not. (A banned word in a *delivered* feature's
-   Gherkin is reworded through a Change, never edited in place.)
+   simply listed when they do not. (A banned word is fixed in place with a
+   lexicon fix, in every document that uses it — delivered features and
+   finished changes included.)
 2. **Set the baseline** — a commit: the one that logged the last checkpoint,
    or, with none, the oldest of the Context documents' last commits (the
    widest window misses least). Then list what changed since:
@@ -248,19 +250,22 @@ is accurate today — it is the copy that goes stale next.
   that feature.
 - **Practices** — the practices `ARCHITECTURE.md` lists are the ones under
   `practices/`, and none it calls current is `superseded`.
-- **Vocabulary** — the Context documents, the practices and the instruction
-  files are internal language, so they use `DOMAIN.md`'s canonical names; F12
-  does not scan prose, so you do. Build the pattern from every `instead-of`
+- **Vocabulary** — every document in the bundle is internal language,
+  episodic ones included, and so are the instruction files: they use
+  `DOMAIN.md`'s canonical names. F12 scans only Gherkin and declared scenario
+  names, so the prose is yours. Build the pattern from every `instead-of`
   word in `DOMAIN.md`:
 
   ```bash
-  grep -rnwiE '(<word>|<word>|…)s?' docs/features/{STACK,ARCHITECTURE,SURFACES,INFRA}.md docs/features/practices CLAUDE.md AGENTS.md
+  grep -rnwiE --exclude=SPEC.md '(<word>|<word>|…)s?' docs/features CLAUDE.md AGENTS.md
   ```
 
-  A hit that names the concept is a finding. A hit in another sense is not —
-  quoted surface wording (the label a screen shows for the term), a scaffold
-  heading such as `## Data stores` when "store" is banned, or the examples in
-  the managed primer, which is fdf's text.
+  A hit that names the concept is a finding, and its fix is a lexicon fix —
+  in a spec, plan, task, change or log as much as in a Context document. A
+  hit in another sense is not — quoted surface wording (the label a screen
+  shows for the term), a scaffold heading such as `## Data stores` when
+  "store" is banned, or the examples in the managed primer, which is fdf's
+  text.
 
 ## 4. Agent instruction files
 
@@ -323,6 +328,7 @@ question bank), draft the whole document, and get it approved as a whole.
   `fdf install` rewrite them. Deleting an edited primer section so
   `fdf install` can write it fresh is the one hand step.
 - Never drop a line inside a rewrite without saying so.
-- Never edit an episodic document to agree with today.
+- Never edit an episodic document to agree with today — except a lexicon
+  fix, which changes only the words `DOMAIN.md` bans.
 - Context documents are snapshots: no history, no plans.
 - `fdf validate` exit 0 at the end.

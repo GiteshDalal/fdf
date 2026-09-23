@@ -111,7 +111,11 @@ and "similar to task 01" are plan failures.
    verification isn't obvious, STOP and ask how done-ness will be proven;
    record the answer. New APIs get an E2E/integration test; UI changes get a
    check in a real browser, using the browser-test tool `STACK.md` or
-   `INFRA.md` names (e.g. Playwright) — and if they name none, ask.
+   `INFRA.md` names (e.g. Playwright) — and if they name none, ask. When a
+   scenario names an outcome whose exact wording matters — an error message,
+   a URL, a button label — the literal string belongs in its case here: the
+   Gherkin names the outcome, the test pins the words. The literal may use a
+   word `DOMAIN.md` bans; the lexicon stops at the surface.
 8. **The final task always satisfies `slug.test.md`** — writing/running what
    it names. Every plan ends with it; it depends-on every other task.
 9. **Write `<group>/<slug>.plan.md`** (`type: Plan`): `# Tasks` — ordered

@@ -60,7 +60,7 @@ Bundle is NOT conformant with FDF v0.6.
 | **F9** | A Context doc is missing or still an unfilled stub | Stop. Run the **fdf-init** interview. Do not invent STACK/ARCHITECTURE/SURFACES/INFRA/DOMAIN content to clear this. |
 | **F10** | A Change/Fix under `changes/` does not match reality | See "F10" below. |
 | **F11** | A practice under `practices/` is malformed | A practice needs a non-empty `# Rules` section and carries no Gherkin. A `superseded` one must name an existing replacement in `superseded-by`; an `active` one must not carry that field. Its only legal sibling is `<slug>.log.md` — there is no practice spec, plan, test or task directory. |
-| **F12** | The domain lexicon is inconsistent, or a banned word reached a feature's Gherkin or a Change/Fix declaration | See "F12" below. |
+| **F12** | The domain lexicon is inconsistent, or a banned word reached a feature's Gherkin or a scenario name a Change/Fix declares | See "F12" below. |
 | **F13** | A debt under `debts/` is malformed | A debt needs a non-empty `# Gap`, concrete enough that someone else could confirm it, and carries no Gherkin. `accepted` requires a `# Rationale` (keeping a gap is a decision); `resolved` requires a `# Resolution` (what closed it). A debt owns no spec, plan, test or tasks — only `<slug>.log.md`. |
 | **R1** | A `resource:` (task/change/fix/debt) or `applies-to:` (practice) path does not exist in the repo | The document points at a path that isn't there. **A task that will create the file:** the path does not belong in `resource:` yet — list the existing directory it goes into, and never create a placeholder file to satisfy R1. **A path that moved under a refactor:** update it to where that code lives now, even on a `done` task — a path is bookkeeping, not the record an episodic document keeps — and note the move in the log. **A debt:** a vanished path usually means the gap is gone; check, and if so flip it to `resolved` with a `# Resolution`, then `fdf debt --cleanup` — a resolved debt is still checked until cleanup retires it. |
 
@@ -112,41 +112,61 @@ claimed by two terms. These are errors in `DOMAIN.md` and the fix is in
 `DOMAIN.md`: decide which term owns the word, and say so. Do not resolve it by
 deleting the term someone will still use.
 
-**A banned word reached a feature's Gherkin**, or a Change's
-`# Scenario changes` or a Fix's `# Regression cases` — reported as a `warn:`
-by default and as a FAIL under `fdf validate --strict-domain`:
+**A banned word reached a feature's Gherkin, or a scenario name a Change or
+Fix declares** — at any status, finished work included. Reported as a
+`warn:` by default and as a FAIL under `fdf validate --strict-domain`:
 
 ```
 warn: payments/refunds.md: Gherkin uses "store", which DOMAIN.md bans in
       favour of "Venue" (F12)
+warn: changes/holiday-closures.md: `add: Store closes for a public holiday`
+      uses "store", which DOMAIN.md bans in favour of "Venue" (F12)
 ```
 
-The fix is to reword the scenario, not to weaken the lexicon. But check the
-direction first: if the banned word is what the team actually says now, the
-lexicon is out of date, and that is a **Context-document change** — propose it
-to the user and only edit `DOMAIN.md` on explicit approval, exactly as for the
-other four. Never quietly drop an `instead-of` entry to clear a warning.
+The fix is to reword, not to weaken the lexicon. But check the direction
+first: if the banned word is what the team actually says now, the lexicon is
+out of date, and that is a **Context-document change** — propose it to the
+user and only edit `DOMAIN.md` on explicit approval, exactly as for the other
+four. Never quietly drop an `instead-of` entry to clear a warning.
 
-**The banned word is inside quoted user-facing copy** — `When I tap "Store
-settings"`. The lexicon governs the project's internal language (the bundle
-and the code's identifiers), not what a person reads on a surface, so the
-label is not wrong and must not be changed to clear the warning — nor may
-locale files, help text or any other external wording. Reword the step around
-the concept — `When the merchant opens the Venue settings` — and let the step
-definition or `slug.surface.md` carry the literal label. Where the exact
-wording is the thing under test, name the outcome in the scenario and pin the
-string in `slug.test.md`.
+**Fix it in place: a lexicon fix.** Bringing wording into line with
+`DOMAIN.md` changes no behavior, so it is the one edit every document takes —
+a `done` or `retired` feature, a finished Change or Fix, a spec, a plan, a
+task, a log — and it needs no Change or Fix of its own. Change the wording and
+nothing else:
 
-A rewording that touches a **delivered** feature's Gherkin is a `Change`, not
-an edit: scenario names are the join F8 and F10 both check, and renaming one
-in place breaks that trail. Report the warning and route to fdf-change.
+- Replace the banned word with its term where it names the concept. The same
+  word in another sense ("store the token") is not the concept; leave it.
+- A scenario name is a join, so fix every copy in one edit: the feature's
+  Gherkin, `slug.test.md`, the tasks that name it, and every Change or Fix
+  that declares it (`add:`, `modify:`, `remove:`, regression cases). A copy
+  left behind fails F8 or F10.
+- A rename recorded before the fix — `remove: Store owner…` with
+  `add: Venue owner…` — ends up removing and adding one name. F10 reads that
+  as a replacement; leave it.
 
-That Change has to name the old scenario in `- remove: <old name>`, banned
-word and all — so F12 reports the Change itself, and so does every `done`
-Change written before the word was banned. Both are expected: a declaration
-must quote the name it removes, and a finished episode is never rewritten.
-Report them as such. Under `--strict-domain` they fail and cannot be cleared
-honestly; say so to the user rather than bending the declaration.
+**The banned word is quoted user-facing copy** — `When I tap "Store
+settings"`. This is where most of these warnings come from. The lexicon covers
+the project's internal language — the bundle and the code's identifiers — not
+the words a person sees on a surface. So:
+
+- Write the step around the concept, not the label text: `When the merchant
+  opens the Venue settings`. In a delivered feature that is a lexicon fix too:
+  the behavior is unchanged, so it is made in place.
+- Keep the exact label outside the Gherkin: in the step definition, or in
+  `slug.surface.md` when the wording is a surface decision.
+- When the exact wording is what is under test — an error message, a URL, a
+  button label — name the outcome in the scenario (`Then the merchant is told
+  the Venue is closed`) and put the literal string in `slug.test.md`, in the
+  case that checks it.
+- Never change the label itself to clear the warning — nor locale files, help
+  text, or any other wording people read. The surface may say "store" for a
+  Venue on purpose.
+
+**What F12 does not report**: a declaration's `## <feature-id>` headings, a
+regression case's verification, and prose in the section. They quote a
+document ID, a command, a path or a surface's wording as it stands. Renaming
+a document is a move, not a word fix.
 
 ## Never silence a rule
 
@@ -164,6 +184,8 @@ validate and all make the bundle lie:
 | Hand-edit `fdf_version` to a supported value | Migration is mechanical; `fdf migrate` exists for this. |
 | Delete the file the error names | The error was about the file's content, not its existence. |
 | Drop an `instead-of` word so an F12 warning goes away | The synonym drift is the thing the lexicon exists to catch; you deleted the detector, not the problem. |
+| Change a UI label, locale string or help text so a scenario stops tripping F12 | The lexicon covers internal language only; the surface may use that word on purpose. Reword the step around the concept, and keep the literal in the step definition or `slug.test.md`. |
+| Slip a behavior change into a lexicon fix | A lexicon fix changes wording only. A scenario whose meaning changes is a Change, with its design gate, whatever else the edit renames. |
 | Empty a practice's `# Rules` to clear F11 | A practice with no binding statements is a blog post. Write the rules or delete the practice. |
 | Set a practice to `active` so `superseded-by` stops being required | It says the old mechanism is still how the project works. It isn't. |
 | Mark a debt `resolved` with a vague `# Resolution` to clear F13 | The rule exists so "paid" and "quietly dropped" cannot look the same. Say what closed it, or leave it open. |
@@ -171,7 +193,7 @@ validate and all make the bundle lie:
 | Flip a debt to `accepted` because paying it is inconvenient right now | `accepted` means the project has decided to keep the gap, with a reason someone stands behind. "Not today" is still `open`. |
 | Edit a Change's `# Scenario changes` to match what you actually did | The declaration is what someone approved. Changing it silently makes F10 check nothing. |
 | Turn a Change into a Fix so the spec gate goes away | If the Gherkin changes, someone must decide it. That is the gate, not paperwork. |
-| Edit a delivered feature's Gherkin directly to clear a mismatch | Then nothing records why it changed. Open a Change. |
+| Edit a delivered feature's Gherkin directly to clear a mismatch | Then nothing records why it changed. Open a Change. (A lexicon fix is the one exception: it changes words, not behavior.) |
 
 If a rule looks genuinely wrong for a legitimate bundle, say so to the user
 and stop — that is a spec or validator bug worth reporting, not something to

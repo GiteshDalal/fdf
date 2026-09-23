@@ -74,8 +74,10 @@ Fix body's `# Symptom` and `# Root cause` sections are waiting for.
      steps change.
    - `- remove: <scenario name>` — must not exist once done.
 
-   A rename is `remove:` the old plus `add:` the new. Delete the scaffold's
-   TODO lines that do not apply.
+   A rename is `remove:` the old plus `add:` the new. A rename whose only
+   reason is a word `DOMAIN.md` bans is not a Change at all: it is a lexicon
+   fix, made in place across the bundle (fdf-validate, F12). Delete the
+   scaffold's TODO lines that do not apply.
 
    For a `Fix`, under `# Regression cases`, one heading per affected feature
    and one entry per scenario it proves:
@@ -105,7 +107,12 @@ Fix body's `# Symptom` and `# Root cause` sections are waiting for.
 8. **Amend the living documents.** This is the step that keeps the bundle
    true, and F10 enforces it:
    - The feature's **Gherkin** — apply exactly the adds/modifies/removes you
-     declared.
+     declared. Write new and changed steps around the concept, not the label
+     a surface shows: the literal label belongs in the step definition or
+     `slug.surface.md`, and wording that is itself under test (an error
+     message, a URL, a button label) is named as an outcome in the scenario
+     and pinned in `slug.test.md`. Never reword the label to suit
+     `DOMAIN.md` — the lexicon stops at the surface.
    - The feature's **`slug.test.md`** — a case for every scenario (F8), and
      for a `Fix` the regression case you named.
    - The feature's **`slug.surface.md`**, when the interface changed.
@@ -200,8 +207,10 @@ deleted — the document records behavior the software once had.
 
 - Never fork a second feature document for the same capability.
 - Never edit a delivered feature's Gherkin outside a Change or Fix: then
-  nothing records why, and nothing verified that the code followed.
-- Never rewrite the feature's original spec, plan, or tasks.
+  nothing records why, and nothing verified that the code followed. A
+  lexicon fix is the one exception — it changes words, not behavior.
+- Never rewrite the feature's original spec, plan, or tasks, except for a
+  lexicon fix.
 - Never fork a practice per change: amend the one that exists, or supersede
   it. A practice describes today, and there is only one today.
 - Never hand-write a back-link on the feature. `affects:` is the whole link;

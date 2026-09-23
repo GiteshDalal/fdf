@@ -87,11 +87,16 @@ everything, and flags must precede positional args (`ContinueOnError` FlagSets).
     near-identical (`<slug>.md` plus an optional `<slug>.log.md`, one level of
     groups, never a task directory) and share `logTrailRoleRe`. **`domain.go`** holds F12: parsing
     `DOMAIN.md`'s `# Terms` grammar, the lexicon's internal consistency, and the
-    banned-word scan over feature Gherkin and change/fix declarations — a warning unless
-    `Options.StrictDomain` (the `--strict-domain` flag) promotes it to an error.
+    banned-word scan — a warning unless `Options.StrictDomain` (the `--strict-domain` flag)
+    promotes it to an error. The scan covers every feature's Gherkin and the declared
+    scenario names (`add:`/`modify:`/`remove:`/regression cases) of every Change and Fix, at
+    any status — the 0.6 erratum lets a *lexicon fix* (banned word → term) edit any document,
+    frozen ones included, so every finding is clearable. It never scans a `## <feature-id>`
+    heading or a verification: they quote an ID, a path or surface wording as it stands.
   - **`changes.go`** holds the v0.5 logic: parsing a change's declared effects
     (`# Scenario changes` with `add:`/`modify:`/`remove:`, or `# Regression cases`), F10,
-    change F4, and the release↔change half of F7. A directory under `changes/` is a task
+    change F4, and the release↔change half of F7. On v0.6, a name one Change both removes
+    and adds is *replaced* (`removals`): a lexicon fix can turn a finished rename into that. A directory under `changes/` is a task
     directory when a sibling `<name>.md` exists and a group otherwise.
   - Feature statuses `draft → specified → planned → implementing → done` drive the F4/F8
     status↔artifact invariants (e.g. `planned` requires `slug.test.md` with a case per
@@ -152,9 +157,10 @@ are living references with no episodic trail at all. Task dirs must not contain 
 ### The conformance contract
 
 `testdata/*/` fixtures are the **executable spec**. Each fixture is a directory with a
-`bundle/` (and optionally a `repo/` wrapper for R1 tests) plus an `expect.txt` of `exit:` and
-`contains:` assertions. `TestConformanceFixtures` (`conformance_test.go`) runs `Validate` over
-every fixture and checks the output. **When you change validation behavior, add or update a
+`bundle/` (and optionally a `repo/` wrapper for R1 tests) plus an `expect.txt` of `exit:`,
+`contains:` and `not-contains:` assertions; a `flags: --strict-domain` line runs the fixture as
+`fdf validate --strict-domain` would. `TestConformanceFixtures` (`conformance_test.go`) runs
+`Validate` over every fixture and checks the output. **When you change validation behavior, add or update a
 fixture** — the fixtures, not the Go assertions, are where conformance is pinned. Fixture names
 describe the case they lock in (e.g. `done-with-open-task`, `depends-on-cycle`,
 `context-stub-blocks-feature`).
