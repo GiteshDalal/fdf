@@ -124,8 +124,10 @@ Fix body's `# Symptom` and `# Root cause` sections are waiting for.
      message, a URL, a button label) is named as an outcome in the scenario
      and pinned in `slug.test.md`. Never reword the label to suit
      `DOMAIN.md` — the lexicon stops at the surface.
-   - The feature's **`slug.test.md`** — a case for every scenario (F8), and
-     for a `Fix` the regression case you named.
+   - The feature's **`slug.test.md`** — a `## <scenario name>` case for every
+     scenario, the name exactly as in the Gherkin (F8), and for a `Fix` a case
+     for each regression you named (F10). Drop the case of a removed
+     scenario; a case that names no scenario draws a warning.
    - The feature's **`slug.surface.md`**, when the work changed or added an
      interface: an endpoint's codes, a screen's copy, a flag, an event's
      fields. It describes the interfaces as they are today, so the old shape

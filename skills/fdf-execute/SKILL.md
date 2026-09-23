@@ -128,7 +128,8 @@ Blockers).
   design left open (an error code, a flag, a label, an event field), and the
   surface document describes the interfaces as they now are. A feature that
   exposes an interface and has no surface document yet gets one now (see
-  fdf-brainstorm, *Surface document*).
+  fdf-brainstorm, *Surface document*); one with no interface says
+  `surface: none` in its frontmatter.
 - Log the completion: `fdf log <group>/<slug> "**Done**: …"`. Say what
   shipped, and any decision the build took that the spec does not record, with
   who agreed to it. The entry goes in the feature's own log, never the root

@@ -41,7 +41,13 @@ Bundle is NOT conformant with FDF v0.7.
 - Every FAIL line ends with its **rule code** — that code, not the prose, is
   what tells you which invariant broke.
 - `warn:` lines are advisory and do **not** fail the run. Report them to the
-  user; do not treat them as errors and do not "fix" them by guessing.
+  user; do not treat them as errors and do not "fix" them by guessing. One
+  asks for a decision rather than a repair: a feature with no
+  `slug.surface.md` and no `surface: none` is asked whether it has an
+  interface. Answer by writing the surface document (fdf-brainstorm,
+  *Surface document*) or, when it truly has none, adding `surface: none` —
+  never `surface: none` on a feature with a screen, endpoint, command or
+  event, just to quiet the warning.
 - Exit 0 is the only pass. Fix, re-run, repeat until 0 — do not stop at
   "fewer errors than before".
 
@@ -52,11 +58,11 @@ Bundle is NOT conformant with FDF v0.7.
 | **F1** | Frontmatter missing/unterminated, missing `type`, bad log date, unsupported `fdf_version` | Restore the `---` block and required fields. An unsupported pin means run `fdf migrate` — never hand-edit the pin. |
 | **F2** | `status` is not a legal value for that `type` | Use a real status: Feature `draft→specified→planned→implementing→done→retired`, or `adopted→retired` for code that predates its document; Debt and Bug `open`, then `accepted` or `resolved`; Change/Fix `draft→specified→planned→implementing→done`; Task `pending→in-progress→done`; Release `planned→shipped`. Set it to what is **true**, not what clears the error. |
 | **F3** | Wrong `type`, wrong position, bad casing, illegal file in a task directory | Move the file to its FDF position. Directories and filenames are lowercase; uppercase is reserved. Task dirs hold **only** `NN-slug.md` — a trail doc nested there belongs at `<group>/<slug>.<role>.md`. Roles are only `spec`, `plan`, `test`, `surface`, `log` under a group — and only `spec`, `plan`, `log` under `changes/`, because `test` and `surface` belong to the affected feature. |
-| **F4** | Status ↔ artifact mismatch | The status claims work the trail does not show, or vice versa. A `draft` may have a log and nothing else. See "Which way to fix" below. An `adopted` feature is the exception that runs the other way: it must have **no** spec, plan or task directory and must name its code in `resource` — never write a build trail to satisfy F4 for existing code; if work is being done on it, that work is a Change (fdf-adopt). |
+| **F4** | Status ↔ artifact mismatch | The status claims work the trail does not show, or vice versa. A `draft` may have a log and nothing else. `surface` takes only the value `none`, and a feature that says `surface: none` has no `slug.surface.md`: keep whichever is true. See "Which way to fix" below. An `adopted` feature is the exception that runs the other way: it must have **no** spec, plan or task directory and must name its code in `resource` — never write a build trail to satisfy F4 for existing code; if work is being done on it, that work is a Change (fdf-adopt). |
 | **F5** | Feature Gherkin malformed | One ```gherkin fence with exactly one `Feature:`, at least one `Scenario:` — an `adopted` feature may have none yet (a map entry), and so may a `retired` one that was never built. A retired feature that was built keeps the scenarios it had. |
 | **F6** | Plan ↔ task drift: unlinked task, dead link, missing plan, bad or cyclic `depends-on` | Make `# Tasks` in `slug.plan.md` list exactly the task files that exist. `depends-on` must name sibling tasks and must not cycle. |
 | **F7** | Release ↔ `version` linkage, for features **and** changes | Reconcile `releases/*.md` with the `version:` fields the documents carry. `fdf release <version>` derives both lists for you; a shipped release may list only `done` documents, and features retired since they shipped. |
-| **F8** | `slug.test.md` missing, or a Gherkin scenario has no test case | Add the case. Scenario names are matched **verbatim** — fix the test file to match the scenario, not the scenario to match the test. |
+| **F8** | `slug.test.md` missing, or a Gherkin scenario has no test case | Add the case: a `## <scenario name>` heading under `# Test Cases`, the name matched **exactly** (from v0.7, a bullet or table row naming the scenario no longer counts; convert such cases to headings by hand). Fix the test file to match the scenario, not the scenario to match the test. A case that names no scenario is a warning: drop it, or give it the scenario's exact name. |
 | **F9** | A Context doc is missing or still an unfilled stub | Stop. Run the **fdf-init** interview. Do not invent STACK/ARCHITECTURE/SURFACES/INFRA/DOMAIN content to clear this. |
 | **F10** | A Change/Fix under `changes/` does not match reality | See "F10" below. |
 | **F11** | A practice under `practices/` is malformed | A practice needs a non-empty `# Rules` section and carries no Gherkin. A `superseded` one must name an existing replacement in `superseded-by`; an `active` one must not carry that field. Its only legal sibling is `<slug>.log.md` — there is no practice spec, plan, test or task directory. |
@@ -202,6 +208,7 @@ validate and all make the bundle lie:
 |---|---|
 | Delete a `Scenario:` so F8 stops asking for a test case | You removed documented behavior instead of testing it. |
 | Trim `slug.test.md` down to the scenarios you wrote | Same lie, other end. |
+| Put `surface: none` on a feature that has an interface | The next person to change that endpoint or screen finds no record of what it is. Write the surface document. |
 | Demote `done` → `implementing` to dodge an open-task error | Only correct if the feature is genuinely unfinished. |
 | Drop an existing path from a task's `resource:` to clear R1 | The task now has no verifiable target. (A path the task will *create* never belonged there — list its existing directory instead.) |
 | Create an empty placeholder file so a `resource:` path exists | The bundle now claims work that has not happened. |

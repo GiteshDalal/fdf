@@ -10,12 +10,11 @@ package bundle
 
 import (
 	"fmt"
-	"strings"
 )
 
 // checkAdopted is F4 and F8 for one adopted feature. p is its trail, or nil
 // when it has no siblings at all.
-func checkAdopted(fid string, f *featureInfo, p *pairInfo, errs *[]string) {
+func checkAdopted(fid string, f *featureInfo, p *pairInfo, errs, warns *[]string) {
 	if p != nil {
 		if p.spec {
 			*errs = append(*errs, fmt.Sprintf("%s: status 'adopted' but %s.spec.md exists — an adopted feature documents code that already existed and has no build trail; a design for new work is a Change's spec (F4)", f.rel, fid))
@@ -45,10 +44,5 @@ func checkAdopted(fid string, f *featureInfo, p *pairInfo, errs *[]string) {
 		*errs = append(*errs, fmt.Sprintf("%s: status 'adopted' with scenarios requires %s — each backfilled scenario names the check that proves the code already does it (F8)", f.rel, testPath))
 		return
 	}
-	for _, m := range names {
-		name := strings.TrimSpace(m[1])
-		if !strings.Contains(p.testBody, name) {
-			*errs = append(*errs, fmt.Sprintf("%s: scenario %q has no test case (F8)", testPath, name))
-		}
-	}
+	checkTestCases(testPath, fid, featureScenarioNames(f.body), p.testBody, errs, warns)
 }

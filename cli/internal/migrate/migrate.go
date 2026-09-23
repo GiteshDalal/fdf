@@ -13,6 +13,7 @@
 package migrate
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -251,12 +252,13 @@ func Run(root, repoRoot string, out io.Writer) int {
 	// Freshly scaffolded Context stubs are advisory here — migration
 	// succeeded; filling them is the human's next step via fdf-init.
 	fmt.Fprintln(out, "\nvalidating migrated bundle:")
-	code := bundle.Validate(root, bundle.Options{RepoRoot: repoRoot, Out: out, FreshStubsAdvisory: true})
+	var report bytes.Buffer
+	code := bundle.Validate(root, bundle.Options{RepoRoot: repoRoot, Out: io.MultiWriter(out, &report), FreshStubsAdvisory: true})
 	if code == 0 {
 		fmt.Fprintln(out, "\nnext: run the fdf-init skill to fill "+scaffold.ContextDocNames()+".")
 		fmt.Fprintln(out, "warning: the next plain `fdf validate` will fail F9 until those stubs are filled (migrate passes only because FreshStubsAdvisory treats freshly scaffolded stubs as warnings).")
 	}
-	reportV07(root, out)
+	reportV07(root, report.String(), out)
 	return code
 }
 
@@ -264,7 +266,7 @@ func Run(root, repoRoot string, out io.Writer) int {
 // F12 now reads every document and name, and the debt register may hold
 // defects that belong in the new bug register. Neither is a migration step —
 // both are judgments — so the command names the tools and stops there.
-func reportV07(root string, out io.Writer) {
+func reportV07(root, validation string, out io.Writer) {
 	if lex, _ := bundle.LoadLexicon(root); lex != nil {
 		docs := map[string]bool{}
 		occ := bundle.ScanBundle(root, lex)
@@ -276,6 +278,15 @@ func reportV07(root string, out io.Writer) {
 			fmt.Fprintln(out, "      `fdf lexicon` lists them; triage the other senses into `except:`, then sweep one term at a time")
 			fmt.Fprintln(out, "      with `fdf lexicon --term <Term> --fix --dry-run` and `--fix`.")
 		}
+	}
+	if n := strings.Count(validation, "has no test case — a case is a `## "); n > 0 {
+		fmt.Fprintf(out, "\nv0.7: a test case is a `## <scenario name>` heading under `# Test Cases`, matched exactly —\n")
+		fmt.Fprintf(out, "      %d scenario(s) have none (F8). Rewrite those test documents' cases as headings, by hand:\n", n)
+		fmt.Fprintln(out, "      bullets and tables naming a scenario no longer count.")
+	}
+	if n := strings.Count(validation, ".surface.md — write one"); n > 0 {
+		fmt.Fprintf(out, "\nv0.7: %d feature(s) have no slug.surface.md. Write one where the feature adds or changes an interface,\n", n)
+		fmt.Fprintln(out, "      or say `surface: none` in its frontmatter.")
 	}
 	if n := countRegisterEntries(filepath.Join(root, "debts")); n > 0 {
 		fmt.Fprintf(out, "\nv0.7: of the %d debt(s) on the register, any that describes the software doing something wrong\n", n)
@@ -493,9 +504,10 @@ func stubMissingTests(root string, out io.Writer) {
 		}
 		var cases []string
 		for _, sc := range scenarioRe.FindAllSubmatch(raw, -1) {
-			cases = append(cases, fmt.Sprintf("- Scenario: %s — TODO: specify the concrete verification.", strings.TrimSpace(string(sc[1]))))
+			// One `## <scenario name>` heading per case: the form F8 matches.
+			cases = append(cases, fmt.Sprintf("## %s\n\nTODO: specify the concrete verification.\n", strings.TrimSpace(string(sc[1]))))
 		}
-		body := fmt.Sprintf("---\ntype: Test\ntitle: %s acceptance\ndescription: How this feature is proven.\ntimestamp: %s\n---\n\n# Test Cases\n\n%s\n",
+		body := fmt.Sprintf("---\ntype: Test\ntitle: %s acceptance\ndescription: How this feature is proven.\ntimestamp: %s\n---\n\n# Test Cases\n\n%s",
 			strings.TrimSuffix(parts[1], ".md"), ts, strings.Join(cases, "\n"))
 		os.MkdirAll(dir, 0o755)
 		os.WriteFile(testPath, []byte(body), 0o644)

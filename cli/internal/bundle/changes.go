@@ -357,11 +357,14 @@ func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*f
 			}
 			// The regression must be recorded where it lasts: the feature's test doc.
 			if p := pairs[fid]; p != nil && p.test {
+				cases, _ := TestCases(p.testBody)
+				reported := map[string]bool{} // a scenario proved by several cases is reported once
 				for _, n := range d.regressions {
-					if gone(fid, n, c) {
+					if gone(fid, n, c) || reported[n] {
 						continue
 					}
-					if !strings.Contains(p.testBody, n) {
+					if (v7 && cases[n] == 0) || (!v7 && !strings.Contains(p.testBody, n)) {
+						reported[n] = true
 						*errs = append(*errs, fmt.Sprintf("%s: done, but %s.test.md has no case for %q (F10)", c.rel, fid, n))
 					}
 				}

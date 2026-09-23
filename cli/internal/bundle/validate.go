@@ -225,6 +225,7 @@ type featureInfo struct {
 	rel, status, version, body string
 	resource                   []string // v0.7: the code an adopted feature documents
 	replacedBy                 []string // the feature that replaces a retired one
+	surface                    string   // v0.7: `none` when the feature has no interface
 }
 type pairInfo struct {
 	spec, plan, test  bool
@@ -711,6 +712,7 @@ func Validate(root string, opts Options) int {
 			fid := strings.TrimSuffix(filepath.ToSlash(rel), ".md")
 			f := &featureInfo{rel: rel, status: status, version: version, body: body}
 			f.replacedBy = asList(data["replaced-by"])
+			f.surface, _ = data["surface"].(string)
 			if specV7 {
 				// A feature's own `resource` is v0.7: required on an adopted
 				// feature, which has no tasks to reach its code through.
@@ -811,7 +813,7 @@ func Validate(root string, opts Options) int {
 			}
 			continue
 		case specV7 && f.status == "adopted":
-			checkAdopted(fid, f, p, &errs)
+			checkAdopted(fid, f, p, &errs, &warns)
 			continue
 		case f.status == "retired":
 			// The behavior is gone; the document stays as the record. Its
@@ -860,6 +862,8 @@ func Validate(root string, opts Options) int {
 		if planned { // F8
 			if !p.test {
 				errs = append(errs, fmt.Sprintf("%s: status '%s' requires %s (F8)", f.rel, f.status, testPath))
+			} else if specV7 {
+				checkTestCases(testPath, fid, featureScenarioNames(f.body), p.testBody, &errs, &warns)
 			} else {
 				for _, m := range scenarioRe.FindAllStringSubmatch(f.body, -1) {
 					name := strings.TrimSpace(m[1])
@@ -898,6 +902,7 @@ func Validate(root string, opts Options) int {
 		checkChangeIntegrity(changes, features, pairs, specV6, specV7, &errs)
 		if specV7 {
 			checkRegressionLanded(changes, pairs, &warns)
+			checkSurfaces(features, pairs, &errs, &warns)
 		}
 		// Feature depends-on: existing IDs, acyclic. A separate graph from the
 		// task one — these are bundle-relative feature IDs, not siblings.

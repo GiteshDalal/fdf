@@ -16,6 +16,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/GiteshDalal/fdf/cli/internal/bundle"
 )
 
 var (
@@ -73,9 +75,10 @@ func scan(root string) ([]feature, []string) {
 				f.status = strings.Trim(sm[1], `"'`)
 			}
 			test, _ := os.ReadFile(strings.TrimSuffix(p, ".md") + ".test.md")
+			cases, _ := bundle.TestCases(string(test))
 			for _, s := range scenarioRe.FindAllStringSubmatch(text, -1) {
 				f.scenarios++
-				if name := strings.TrimSpace(s[1]); len(test) > 0 && strings.Contains(string(test), name) {
+				if cases[strings.TrimSpace(s[1])] > 0 {
 					f.tested++
 				}
 			}

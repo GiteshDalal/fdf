@@ -129,8 +129,10 @@ the proof that it already does it is part of the same edit.
    that already exercises it if there is one.
 2. **Write the scenario** in declarative Gherkin, in `DOMAIN.md`'s terms,
    describing what the software does **today** — never what it should do.
-3. **Write its `slug.test.md` case** — the scenario name verbatim, and the
-   existing test's command or path, or an explicit manual procedure.
+3. **Write its `slug.test.md` case** — a `## <scenario name>` heading under
+   `# Test Cases`, the name exactly as in the Gherkin (F8 matches it
+   exactly), then the existing test's command or path, or an explicit manual
+   procedure.
 4. **Run it against the code as it stands.** No code change in this edit.
 5. **It passes** → keep both; `fdf validate`. Log the batch in the feature's
    own log: `fdf log <group>/<slug> "**Backfilled**: 3 scenarios, each proven by an existing test."`
@@ -154,6 +156,9 @@ existing API descriptions; never design it. Like a backfilled scenario, it
 describes what is, and anything wrong it shows is a bug to file, not a surface
 to correct. Write it when backfilling reaches the capability, or before a
 Change alters its interface — that Change then amends what is already there.
+A capability with no such interface says `surface: none` in its frontmatter.
+Once an adopted feature has a scenario, `fdf validate` warns until it has
+one or the other; a map entry is not asked yet.
 
 ## Defects in adopted and undocumented code
 

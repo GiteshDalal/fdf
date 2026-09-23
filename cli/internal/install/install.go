@@ -303,7 +303,8 @@ Working in an FDF project:
   created on first use), and only what concerns the whole bundle goes in the
   root ` + "`LOG.md`" + `. A feature with an interface — a screen, an endpoint, a
   command, an event — describes it in ` + "`slug.surface.md`" + `, kept current
-  like its Gherkin.
+  like its Gherkin; one without says ` + "`surface: none`" + ` in its frontmatter.
+  Each test case is a ` + "`## <scenario name>`" + ` heading, matched exactly.
 - Once a feature is **done** or **adopted**, never edit its behavior in place and never fork
   a second feature document for the same capability. Post-delivery work is a
   document under ` + "`" + root + "/changes/`" + `: ` + "`fdf change`" + ` when the

@@ -118,10 +118,11 @@ propose — designing in ignorance of one is not.
    It describes the interfaces the approved design gives the feature, and it
    is living: every later Change that alters them amends it. It never adds an
    outcome the Gherkin does not name, since a new outcome is a scenario
-   first. The *why* goes in the spec; the *what* goes here. Only a feature
-   with none of these interfaces skips it (a background job whose output
-   nobody reads directly, a change to how data is stored). Validation never
-   requires it; the next person to change the interface does.
+   first. The *why* goes in the spec; the *what* goes here. A feature with
+   none of these interfaces (a background job whose output nobody reads
+   directly, a change to how data is stored) says so instead: add
+   `surface: none` to its frontmatter, in the same edit. From `specified` on,
+   `fdf validate` warns about a feature that has neither.
 8. **Self-review** before validating: re-read the feature doc against the
    conversation. Any user decision that no scenario or SPEC line records?
    Any two scenarios whose names could be confused? Fix silently; don't

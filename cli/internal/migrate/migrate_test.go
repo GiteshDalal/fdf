@@ -79,7 +79,7 @@ Trail: [spec](example/SPEC.md), [plan](example/PLAN.md), [test](example/TEST.md)
 `)
 	write(t, root, "wdise/example/SPEC.md", "---\ntype: Spec\ntitle: Example spec\ndescription: Design.\ntimestamp: 2026-07-06T00:00:00Z\n---\n\n# Design\n\nWords.\n")
 	write(t, root, "wdise/example/PLAN.md", "---\ntype: Plan\ntitle: Example plan\ndescription: Plan.\ntimestamp: 2026-07-06T00:00:00Z\n---\n\n# Tasks\n\n1. [Do the thing](01-do-thing.md)\n")
-	write(t, root, "wdise/example/TEST.md", "---\ntype: Test\ntitle: Example acceptance\ndescription: How proven.\ntimestamp: 2026-07-06T00:00:00Z\n---\n\n# Test Cases\n\n- Scenario: It works — verified.\n")
+	write(t, root, "wdise/example/TEST.md", "---\ntype: Test\ntitle: Example acceptance\ndescription: How proven.\ntimestamp: 2026-07-06T00:00:00Z\n---\n\n# Test Cases\n\n## It works\n\nverified.\n")
 	write(t, root, "wdise/example/01-do-thing.md", "---\ntype: Task\ntitle: Do the thing\ndescription: One unit of work.\nstatus: done\ntimestamp: 2026-07-06T00:00:00Z\n---\n\n# Objective\n\nDo it.\n")
 	write(t, root, "wdise/example/LOG.md", "# Example feature log\n\n## 2026-07-06\n* Completed.\n")
 }
@@ -154,8 +154,8 @@ func TestMigrateChainsToCurrentVersion(t *testing.T) {
 		t.Fatalf("old nested trail links must not remain:\n%s", feat)
 	}
 	tst, _ := os.ReadFile(filepath.Join(root, "wdise", "example.test.md"))
-	if !strings.Contains(string(tst), "Scenario: It works") {
-		t.Fatalf("TEST stub missing scenario after lift:\n%s", tst)
+	if !strings.Contains(string(tst), "# Test Cases\n\n## It works\n") {
+		t.Fatalf("TEST stub missing the scenario's `## It works` case after lift:\n%s", tst)
 	}
 }
 
@@ -547,5 +547,34 @@ func TestMigrateRefusesBugsFeatureGroup(t *testing.T) {
 	idx, _ := os.ReadFile(filepath.Join(root, "INDEX.md"))
 	if !strings.Contains(string(idx), `fdf_version: "0.6"`) {
 		t.Fatal("a refused migration must leave the bundle untouched")
+	}
+}
+
+// v0.7 matches a test case exactly: a `## <scenario name>` heading under
+// `# Test Cases`. A 0.6 bundle that lists its cases as bullets migrates, but
+// its validation then fails F8, and migrate says what to rewrite by hand —
+// and which features still owe a surface decision.
+func TestMigrateV06ToV07ReportsBulletCasesAndSurfaces(t *testing.T) {
+	root := t.TempDir()
+	buildV06Bundle(t, root)
+	write(t, root, "venues/hours.md", "---\ntype: Feature\nstatus: planned\ntitle: Hours\ndescription: Opening hours.\ntimestamp: 2026-09-16T00:00:00Z\n---\n\n# Feature\n\n```gherkin\nFeature: Hours\n  As a Venue owner\n  I want hours\n  So that people know\n```\n\n# Scenarios\n\n```gherkin\nScenario: Owner sets hours\n  Given a Venue\n  When the owner sets hours\n  Then they show\n```\n")
+	write(t, root, "venues/hours.plan.md", "---\ntype: Plan\ntitle: Plan\ndescription: d.\ntimestamp: 2026-09-16T00:00:00Z\n---\n\n# Tasks\n")
+	write(t, root, "venues/hours.test.md", "---\ntype: Test\ntitle: Tests\ndescription: d.\ntimestamp: 2026-09-16T00:00:00Z\n---\n\n# Test Cases\n\n- Scenario: Owner sets hours — `go test ./... -run TestHours`\n")
+	var out bytes.Buffer
+	if code := Run(root, "", &out); code != 1 {
+		t.Fatalf("a bundle whose cases are bullets fails F8 once migrated; want exit 1, got %d\n%s", code, out.String())
+	}
+	idx, _ := os.ReadFile(filepath.Join(root, "INDEX.md"))
+	if !strings.Contains(string(idx), `fdf_version: "0.7"`) {
+		t.Fatalf("the migration itself still happens:\n%s", idx)
+	}
+	for _, want := range []string{
+		`venues/hours.test.md: scenario "Owner sets hours" has no test case`,
+		"1 scenario(s) have none (F8). Rewrite those test documents' cases as headings, by hand",
+		"1 feature(s) have no slug.surface.md",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output missing %q\n%s", want, out.String())
+		}
 	}
 }

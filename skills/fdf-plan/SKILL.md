@@ -26,7 +26,9 @@ not invented ones. When the feature has a `slug.surface.md`, ground interface
 choices (API shapes, CLI flags, UI flows) there and in SURFACES.md. A feature
 that adds or changes something a person or another system uses directly, and
 has no surface document yet, gets one before its tasks dictate the interface
-(what goes in it: fdf-brainstorm, *Surface document*).
+(what goes in it: fdf-brainstorm, *Surface document*). A feature with no such
+interface says `surface: none` in its frontmatter; `fdf validate` warns about
+a planned feature that has neither.
 Name things in tasks the way `DOMAIN.md` names them: the identifiers a task
 dictates are the ones that end up in the code. The lexicon stops at the
 surface, though — when a task dictates user-facing copy (a screen title, a
@@ -106,11 +108,13 @@ and "similar to task 01" are plan failures.
      (`depends-on: [01-count-core, 02-cli]`). A comma-joined string
      (`depends-on: 01-count-core, 02-cli`) is one bogus ID and fails F6.
      This graph drives parallel execution in fdf-execute.
-7. **Write `<group>/<slug>.test.md`** (`type: Test`): `# Test Cases`, one
-   entry per scenario, naming the scenario verbatim and giving the CONCRETE
-   verification — the exact command, the test file/name to write, or a
-   step-by-step manual procedure — **and what passing looks like** (expected
-   status, output, resulting state). "Run the tests" proves nothing. If
+7. **Write `<group>/<slug>.test.md`** (`type: Test`): a `# Test Cases`
+   section with one case per scenario. Each case is a `## <scenario name>`
+   heading, the name exactly as the Gherkin spells it (F8 matches it exactly,
+   so a bullet or a table row naming the scenario does not count), followed by
+   the CONCRETE verification — the exact command, the test file/name to write,
+   or a step-by-step manual procedure — **and what passing looks like**
+   (expected status, output, resulting state). "Run the tests" proves nothing. If
    verification isn't obvious, STOP and ask how done-ness will be proven;
    record the answer. New APIs get an E2E/integration test; UI changes get a
    check in a real browser, using the browser-test tool `STACK.md` or

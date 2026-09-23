@@ -70,7 +70,9 @@ everything, and flags must precede positional args (`ContinueOnError` FlagSets).
   `--root` flag > `FDF_ROOT_DIR` env > `docs/features`. Relative roots resolve against the
   **project root**, found by walking up to the topmost `.git`. A `.git` *file* (submodule)
   marks a boundary but the walk continues to the superproject — so `resource:` paths always
-  verify against the real project root even when the bundle is a git submodule.
+  verify against the real project root even when the bundle is a git submodule. A `.git`
+  file whose gitdir holds `commondir` is a **linked worktree** and ends the walk there:
+  the worktree is its own checkout, even inside the main repo's directory.
 
 - **`cli/internal/bundle`** (`validate.go`) — the heart of the tool. `Validate()` is the
   enforcement engine for the spec. Rules are coded **F1–F14** (format conformance) and **R1**
@@ -91,7 +93,11 @@ everything, and flags must precede positional args (`ContinueOnError` FlagSets).
     required, `# Violates` parsed with the regression-case grammar and checked verbatim
     while open, forbidden on `accepted`, and a resolved bug still citing it must be named
     by a done Fix/Change's `resolves`. A cleared bug's ID is read back from
-    `bugs/LOG.md` (`* **bugs/<id>** — …`). Debts and bugs share one position branch in
+    `bugs/LOG.md` (`* **bugs/<id>** — …`). **`testcases.go`** is v0.7's F8: a case is a
+    `## <scenario name>` heading under `# Test Cases`, matched exactly (`TestCases`, also
+    used by `fdf adopt`'s map); a case naming no scenario warns. It also holds the surface
+    check: `surface: none` or a `slug.surface.md` from `specified` on (adopted: from the
+    first scenario), a warning otherwise. Debts and bugs share one position branch in
     `validate.go`. **`adopted.go`** is F4/F8 for `adopted` features: no spec, plan or
     task directory, `resource` required, no `version`, `slug.test.md` from the first
     scenario (F5 lets a map entry have none).
