@@ -4,7 +4,7 @@ status: done
 title: Work
 description: Post-delivery work.
 affects: venues/opening-hours
-timestamp: 2026-09-23T00:00:00Z
+timestamp: 2026-09-10T00:00:00Z
 ---
 
 # Problem

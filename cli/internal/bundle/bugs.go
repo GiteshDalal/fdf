@@ -129,6 +129,18 @@ func checkBugIntegrity(bugs map[string]*bugInfo, trails map[string]string, featu
 			}
 		}
 
+		for _, e := range strayDeclEntries(b.body, violatesHeading) {
+			*errs = append(*errs, fmt.Sprintf("%s: `# Violates` entry %q sits under no `## <feature-id>` heading (F14)", b.rel, e))
+		}
+		for fid, d := range parseDecls(b.body, violatesHeading, false) {
+			if d.headings > 1 {
+				*errs = append(*errs, fmt.Sprintf("%s: `# Violates` has %d `## %s` headings — one per feature (F14)", b.rel, d.headings, fid))
+			}
+			for _, e := range d.malformed {
+				*errs = append(*errs, fmt.Sprintf("%s: `## %s` entry %q is not `- <scenario name>` (F14)", b.rel, fid, e))
+			}
+		}
+
 		viol := violations(b.body)
 		vfids := make([]string, 0, len(viol))
 		for fid := range viol {
@@ -156,7 +168,7 @@ func checkBugIntegrity(bugs map[string]*bugInfo, trails map[string]string, featu
 			// A defect known to contradict a scenario is closed only by the
 			// document that repaired it: a bug is never resolved in place.
 			if hasHeading(b.body, violatesHeading) && len(resolvedBy[id]) == 0 {
-				*errs = append(*errs, fmt.Sprintf("%s: resolved while it still cites a scenario under `# Violates`, but no done Fix or Change names it in `resolves` — a repair goes through the document that authorizes it; if the finding was wrong, drop `# Violates` and say why in `# Resolution` (F14)", b.rel))
+				*errs = append(*errs, fmt.Sprintf("%s: resolved while it still has a `# Violates` section, but no done Fix or Change names it in `resolves` — a repair goes through the document that authorizes it; if the finding was wrong, drop `# Violates` and say why in `# Resolution` (F14)", b.rel))
 			}
 		case "open":
 			// While the defect is open, the scenarios it contradicts must be

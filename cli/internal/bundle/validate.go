@@ -127,11 +127,16 @@ func supportedList() string {
 	return strings.Join(vs, ", ")
 }
 
+// isStub reports whether a Context document still carries the stub marker
+// outside code — a filled document may quote the marker in a code span.
+func isStub(text string) bool { return strings.Contains(linkScanText(text), stubSentinel) }
+
 // checkLogBody validates ISO-8601 ## date headings and newest-first order
-// for reserved LOG.md and v0.4 slug.log.md files.
+// for reserved LOG.md and v0.4 slug.log.md files. A `##` line inside a fenced
+// block is an example an entry quotes, not a heading.
 func checkLogBody(rel, text string, errs, warns *[]string) {
 	var dates []string
-	for _, line := range strings.Split(text, "\n") {
+	for _, line := range strings.Split(linkScanText(text), "\n") {
 		if m := logDateRe.FindStringSubmatch(line); m != nil {
 			h := strings.TrimSpace(m[1])
 			if isoDateRe.MatchString(h) {
@@ -219,7 +224,7 @@ func in(list []string, s string) bool {
 type featureInfo struct {
 	rel, status, version, body string
 	resource                   []string // v0.7: the code an adopted feature documents
-	replacedBy                 string   // the feature that replaces a retired one
+	replacedBy                 []string // the feature that replaces a retired one
 }
 type pairInfo struct {
 	spec, plan, test  bool
@@ -288,6 +293,10 @@ func Validate(root string, opts Options) int {
 	}
 
 	filepath.WalkDir(rootAbs, func(path string, d os.DirEntry, err error) error {
+		// A hidden directory (.git, .obsidian) holds a tool's state, not FDF's.
+		if err == nil && d.IsDir() && path != rootAbs && strings.HasPrefix(d.Name(), ".") {
+			return filepath.SkipDir
+		}
 		if err != nil || d.IsDir() {
 			if d != nil && d.IsDir() && path != rootAbs {
 				base := filepath.Base(path)
@@ -298,8 +307,8 @@ func Validate(root string, opts Options) int {
 			return nil
 		}
 		name := d.Name()
-		if !strings.HasSuffix(name, ".md") {
-			return nil // non-markdown files are outside FDF's rules
+		if !strings.HasSuffix(name, ".md") || strings.HasPrefix(name, ".") {
+			return nil // non-markdown and hidden files are outside FDF's rules
 		}
 		rel := relTo(rootAbs, path)
 		parts := strings.Split(filepath.ToSlash(rel), "/")
@@ -627,7 +636,7 @@ func Validate(root string, opts Options) int {
 				if docType != "Context" {
 					errs = append(errs, fmt.Sprintf("%s: expected `type: Context`, got %q (F3)", rel, docType))
 				}
-				contextDocs[name] = strings.Contains(text, stubSentinel)
+				contextDocs[name] = isStub(text)
 			case docType == "Context":
 				errs = append(errs, fmt.Sprintf("%s: `type: Context` is reserved for %s at the bundle root (F3)", rel, contextList))
 			case structural[docType] || (specStem && structuralV4[docType]) || (specV5 && structuralV5[docType]) || (specV6 && structuralV6[docType]) || (specV7 && structuralV7[docType]):
@@ -643,7 +652,11 @@ func Validate(root string, opts Options) int {
 			if data["date"] == nil {
 				warns = append(warns, fmt.Sprintf("%s: missing recommended `date`", rel))
 			}
-			releases[strings.TrimSuffix(parts[1], ".md")] = &releaseInfo{rel, status, body}
+			releaseBody := body
+			if specV7 {
+				releaseBody = linkScanText(body) // a link in code is a sample, not a listing
+			}
+			releases[strings.TrimSuffix(parts[1], ".md")] = &releaseInfo{rel, status, releaseBody}
 		case len(parts) == 2:
 			// v0.4 group-level dotted basenames are stem-qualified trail files.
 			// Trap 14: detect any dotted basename before the feature checks so
@@ -697,7 +710,7 @@ func Validate(root string, opts Options) int {
 			version, _ := data["version"].(string)
 			fid := strings.TrimSuffix(filepath.ToSlash(rel), ".md")
 			f := &featureInfo{rel: rel, status: status, version: version, body: body}
-			f.replacedBy, _ = data["replaced-by"].(string)
+			f.replacedBy = asList(data["replaced-by"])
 			if specV7 {
 				// A feature's own `resource` is v0.7: required on an adopted
 				// feature, which has no tasks to reach its code through.
@@ -945,7 +958,11 @@ func Validate(root string, opts Options) int {
 		if p.plan {
 			listed := map[string]bool{}
 			taskDir := filepath.Join(rootAbs, filepath.FromSlash(fid))
-			for _, t := range sectionLinks(p.planBody, "Tasks") {
+			planBody := p.planBody
+			if specV7 {
+				planBody = linkScanText(planBody) // a link in code is a sample, not a listing
+			}
+			for _, t := range sectionLinks(planBody, "Tasks") {
 				if specV7 {
 					// A link lists a task only if it reaches this plan's task
 					// directory: a same-named task elsewhere is not this one.

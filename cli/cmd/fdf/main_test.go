@@ -271,3 +271,46 @@ func TestBundleCommandsAnnounceVersionAndRoot(t *testing.T) {
 		}
 	}
 }
+
+// A docs repository cloned on its own is a bundle at the top of its own
+// repository: there is no project around it to check `resource` paths
+// against, so R1 is skipped with a warning rather than failing every path —
+// and the repository's own hidden directories are not bundle directories.
+func TestValidateBundleThatIsItsOwnRepository(t *testing.T) {
+	src := filepath.Join("..", "..", "..", "testdata", "valid-adopted-v07", "repo", "docs", "features")
+	root := t.TempDir()
+	err := filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(src, p)
+		if d.IsDir() {
+			return os.MkdirAll(filepath.Join(root, rel), 0o755)
+		}
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(root, rel), raw, 0o644)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{".git", ".obsidian"} {
+		if err := os.MkdirAll(filepath.Join(root, dir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	os.WriteFile(filepath.Join(root, ".obsidian", "Workspace.md"), []byte("no frontmatter\n"), 0o644)
+
+	var out bytes.Buffer
+	if exit := runValidate([]string{"--root", root}, &out); exit != 0 {
+		t.Fatalf("a bundle that is its own repository must validate: exit %d\n%s", exit, out.String())
+	}
+	if !strings.Contains(out.String(), "R1 skipped") {
+		t.Errorf("R1 should be skipped, with a warning:\n%s", out.String())
+	}
+	if strings.Contains(out.String(), ".obsidian") || strings.Contains(out.String(), ".git") {
+		t.Errorf("hidden directories are not bundle directories:\n%s", out.String())
+	}
+}

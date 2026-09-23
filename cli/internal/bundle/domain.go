@@ -111,7 +111,7 @@ func readLexicon(rootAbs string, v7 bool, errs, warns *[]string) *Lexicon {
 	if !delimited {
 		return nil // F1 reports it
 	}
-	if strings.Contains(string(raw), stubSentinel) {
+	if isStub(string(raw)) {
 		return nil // unfilled stub: F9 reports it; its example terms are not the project's
 	}
 

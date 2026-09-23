@@ -29,7 +29,8 @@ type changeDecl struct {
 	adds, modifies, removes []string // Change
 	regressions             []string // Fix: scenario name -> verification present
 	missingVerification     []string // Fix entries with no verification half
-	malformed               []string // Change list items that are none of the three forms
+	malformed               []string // list items that are not in the declaration's grammar
+	headings                int      // how many `## <feature-id>` headings name this feature
 }
 
 const (
@@ -38,9 +39,12 @@ const (
 )
 
 var (
-	subHeadingRe  = regexp.MustCompile(`^##\s+(.*\S)\s*$`)
-	declVerbRe    = regexp.MustCompile(`^\s*[-*]\s+(add|modify|remove)\s*:\s*(\S.*?)\s*$`)
-	listItemRe    = regexp.MustCompile(`^\s*[-*]\s+(\S.*?)\s*$`)
+	subHeadingRe = regexp.MustCompile(`^##\s+(.*\S)\s*$`)
+	declVerbRe   = regexp.MustCompile(`^\s*[-*]\s+(add|modify|remove)\s*:\s*(\S.*?)\s*$`)
+	listItemRe   = regexp.MustCompile(`^\s*[-*]\s+(\S.*?)\s*$`)
+	// anyItemRe is any Markdown list item — `-`, `*`, `+` or numbered — so an
+	// entry written in a shape the grammar does not read is reported, not lost.
+	anyItemRe     = regexp.MustCompile(`^\s*(?:[-*+]|\d+[.)])\s+(\S.*?)\s*$`)
 	verbatimSepRe = regexp.MustCompile(`\s(?:—|–|--)\s`)
 )
 
@@ -76,6 +80,7 @@ func parseDecls(body, heading string, verbs bool) map[string]*changeDecl {
 			if out[current] == nil {
 				out[current] = &changeDecl{}
 			}
+			out[current].headings++
 			continue
 		}
 		if current == "" {
@@ -92,10 +97,15 @@ func parseDecls(body, heading string, verbs bool) map[string]*changeDecl {
 				case "remove":
 					d.removes = append(d.removes, m[2])
 				}
-			} else if m := listItemRe.FindStringSubmatch(line); m != nil {
+			} else if m := anyItemRe.FindStringSubmatch(line); m != nil {
 				d.malformed = append(d.malformed, m[1])
 			}
 			continue
+		}
+		if !listItemRe.MatchString(line) {
+			if m := anyItemRe.FindStringSubmatch(line); m != nil {
+				d.malformed = append(d.malformed, m[1])
+			}
 		}
 		if m := listItemRe.FindStringSubmatch(line); m != nil {
 			entry := m[1]
@@ -132,7 +142,7 @@ func strayDeclEntries(body, heading string) []string {
 			seenSub = true
 			continue
 		}
-		if m := listItemRe.FindStringSubmatch(line); m != nil {
+		if m := anyItemRe.FindStringSubmatch(line); m != nil {
 			out = append(out, m[1])
 		}
 	}
@@ -190,10 +200,11 @@ func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*f
 	// later Change removing X must not force those documents to be rewritten.
 	// Without this, F10 would contradict the very rule it enforces.
 	superseded := map[string]bool{}
-	// addedBy records which done Changes add each name to a feature (v0.7): a
-	// name a later Change brings back does not make the Change that removed it
-	// wrong, and that Change is a frozen record.
-	addedBy := map[string][]string{}
+	// v0.7 orders that history by `timestamp`: a record is excused only by a
+	// later done Change — an adder by a later removal, a remover by a later
+	// add-back — so a new document can never hide behind an older one.
+	removedBy := map[string][]stamped{}
+	addedBy := map[string][]stamped{}
 	for _, id := range ids {
 		c := changes[id]
 		if c.status != "done" || c.docType != "Change" {
@@ -202,19 +213,20 @@ func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*f
 		for fid, d := range parseDecls(c.body, scenarioChangesHeading, true) {
 			for _, nm := range removals(d, replaces) {
 				superseded[fid+"\x00"+nm] = true
+				removedBy[fid+"\x00"+nm] = append(removedBy[fid+"\x00"+nm], stamped{id, c.timestamp})
 			}
 			for _, nm := range d.adds {
-				addedBy[fid+"\x00"+nm] = append(addedBy[fid+"\x00"+nm], id)
+				addedBy[fid+"\x00"+nm] = append(addedBy[fid+"\x00"+nm], stamped{id, c.timestamp})
 			}
 		}
 	}
-	readdedByOther := func(fid, name, self string) bool {
-		for _, other := range addedBy[fid+"\x00"+name] {
-			if other != self {
-				return true
-			}
+	// gone reports whether a document is excused for a name it expects to
+	// exist: before v0.7 any done removal excuses it; from v0.7 only a later one.
+	gone := func(fid, name string, c *changeInfo) bool {
+		if !v7 {
+			return superseded[fid+"\x00"+name]
 		}
-		return false
+		return laterIn(removedBy[fid+"\x00"+name], c)
 	}
 
 	for _, id := range ids {
@@ -259,8 +271,15 @@ func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*f
 				*errs = append(*errs, fmt.Sprintf("%s: `# %s` entry %q sits under no `## <feature-id>` heading (F10)", c.rel, wantHeading, e))
 			}
 			for _, fid := range sortedDeclKeys(decls) {
+				if n := decls[fid].headings; n > 1 {
+					*errs = append(*errs, fmt.Sprintf("%s: `# %s` has %d `## %s` headings — one per affected feature (F10)", c.rel, wantHeading, n, fid))
+				}
 				for _, e := range decls[fid].malformed {
-					*errs = append(*errs, fmt.Sprintf("%s: `## %s` entry %q is not `- add: <scenario>`, `- modify: <scenario>` or `- remove: <scenario>` (F10)", c.rel, fid, e))
+					if isFix {
+						*errs = append(*errs, fmt.Sprintf("%s: `## %s` entry %q is not `- <scenario> — <verification>` (F10)", c.rel, fid, e))
+					} else {
+						*errs = append(*errs, fmt.Sprintf("%s: `## %s` entry %q is not `- add: <scenario>`, `- modify: <scenario>` or `- remove: <scenario>` (F10)", c.rel, fid, e))
+					}
 				}
 			}
 		}
@@ -319,17 +338,17 @@ func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*f
 			names := scenarioNames(f.body)
 			d := decls[fid]
 			for _, n := range append(append([]string{}, d.adds...), d.modifies...) {
-				if !names[n] && !superseded[fid+"\x00"+n] {
+				if !names[n] && !gone(fid, n, c) {
 					*errs = append(*errs, fmt.Sprintf("%s: done, but %s has no scenario %q (F10)", c.rel, fid, n))
 				}
 			}
 			for _, n := range removals(d, replaces) {
-				if names[n] && !(v7 && readdedByOther(fid, n, id)) {
+				if names[n] && !(v7 && laterIn(addedBy[fid+"\x00"+n], c)) {
 					*errs = append(*errs, fmt.Sprintf("%s: done, but %s still has scenario %q (F10)", c.rel, fid, n))
 				}
 			}
 			for _, n := range d.regressions {
-				if !names[n] && !superseded[fid+"\x00"+n] {
+				if !names[n] && !gone(fid, n, c) {
 					*errs = append(*errs, fmt.Sprintf("%s: done, but %s has no scenario %q — a fix proves scenarios that already exist (F10)", c.rel, fid, n))
 				}
 			}
@@ -339,7 +358,7 @@ func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*f
 			// The regression must be recorded where it lasts: the feature's test doc.
 			if p := pairs[fid]; p != nil && p.test {
 				for _, n := range d.regressions {
-					if superseded[fid+"\x00"+n] {
+					if gone(fid, n, c) {
 						continue
 					}
 					if !strings.Contains(p.testBody, n) {
@@ -354,8 +373,10 @@ func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*f
 	// it; earlier pins only described it).
 	if v7 {
 		for _, fid := range sortedFeatureIDs(features) {
-			if r := features[fid].replacedBy; r != "" && features[r] == nil {
-				*errs = append(*errs, fmt.Sprintf("%s: `replaced-by` names unknown feature %q (F10)", features[fid].rel, r))
+			for _, r := range features[fid].replacedBy {
+				if features[r] == nil {
+					*errs = append(*errs, fmt.Sprintf("%s: `replaced-by` names unknown feature %q (F10)", features[fid].rel, r))
+				}
 			}
 		}
 	}
@@ -395,6 +416,35 @@ func sortedFeatureIDs(m map[string]*featureInfo) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// stamped is one done Change's part in a scenario name's history.
+type stamped struct{ id, ts string }
+
+// laterIn reports whether some other done Change in hist is later than c.
+func laterIn(hist []stamped, c *changeInfo) bool {
+	for _, h := range hist {
+		if h.id != c.id && later(h.ts, c.timestamp) {
+			return true
+		}
+	}
+	return false
+}
+
+// later reports whether timestamp a is strictly after b. An order that cannot
+// be told — a missing timestamp, or the same day without times on both — is
+// not later, so the check it would excuse still applies.
+func later(a, b string) bool {
+	da, db := day(a), day(b)
+	switch {
+	case da == "" || db == "":
+		return false
+	case da != db:
+		return da > db
+	case len(a) > 10 && len(b) > 10:
+		return a > b
+	}
+	return false
 }
 
 // stamp reads a `timestamp` field, a date or an RFC 3339 time, as text.
@@ -448,7 +498,7 @@ func checkRegressionLanded(changes map[string]*changeInfo, pairs map[string]*pai
 				continue
 			}
 			if tested := day(p.testTimestamp); tested != "" && tested < changed {
-				*warns = append(*warns, fmt.Sprintf("%s.test.md: `timestamp` %s predates %s (done %s), which changed %s's scenarios — the case it needed may not have landed; update the test document and its timestamp", fid, tested, c.rel, changed, fid))
+				*warns = append(*warns, fmt.Sprintf("%s.test.md: `timestamp` %s predates %s (done %s), which declared scenarios of %s — the case it needed may be missing; update the test document and its timestamp", fid, tested, c.rel, changed, fid))
 			}
 		}
 	}

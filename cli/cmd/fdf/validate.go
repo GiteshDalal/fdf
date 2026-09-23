@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/GiteshDalal/fdf/cli/internal/bundle"
 	"github.com/GiteshDalal/fdf/cli/internal/fdfroot"
@@ -35,7 +36,9 @@ func runValidate(args []string, stdout io.Writer) int {
 	announce("validate", bundleRoot, source, stdout)
 	rr := *repoRoot
 	if rr == "" {
-		if pr, standalone := fdfroot.ProjectRoot(bundleRoot); !standalone {
+		// A bundle at the top of its own repository — a docs repository cloned
+		// on its own — has no project around it to check paths against.
+		if pr, standalone := fdfroot.ProjectRoot(bundleRoot); !standalone && filepath.Clean(pr) != filepath.Clean(bundleRoot) {
 			rr = pr
 		}
 	}
