@@ -92,8 +92,9 @@ var helpTopics = []helpTopic{
 		usage: "fdf new [--root <dir>] <group>/<slug>",
 		body: "Scaffold a draft feature at <group>/<slug>.md with frontmatter and empty\n" +
 			"Gherkin fences, creating the group directory and its INDEX.md if needed.\n" +
-			"Group and slug are lowercase [a-z0-9-]. A draft carries no trail siblings\n" +
-			"and no task directory; those arrive as the feature advances.",
+			"Group and slug are lowercase [a-z0-9-]. A draft has no task directory and\n" +
+			"no trail siblings apart from a log (v0.7); the rest arrive as the feature\n" +
+			"advances.",
 		flags: []string{"--root <dir>  bundle root (default docs/features)"},
 		examples: []string{
 			"fdf new payments/instant-refunds",
@@ -320,9 +321,9 @@ var helpTopics = []helpTopic{
 			"document's entry goes in its owner's log. A group ID puts it in the\n" +
 			"group's LOG.md. With no ID, or for a Context document or a release, it\n" +
 			"goes in the bundle-root LOG.md, which is for the bundle as a whole. A\n" +
-			"draft feature has no log yet: its first entry comes with its approved\n" +
-			"spec. Start an entry with a bold label naming the event (**Specified**,\n" +
-			"**Decision**, **Done**), then say what happened and, for a decision, why.",
+			"log is the one sibling a draft feature may have (v0.7). Start an entry\n" +
+			"with a bold label naming the event (**Specified**, **Decision**,\n" +
+			"**Done**), then say what happened and, for a decision, why.",
 		flags: []string{"--root <dir>  bundle root (default docs/features)"},
 		examples: []string{
 			"fdf log payments/instant-refunds \"**Specified**: design approved; synchronous PSP call, reconciled from the webhook.\"",

@@ -263,8 +263,8 @@ When work knowingly leaves something behind, file it rather than rounding it
 off: ` + "`fdf debt [<group>/]<slug>`" + `.
 
 **Bug documents** under ` + "`" + root + "/bugs/`" + ` (` + "`type: Bug`" + `) record
-known defects — the software doing something observably wrong — that nobody
-is repairing yet. ` + "`fdf bug --open`" + ` shows them; check both registers
+known defects — the software doing something observably wrong — that have
+not been repaired yet. ` + "`fdf bug --open`" + ` shows them; check both registers
 before diagnosing something. A bug is never resolved in place: its repair is a
 ` + "`Fix`" + ` or ` + "`Change`" + ` (` + "`fdf fix --from bugs/<id>`" + `) that names it in
 ` + "`resolves`" + `.

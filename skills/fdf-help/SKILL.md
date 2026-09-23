@@ -72,7 +72,7 @@ how it reaches work that touches them. A debt is a register entry, not a unit
 of work: the work that closes it is a Change, a Fix, or plain code work.
 
 **Bugs** live under `bugs/` (`type: Bug`): known defects — the software doing
-something observably wrong — that nobody is repairing yet, with the
+something observably wrong — that have not been repaired yet, with the
 investigation's `# Symptom` and `# Expected`, and the scenarios they contradict
 under `# Violates`. `fdf bug --open` reads the register. The line between the
 two registers: if someone could observe the software misbehaving it is a bug,

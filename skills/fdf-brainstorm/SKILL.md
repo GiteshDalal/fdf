@@ -65,8 +65,8 @@ propose — designing in ignorance of one is not.
 1. **Locate the bundle**: `fdf validate` (respects `--root`/`FDF_ROOT_DIR`).
    If no bundle exists, ask before running `fdf init`.
 2. **Scaffold**: `fdf new <group>/<slug>` (lowercase). Read the generated file
-   (`<group>/<slug>.md`). A `draft` feature has no trail siblings and no task
-   directory yet.
+   (`<group>/<slug>.md`). A `draft` feature has no trail siblings (at most a
+   log) and no task directory yet.
 3. **Understand the feature** through questions, ONE at a time: who is the
    user, what capability, what value, what are the edge cases? Prefer
    multiple-choice questions. **Chase ambiguous words**: when the user says
@@ -101,8 +101,8 @@ propose — designing in ignorance of one is not.
    resolved ambiguity), `## Alternatives rejected` (each with its reason).
    Path is a **stem sibling** of the feature file — not nested under
    `<group>/<slug>/`. In the same edit, flip the feature's `status` to
-   `specified`: a `draft` may carry no trail siblings (F4), so the spec and
-   the flip land together.
+   `specified`: a `draft` may not carry a spec (F4), so the spec and the flip
+   land together.
 7. **Surface document.** Ask one question: does this feature add or change
    anything a person or another system uses directly? That is a screen,
    dialog or flow; an endpoint, RPC or webhook; a command or flag; an event,

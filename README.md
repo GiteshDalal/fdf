@@ -7,7 +7,7 @@ tasks live only under a paired `slug/` directory; post-delivery change
 requests and bug fixes live under `changes/`; the recurring mechanisms every
 feature must follow the same way live as **practices**, what the project
 has said but not yet done everywhere is written down as **debt**, and what the
-software does wrong that nobody is repairing yet is written down as a **bug**;
+software does wrong and nobody has repaired yet is written down as a **bug**;
 code that predates the bundle is **adopted** rather than given an invented
 history; an opinionated CLI validates the whole bundle — and renames and
 rewords it — so it can never silently drift.
@@ -22,7 +22,7 @@ docs/features/
 ├── SURFACES.md                   # Context: interface principles (all surfaces)
 ├── INFRA.md                      # Context: build & deployment infra
 ├── DOMAIN.md                     # Context: the project's domain language
-├── bugs/                         # known defects nobody is repairing yet
+├── bugs/                         # known defects not repaired yet
 │   ├── INDEX.md
 │   └── refund-split-capture.md   # type: Bug — open | accepted | resolved
 ├── changes/                      # post-delivery work (flat or grouped)
@@ -121,7 +121,7 @@ on `accepted`), and — through R1 on its `resource` paths — cannot go on nami
 code that no longer exists.
 
 **Bugs** (`bugs/<slug>.md`, `type: Bug`) are the register of known defects —
-the software doing something observably wrong — that nobody is repairing yet:
+the software doing something observably wrong — that have not been repaired yet:
 not diagnosed, waiting on a decision, in code no feature documents, or
 deferred. A bug states its `# Symptom` and `# Expected`, and cites under
 `# Violates` the scenarios it contradicts, verbatim. It is **never resolved in
@@ -187,7 +187,7 @@ fdf debt --open              # …only what is outstanding (also --accepted, --r
 fdf debt authz-legacy-handlers  # file a new debt
 fdf debt --cleanup           # fold resolved debts into debts/LOG.md and clear them
 fdf debt --cleanup --dry-run # …show the plan first, change nothing
-fdf bug --open               # the bug register (same flags as fdf debt)
+fdf bug --open               # the bug register (fdf debt's flags; clearing always logs)
 fdf bug --affects payments/instant-refunds refund-split-capture  # file a known defect
 fdf mv payments/store-hours venues/opening-hours  # move/rename with its trail; every reference repaired
 fdf lexicon                  # every banned domain word, with file:line:col

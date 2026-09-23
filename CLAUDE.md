@@ -17,7 +17,7 @@ optional `slug.surface.md` / `slug.log.md`); tasks live only under a `slug/` dir
 bundle-root Context docs (`STACK.md`, `ARCHITECTURE.md`, `SURFACES.md`, `INFRA.md`,
 `DOMAIN.md`) hold project context. Post-delivery work lives under `changes/` as a `Change` (alters what a
 delivered feature does) or a `Fix` (the code drifted from what the document already says).
-Known gaps are `Debt` under `debts/`; known defects nobody is repairing yet are `Bug` under
+Known gaps are `Debt` under `debts/`; known defects not repaired yet are `Bug` under
 `bugs/` (v0.7). A capability that predates the bundle is an `adopted` feature (v0.7): no
 build trail, its code named in `resource`.
 This repo ships:
