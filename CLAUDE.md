@@ -158,8 +158,9 @@ everything, and flags must precede positional args (`ContinueOnError` FlagSets).
   and the one newest-first `Insert` every log writer shares (`mv`, `lexicon`, the
   registers' `--cleanup`): an entry goes in the log of the document it is about —
   a feature's, change's, practice's, debt's or bug's `<slug>.log.md`, created on
-  first use (never beside a `draft`, which F4 keeps sibling-free), a group's
-  `LOG.md`, or the root `LOG.md` for the bundle as a whole.
+  first use (beside a `draft` only from v0.7, where a log is the one sibling a
+  draft may have), a group's `LOG.md`, or the root `LOG.md` for the bundle as a
+  whole.
 
 ### Layout the validator expects (v0.7)
 

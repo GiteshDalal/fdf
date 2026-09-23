@@ -219,11 +219,14 @@ func in(list []string, s string) bool {
 type featureInfo struct {
 	rel, status, version, body string
 	resource                   []string // v0.7: the code an adopted feature documents
+	replacedBy                 string   // the feature that replaces a retired one
 }
 type pairInfo struct {
 	spec, plan, test  bool
+	surface, log      bool
 	planRel, planBody string
 	testBody          string
+	testTimestamp     string
 	tasks             map[string]string   // filename -> status
 	deps              map[string][]string // filename -> depends-on
 	depRels           map[string]string   // filename -> rel (for messages)
@@ -305,6 +308,10 @@ func Validate(root string, opts Options) int {
 			warns = append(warns, fmt.Sprintf("%s: could not read file (%v)", rel, rerr))
 			return nil
 		}
+		// README.md at bundle root: legal, ignored.
+		if rel == "README.md" {
+			return nil
+		}
 		text := strings.TrimPrefix(string(raw), "\uFEFF")
 		if specV7 {
 			texts[filepath.ToSlash(rel)] = string(raw) // F12 reads it again, from here
@@ -314,11 +321,6 @@ func Validate(root string, opts Options) int {
 		}
 		for _, m := range linkRe.FindAllStringSubmatch(linkScanText(text), -1) {
 			links = append(links, link{rel, m[1]})
-		}
-
-		// README.md at bundle root: legal, ignored.
-		if rel == "README.md" {
-			return nil
 		}
 
 		if reserved[name] {
@@ -336,6 +338,16 @@ func Validate(root string, opts Options) int {
 			// reject INDEX.md/LOG.md here (reserved returns before len==3 case).
 			if specStem && len(parts) == 3 && !inChangeGroup {
 				errs = append(errs, fmt.Sprintf("%s: task directories may contain only NN-slug.md tasks (F3)", rel))
+				return nil
+			}
+			// Deeper still is a changes/ group's task directory, or nesting no
+			// FDF position allows (v0.7 closes both).
+			if specV7 && len(parts) >= 4 {
+				if parts[0] == "changes" && len(parts) == 4 && exists(filepath.Join(rootAbs, "changes", parts[1], parts[2]+".md")) {
+					errs = append(errs, fmt.Sprintf("%s: task directories may contain only NN-slug.md tasks (F3)", rel))
+				} else {
+					errs = append(errs, fmt.Sprintf("%s: nested deeper than FDF structure allows (F3)", rel))
+				}
 				return nil
 			}
 			block, delimited, _ := splitFrontmatter(text)
@@ -467,7 +479,7 @@ func Validate(root string, opts Options) int {
 				changes[cid] = &changeInfo{
 					rel: rel, id: cid, docType: docType, status: status, version: version, body: body,
 					affects: asList(data["affects"]), retires: asList(data["retires"]),
-					resolves: asList(data["resolves"]),
+					resolves: asList(data["resolves"]), timestamp: stamp(data["timestamp"]),
 				}
 				if len(fenceRe.FindAllStringSubmatch(body, -1)) > 0 {
 					errs = append(errs, fmt.Sprintf("%s: %s documents carry no Gherkin — behavior statements belong in the features they amend (F5)", rel, docType))
@@ -654,11 +666,14 @@ func Validate(root string, opts Options) int {
 							p.plan, p.planRel, p.planBody = true, rel, body
 						case "test":
 							p.test, p.testBody = true, body
+							p.testTimestamp = stamp(data["timestamp"])
 						case "log":
 							// Trap 17: same ISO-date / newest-first rules as LOG.md.
+							p.log = true
 							checkLogBody(rel, text, &errs, &warns)
+						case "surface":
+							p.surface = true
 						}
-						// surface: optional; type checked above; no pair flag required for lifecycle.
 					} else {
 						errs = append(errs, fmt.Sprintf("%s: unknown trail role %q — allowed roles are spec, plan, test, surface, log (F3)", rel, rolePart))
 					}
@@ -682,6 +697,7 @@ func Validate(root string, opts Options) int {
 			version, _ := data["version"].(string)
 			fid := strings.TrimSuffix(filepath.ToSlash(rel), ".md")
 			f := &featureInfo{rel: rel, status: status, version: version, body: body}
+			f.replacedBy, _ = data["replaced-by"].(string)
 			if specV7 {
 				// A feature's own `resource` is v0.7: required on an adopted
 				// feature, which has no tasks to reach its code through.
@@ -696,7 +712,9 @@ func Validate(root string, opts Options) int {
 			}
 			// An adopted feature may be a map entry: a Feature: block and no
 			// scenarios yet.
-			checkFeatureBody(rel, body, specV7 && status == "adopted", &errs)
+			// A retired one may be too, when it was adopted and never backfilled;
+			// whether it was built is known only after the walk (F4 below).
+			checkFeatureBody(rel, body, specV7 && (status == "adopted" || status == "retired"), &errs)
 		case len(parts) == 3:
 			fid := parts[0] + "/" + parts[1]
 			switch {
@@ -739,6 +757,12 @@ func Validate(root string, opts Options) int {
 		return nil
 	})
 
+	// No root INDEX.md means no pin: the bundle was just validated under v0.2
+	// rules, which is worth saying — it explains a wall of unexpected errors.
+	if !exists(filepath.Join(rootAbs, "INDEX.md")) {
+		warns = append(warns, "INDEX.md: missing — with no `fdf_version` pin the bundle is validated under v0.2 rules; run `fdf init` or `fdf migrate`")
+	}
+
 	// F3: every pair entry has a sibling feature (or, under changes/, a
 	// sibling Change/Fix) document.
 	for fid := range pairs {
@@ -763,7 +787,9 @@ func Validate(root string, opts Options) int {
 		p := pairs[fid]
 		switch {
 		case f.status == "draft":
-			if p != nil {
+			// From v0.7 a draft may have a log: what happened to a feature is
+			// worth recording before its design is approved. Nothing else.
+			if p != nil && !(specV7 && !p.spec && !p.plan && !p.test && !p.surface && len(p.tasks) == 0) {
 				if specStem {
 					errs = append(errs, fmt.Sprintf("%s: status 'draft' but trail siblings or task directory %s/ exist (F4)", f.rel, fid))
 				} else {
@@ -781,8 +807,14 @@ func Validate(root string, opts Options) int {
 			// retired feature keeps the trail it had: one that was adopted
 			// never had a spec, so only a built one (plan or tasks) needs it.
 			if specV7 {
-				if built := p != nil && (p.plan || len(p.tasks) > 0); built && !p.spec {
+				built := p != nil && (p.plan || len(p.tasks) > 0)
+				if built && !p.spec {
 					errs = append(errs, fmt.Sprintf("%s: status 'retired' with a build trail requires %s.spec.md — the record of what was built (F4)", f.rel, fid))
+				}
+				// A retired map entry may have no scenarios (F5 let it off);
+				// a feature that was built keeps the scenarios it had.
+				if built && len(scenarioRe.FindAllString(f.body, -1)) == 0 {
+					errs = append(errs, fmt.Sprintf("%s: no `Scenario:` in any gherkin fence — a retired feature that was built keeps the scenarios it had (F5)", f.rel))
 				}
 				continue
 			}
@@ -850,7 +882,10 @@ func Validate(root string, opts Options) int {
 
 	if specV5 {
 		checkChangeLifecycle(changes, pairs, &errs)
-		checkChangeIntegrity(changes, features, pairs, specV6, &errs)
+		checkChangeIntegrity(changes, features, pairs, specV6, specV7, &errs)
+		if specV7 {
+			checkRegressionLanded(changes, pairs, &warns)
+		}
 		// Feature depends-on: existing IDs, acyclic. A separate graph from the
 		// task one — these are bundle-relative feature IDs, not siblings.
 		for fid, deps := range featureDeps {
@@ -909,7 +944,16 @@ func Validate(root string, opts Options) int {
 	for fid, p := range pairs {
 		if p.plan {
 			listed := map[string]bool{}
+			taskDir := filepath.Join(rootAbs, filepath.FromSlash(fid))
 			for _, t := range sectionLinks(p.planBody, "Tasks") {
+				if specV7 {
+					// A link lists a task only if it reaches this plan's task
+					// directory: a same-named task elsewhere is not this one.
+					if resolved := resolveLink(rootAbs, p.planRel, t); resolved != "" && filepath.Dir(resolved) == taskDir {
+						listed[filepath.Base(resolved)] = true
+					}
+					continue
+				}
 				listed[filepath.Base(strings.SplitN(strings.SplitN(t, "#", 2)[0], "?", 2)[0])] = true
 			}
 			for name := range p.tasks {
@@ -961,7 +1005,8 @@ func Validate(root string, opts Options) int {
 				}
 				errs = append(errs, fmt.Sprintf("%s: lists %s whose `version` is %s, expected %q (F7)", r.rel, fid, got, version))
 			}
-			if r.status == "shipped" && f.status != "done" {
+			// A feature retired after it shipped still shipped (v0.7).
+			if r.status == "shipped" && f.status != "done" && !(specV7 && f.status == "retired") {
 				errs = append(errs, fmt.Sprintf("%s: shipped release lists %s with status '%s' (F7)", r.rel, fid, f.status))
 			}
 		}

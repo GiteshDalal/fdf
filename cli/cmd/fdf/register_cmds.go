@@ -49,7 +49,11 @@ func runRegister(k register.Kind, args []string, stdout io.Writer) int {
 	}
 
 	if len(rest) > 1 {
-		fmt.Fprintf(stdout, "usage: fdf %s [--open|--accepted|--resolved] [--cleanup [--dry-run] [--no-log]] [[<group>/]<slug>]\n", cmd)
+		if k.Type == "Bug" {
+			fmt.Fprintf(stdout, "usage: fdf %s [--open|--accepted|--resolved] [--cleanup [--dry-run]] [[<group>/]<slug>]\n", cmd)
+		} else {
+			fmt.Fprintf(stdout, "usage: fdf %s [--open|--accepted|--resolved] [--cleanup [--dry-run] [--no-log]] [[<group>/]<slug>]\n", cmd)
+		}
 		return 2
 	}
 	var affected []string
@@ -70,6 +74,12 @@ func runRegister(k register.Kind, args []string, stdout io.Writer) int {
 	}
 	if (*dryRun || *noLog) && !*cleanup {
 		fmt.Fprintf(stdout, "usage: --dry-run and --no-log only apply to `fdf %s --cleanup`\n", cmd)
+		return 2
+	}
+	// A cleared bug stays findable in bugs/LOG.md: a done Fix or Change that
+	// `resolves` it is checked against that log (F10), so it is never dropped.
+	if *noLog && k.Type == "Bug" {
+		fmt.Fprintln(stdout, "usage: fdf bug --cleanup always logs — a done Fix or Change that `resolves` a cleared bug is checked against bugs/LOG.md (F10)")
 		return 2
 	}
 

@@ -176,7 +176,7 @@ var helpTopics = []helpTopic{
 	},
 	{
 		name:  "bug",
-		usage: "fdf bug [--root <dir>] [--open|--accepted|--resolved] [--cleanup [--dry-run] [--no-log]] [--affects <ids>] [[<group>/]<slug>]",
+		usage: "fdf bug [--root <dir>] [--open|--accepted|--resolved] [--cleanup [--dry-run]] [--affects <ids>] [[<group>/]<slug>]",
 		body: "Read or file the bug register under bugs/ (v0.7) — known defects, the\n" +
 			"software doing something wrong that someone could observe, that nobody\n" +
 			"is repairing yet: undiagnosed, waiting on a decision, in code no feature\n" +
@@ -187,15 +187,15 @@ var helpTopics = []helpTopic{
 			"bugs/<id> …`; when none does, the repair is a Change that decides it:\n" +
 			"`fdf change --from bugs/<id> …`. A bug is never resolved in place — the\n" +
 			"Fix or Change names it in `resolves`. Without a slug it prints the\n" +
-			"register; --cleanup folds resolved bugs into bugs/LOG.md exactly as\n" +
-			"`fdf debt --cleanup` does.",
+			"register; --cleanup folds resolved bugs into bugs/LOG.md as\n" +
+			"`fdf debt --cleanup` does, and always logs them: a done Fix or Change that\n" +
+			"`resolves` a cleared bug is checked against bugs/LOG.md (F10).",
 		flags: []string{
 			"--affects <ids>     when filing: comma-separated feature ID(s) the defect shows up in",
 			"--resource <paths>  when filing: comma-separated path(s) carrying it",
 			"--open           list only open bugs (also --accepted, --resolved)",
 			"--cleanup        clear resolved bugs, recording each in bugs/LOG.md",
 			"--dry-run        with --cleanup: show what would be cleared, change nothing",
-			"--no-log         with --cleanup: remove without writing bugs/LOG.md",
 			"--root <dir>     bundle root (default docs/features)",
 		},
 		examples: []string{

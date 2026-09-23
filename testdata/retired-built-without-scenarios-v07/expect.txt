@@ -1,0 +1,2 @@
+exit: 1
+contains: venues/opening-hours.md: no `Scenario:` in any gherkin fence — a retired feature that was built keeps the scenarios it had (F5)

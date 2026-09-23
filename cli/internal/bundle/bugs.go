@@ -167,6 +167,13 @@ func checkBugIntegrity(bugs map[string]*bugInfo, trails map[string]string, featu
 				if f == nil {
 					continue
 				}
+				// Only a delivered feature's scenario can be contradicted by a
+				// defect: in a feature still being built, the repair is one of
+				// its tasks, which has no `resolves` to close the bug with.
+				if f.status != "done" && f.status != "adopted" {
+					*errs = append(*errs, fmt.Sprintf("%s: `# Violates` names %s, whose status is '%s' — only a delivered feature ('done' or 'adopted') is repaired by a Fix; until then the defect is its tasks' to repair, so drop `# Violates` and keep the scenario in `# Expected` (F14)", b.rel, fid, f.status))
+					continue
+				}
 				names := scenarioNames(f.body)
 				for _, n := range viol[fid] {
 					if !names[n] {

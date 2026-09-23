@@ -182,6 +182,10 @@ func readLexicon(rootAbs string, v7 bool, errs, warns *[]string) *Lexicon {
 	return lex
 }
 
+// wordCharRe finds a letter or digit: what an `except:` phrase needs besides
+// its banned word, so that `store-` cannot pass for a phrase.
+var wordCharRe = regexp.MustCompile(`[\p{L}\p{N}]`)
+
 // checkExceptions is F12's check of `except:` (v0.7): an exception names a
 // phrase in which one of its term's banned words means something else, so it
 // must contain one of them, and something besides — the banned word alone
@@ -199,7 +203,7 @@ func checkExceptions(terms []*domainTerm, errs *[]string) {
 			switch {
 			case hit == nil:
 				*errs = append(*errs, fmt.Sprintf("DOMAIN.md: `except: %s` under %q contains none of the words %q bans — list only phrases in which one of them means something else (F12)", phrase, t.name, t.name))
-			case strings.TrimSpace(hit.ReplaceAllString(phrase, " ")) == "":
+			case !wordCharRe.MatchString(hit.ReplaceAllString(phrase, " ")):
 				*errs = append(*errs, fmt.Sprintf("DOMAIN.md: `except: %s` under %q is a banned word alone — an exception is a longer phrase that says which other thing it means, or it un-bans the word (F12)", phrase, t.name))
 			}
 		}

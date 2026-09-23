@@ -215,12 +215,12 @@ deleted — the document records behavior the software once had.
   what it did.
 - Set the feature to `status: retired`, and `replaced-by: <feature-id>` when a
   successor exists.
-- Order matters, because F10 checks both ends at every status: `retires:` is
-  only valid once the feature is `retired`, and a `retired` feature needs a
-  `done` Change retiring it. So take the Change through its design gate
-  *without* `retires:`, then land the retirement in one edit — add
-  `retires:`, flip the Change to `done`, flip the feature to `retired` — and
-  validate after that edit.
+- Declare `retires:` from the start, like the rest of the Change's effects.
+  While the Change is not `done`, the feature it retires is still delivered
+  (`done` or `adopted`), and it must be in `affects`. Land the retirement in
+  one edit — flip the Change to `done` and the feature to `retired` — because
+  a done Change's `retires` names a `retired` feature and a `retired` feature
+  needs a done Change retiring it (F10). Validate after that edit.
 - A `Fix` can never retire anything — removing behavior is deliberate.
 - Retirement is terminal. A capability that comes back is a new feature
   (fdf-brainstorm), which may name the retired one in `depends-on`; the retired

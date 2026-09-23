@@ -160,20 +160,31 @@ func TestContextEntriesGoToTheRootLog(t *testing.T) {
 	}
 }
 
-func TestDraftFeatureHasNoLogYet(t *testing.T) {
+func TestDraftFeatureMayHaveALogFromV07(t *testing.T) {
 	root := fixture(t, "valid-bugs-v07")
-	os.WriteFile(filepath.Join(root, "venues", "holiday-hours.md"), []byte("---\ntype: Feature\nstatus: draft\ntitle: Holiday hours\n---\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "venues", "holiday-hours.md"), []byte(draftFeature), 0o644)
+	logEntry(t, root, "venues/holiday-hours", "**Drafted**: waiting on the legal review of closure notices.")
+	validates(t, root, "venues/holiday-hours.log.md")
+}
+
+func TestDraftFeatureHasNoLogBeforeV07(t *testing.T) {
+	root := fixture(t, "valid-bugs-v07")
+	index := read(t, root, "INDEX.md")
+	os.WriteFile(filepath.Join(root, "INDEX.md"), []byte(strings.Replace(index, `fdf_version: "0.7"`, `fdf_version: "0.6"`, 1)), 0o644)
+	os.WriteFile(filepath.Join(root, "venues", "holiday-hours.md"), []byte(draftFeature), 0o644)
 	var out bytes.Buffer
 	if code := Append(root, "venues/holiday-hours", "early note", &out); code != 1 {
-		t.Fatalf("a draft feature has no trail siblings (F4); want exit 1, got %d\n%s", code, out.String())
+		t.Fatalf("under a v0.6 pin a draft has no siblings (F4); want exit 1, got %d\n%s", code, out.String())
 	}
 	if !strings.Contains(out.String(), "draft") {
 		t.Errorf("should explain why:\n%s", out.String())
 	}
 	if _, err := os.Stat(filepath.Join(root, "venues", "holiday-hours.log.md")); err == nil {
-		t.Error("no log may be created beside a draft")
+		t.Error("no log may be created beside a draft under a v0.6 pin")
 	}
 }
+
+const draftFeature = "---\ntype: Feature\nstatus: draft\ntitle: Holiday hours\ndescription: Close a Venue for a day.\ntimestamp: 2027-01-15\n---\n\n# Feature\n\n```gherkin\nFeature: Holiday hours\n  As a Venue owner\n  I want to close my Venue for a day\n  So that customers are not sent to a closed door\n```\n\n# Scenarios\n\n```gherkin\nScenario: A closed day shows as closed\n  Given a Venue closed on 2027-12-25\n  When a customer views its opening hours\n  Then the day shows as closed\n```\n"
 
 func TestUnknownIDAndMissingBundle(t *testing.T) {
 	root := fixture(t, "valid-bugs-v07")
