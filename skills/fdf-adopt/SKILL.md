@@ -43,7 +43,10 @@ skipping the design gate is exactly the drift FDF exists to stop.
 A large codebase is adopted breadth first, then deepened where work happens.
 Run `fdf adopt` (no arguments) at any point: it prints every feature with its
 scenario and test counts, and the tracked code no document claims yet, most
-unclaimed first. That list is the plan.
+unclaimed first. That list is the plan. Files that are no capability — build
+manifests, lockfiles, CI and editor configuration — stay unclaimed, and that
+is expected: the map is done when every capability is on it, not when the
+list is empty.
 
 ### Phase 1 — Map
 
@@ -55,7 +58,12 @@ every later piece of work find the capability it is about to touch.
    scheduled jobs, event consumers, UI screens. Group them by what a person or
    calling system would call *one thing they can do*. That is a capability.
    Not one per endpoint — "refund a payment" is one capability behind three
-   RPCs — and not one per module; a module usually holds several.
+   RPCs — and not one per module; a module usually holds several. One
+   actor's job is one capability, and its visible effect on others belongs
+   to it (an owner closes a date; customers see it closed). Two jobs that
+   stand on their own are two capabilities, even on the same data (an owner
+   manages a catalog; customers browse it): each is described, and later
+   changed, without the other.
 2. **Propose a group at a time**: the capability list for one area, each with
    its proposed `<group>/<slug>`, a one-line purpose, and the paths it lives
    in. Groups follow `ARCHITECTURE.md`'s map or the product's own areas. Wait
@@ -100,9 +108,20 @@ every later piece of work find the capability it is about to touch.
 Before a change reaches an adopted capability, its document has to be able to
 carry the change:
 
-- A `Change` that will `modify:` or `remove:` a scenario needs that scenario
-  to exist first — backfill exactly those, then route the work to
-  fdf-change. A Change that only `add:`s scenarios needs no backfill.
+- **Backfill what the Change will alter.** Ask it of the code, not of the
+  document: what does the capability do *today* that will be different, or
+  gone, once the Change is done? Backfill each such behavior first, as a
+  scenario describing it as it is, so the Change can `modify:` or `remove:`
+  it and the bundle records what changed rather than only what is new. A
+  map entry has no scenarios, so this question decides, not the scenario
+  list: "hide out-of-stock products" alters what the list shows today, so
+  "An out-of-stock product appears in the product list" is backfilled first.
+  A Change that adds behavior the code does not have at all needs no
+  backfill. Then route the work to fdf-change.
+- **Record the interface the Change will alter.** When the Change touches an
+  endpoint, a screen, a command or an event, write the capability's
+  `slug.surface.md` from the code as it stands first (see *Recording an
+  adopted capability's surface*), so the Change amends it.
 - A capability with no map entry is mapped first (Phase 1, one capability).
 - A defect: see *Defects in adopted and undocumented code* below.
 
@@ -134,8 +153,9 @@ the proof that it already does it is part of the same edit.
    exactly), then the existing test's command or path, or an explicit manual
    procedure.
 4. **Run it against the code as it stands.** No code change in this edit.
-5. **It passes** → keep both; `fdf validate`. Log the batch in the feature's
-   own log: `fdf log <group>/<slug> "**Backfilled**: 3 scenarios, each proven by an existing test."`
+5. **It passes** → keep both, set the feature's `timestamp` (and the test
+   document's) to now, in UTC, and `fdf validate`. Log the batch in the
+   feature's own log: `fdf log <group>/<slug> "**Backfilled**: 3 scenarios, each proven by an existing test."`
 6. **It fails** → stop. Either you misread the code (rewrite the scenario to
    what the code actually does, and run again), or you found a defect. A defect
    is never backfilled — not as it is, which would promise it, and not as it

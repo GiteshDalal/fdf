@@ -67,7 +67,7 @@ func hasHeading(body, heading string) bool {
 func parseDecls(body, heading string, verbs bool) map[string]*changeDecl {
 	out := map[string]*changeDecl{}
 	inSection, current := false, ""
-	for _, line := range strings.Split(body, "\n") {
+	for _, line := range logicalLines(body) {
 		if m := headingRe.FindStringSubmatch(line); m != nil {
 			inSection = strings.EqualFold(strings.TrimSpace(m[1]), heading)
 			current = ""
@@ -130,7 +130,7 @@ func parseDecls(body, heading string, verbs bool) map[string]*changeDecl {
 func strayDeclEntries(body, heading string) []string {
 	var out []string
 	inSection, seenSub := false, false
-	for _, line := range strings.Split(body, "\n") {
+	for _, line := range logicalLines(body) {
 		if m := headingRe.FindStringSubmatch(line); m != nil {
 			inSection = strings.EqualFold(strings.TrimSpace(m[1]), heading)
 			seenSub = false
@@ -146,6 +146,33 @@ func strayDeclEntries(body, heading string) []string {
 		if m := anyItemRe.FindStringSubmatch(line); m != nil {
 			out = append(out, m[1])
 		}
+	}
+	return out
+}
+
+// anyHeadingRe is a Markdown heading of any level.
+var anyHeadingRe = regexp.MustCompile(`^#{1,6}\s`)
+
+// logicalLines splits a body into lines, joining each list item's
+// continuation lines onto it as Markdown reads them: a line after an item
+// that is not blank, a heading, a fence or an item of its own is part of that
+// item, indented or not. A declaration entry may then wrap the way an editor
+// wraps it.
+func logicalLines(body string) []string {
+	var out []string
+	inItem := false
+	for _, line := range strings.Split(body, "\n") {
+		t := strings.TrimSpace(line)
+		switch {
+		case t == "" || anyHeadingRe.MatchString(line) || strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~"):
+			inItem = false
+		case anyItemRe.MatchString(line):
+			inItem = true
+		case inItem:
+			out[len(out)-1] = strings.TrimRight(out[len(out)-1], " \t") + " " + t
+			continue
+		}
+		out = append(out, line)
 	}
 	return out
 }
