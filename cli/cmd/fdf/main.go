@@ -11,7 +11,7 @@ import (
 )
 
 // version is set by goreleaser via -ldflags "-X main.version=...".
-var version = "0.6.1"
+var version = "0.6.2"
 
 // banner is the product header both the short usage and `fdf help` print.
 // The spec version is derived, never written out, so a spec bump cannot
