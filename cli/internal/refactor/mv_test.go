@@ -322,3 +322,31 @@ func TestMoveRefusals(t *testing.T) {
 		t.Fatalf("an existing target is refused:\n%s", out.String())
 	}
 }
+
+// A move that changes a document's depth repairs the links that leave the
+// bundle too: the file that holds them moved, so its path to them changed,
+// even though they did not. A footnote is not a link, and a reference
+// definition inside a code fence is a sample; neither changes.
+func TestMoveDeeperRepairsLinksThatLeaveTheBundle(t *testing.T) {
+	root := fixture(t, "valid-bugs-v07")
+	write(t, root, "changes/old-fix.md", read(t, root, "changes/old-fix.md")+
+		"\n- [auth](../../okf/modules/auth.md#login)\n"+
+		"- [code](../../src/refund.go)\n"+
+		"- [defined][okf]\n\n"+
+		"[okf]: ../../okf/modules/auth.md\n"+
+		"[^1]: See the notes.\n\n"+
+		"```markdown\n[sample]: ../venues/opening-hours.md\n```\n")
+	move(t, root, "changes/old-fix", "changes/hours/old-fix")
+	got := read(t, root, "changes/hours/old-fix.md")
+	for _, want := range []string{
+		"(../../../okf/modules/auth.md#login)",
+		"(../../../src/refund.go)",
+		"[okf]: ../../../okf/modules/auth.md",
+		"[^1]: See the notes.",
+		"[sample]: ../venues/opening-hours.md",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("after moving one level deeper, want %q in:\n%s", want, got)
+		}
+	}
+}
