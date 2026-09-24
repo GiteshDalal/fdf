@@ -3,10 +3,26 @@
 package fdfroot
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 )
+
+// NoBundle is what every command says when the bundle root holds no bundle,
+// so a wrong --root reads the same whichever command met it first.
+func NoBundle(root string) error {
+	return fmt.Errorf("no bundle at %s (no INDEX.md) — run `fdf init` first, or point --root at the bundle", root)
+}
+
+// CheckBundle returns NoBundle unless root holds a bundle: an INDEX.md at its
+// top.
+func CheckBundle(root string) error {
+	if _, err := os.Stat(filepath.Join(root, "INDEX.md")); err != nil {
+		return NoBundle(root)
+	}
+	return nil
+}
 
 // ProjectRoot walks up from start to the topmost enclosing git working tree.
 // A .git directory marks a working tree; a .git FILE marks a submodule

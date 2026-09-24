@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/GiteshDalal/fdf/cli/internal/fdfroot"
 )
 
 type Options struct {
@@ -247,7 +249,9 @@ func Validate(root string, opts Options) int {
 	}
 	rootAbs, err := filepath.Abs(root)
 	if err != nil || !isDir(rootAbs) {
-		fmt.Fprintf(out, "error: %s is not a directory\n", root)
+		// A directory without INDEX.md is still validated: under v0.2 rules,
+		// with a warning that names the missing pin.
+		fmt.Fprintln(out, "error:", fdfroot.NoBundle(root))
 		return 1
 	}
 

@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/GiteshDalal/fdf/cli/internal/bundle"
+	"github.com/GiteshDalal/fdf/cli/internal/fdfroot"
 	"github.com/GiteshDalal/fdf/cli/internal/logs"
 	"github.com/GiteshDalal/fdf/cli/internal/scaffold"
 )
@@ -70,8 +71,10 @@ var scenarioRe = regexp.MustCompile(`(?m)^\s*Scenario(?: Outline)?:\s*(\S[^\n]*)
 var timestampRe = regexp.MustCompile(`(?m)^timestamp:\s*(\S+)`)
 
 func Run(root, repoRoot string, out io.Writer) int {
-	if fi, err := os.Stat(root); err != nil || !fi.IsDir() {
-		fmt.Fprintf(out, "error: %s is not a directory\n", root)
+	// Nothing to migrate without a bundle: an INDEX.md, or the lowercase
+	// index.md of a v0.1 bundle, which the migration renames.
+	if !exists(filepath.Join(root, "INDEX.md")) && !exists(filepath.Join(root, "index.md")) {
+		fmt.Fprintln(out, "error:", fdfroot.NoBundle(root))
 		return 1
 	}
 	rootAbs, err := filepath.Abs(root)
@@ -274,9 +277,13 @@ func Run(root, repoRoot string, out io.Writer) int {
 	fmt.Fprintln(out, "\nvalidating migrated bundle:")
 	var report bytes.Buffer
 	code := bundle.Validate(root, bundle.Options{RepoRoot: repoRoot, Out: io.MultiWriter(out, &report), FreshStubsAdvisory: true})
-	if code == 0 {
+	// Say so only when validation found a stub: F9 fails a plain validate
+	// only while one is unfilled and the bundle has a feature.
+	if code == 0 && strings.Contains(report.String(), "stub") {
 		fmt.Fprintln(out, "\nnext: run the fdf-init skill to fill "+scaffold.ContextDocNames()+".")
-		fmt.Fprintln(out, "warning: the next plain `fdf validate` will fail F9 until those stubs are filled (migrate passes only because FreshStubsAdvisory treats freshly scaffolded stubs as warnings).")
+		if strings.Contains(report.String(), "(F9)") {
+			fmt.Fprintln(out, "warning: the next plain `fdf validate` will fail F9 until those stubs are filled (migrate reports an unfilled stub as a warning, not an error).")
+		}
 	}
 	reportV07(root, report.String(), out)
 	return code
@@ -294,7 +301,7 @@ func reportV07(root, validation string, out io.Writer) {
 			docs[o.Rel] = true
 		}
 		if len(occ) > 0 {
-			fmt.Fprintf(out, "\nv0.7: the domain language now reaches every document and name — %d banned word(s) in %d place(s).\n", len(occ), len(docs))
+			fmt.Fprintf(out, "\nv0.7: the domain language now reaches every document and name — %d banned word(s) in %d document(s).\n", len(occ), len(docs))
 			fmt.Fprintln(out, "      `fdf lexicon` lists them; triage the other senses into `except:`, then sweep one term at a time")
 			fmt.Fprintln(out, "      with `fdf lexicon --term <Term> --fix --dry-run` and `--fix`.")
 		}

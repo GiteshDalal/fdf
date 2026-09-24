@@ -166,3 +166,17 @@ func TestBundleRootWithSourceNamesTheChooser(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckBundleWantsAnIndex(t *testing.T) {
+	tmp := t.TempDir()
+	err := CheckBundle(filepath.Join(tmp, "nope"))
+	if err == nil || err.Error() != "no bundle at "+filepath.Join(tmp, "nope")+" (no INDEX.md) — run `fdf init` first, or point --root at the bundle" {
+		t.Fatalf("a missing bundle: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "INDEX.md"), []byte("---\nfdf_version: \"0.7\"\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckBundle(tmp); err != nil {
+		t.Fatalf("a bundle with its INDEX.md: %v", err)
+	}
+}

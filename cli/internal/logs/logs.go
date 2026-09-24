@@ -13,6 +13,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/GiteshDalal/fdf/cli/internal/fdfroot"
 )
 
 var (
@@ -223,11 +225,11 @@ func IsID(root, s string) bool {
 // and says where it went.
 func Append(root, id, text string, out io.Writer) int {
 	if strings.TrimSpace(text) == "" {
-		fmt.Fprintln(out, "usage: the entry is empty — fdf log [<id>] \"<entry>\"")
+		fmt.Fprintln(out, "error: the entry is empty")
 		return 2
 	}
-	if _, err := os.Stat(filepath.Join(root, "INDEX.md")); err != nil {
-		fmt.Fprintf(out, "error: no bundle at %s (no INDEX.md) — run `fdf init` first, or point --root at the bundle\n", root)
+	if err := fdfroot.CheckBundle(root); err != nil {
+		fmt.Fprintln(out, "error:", err)
 		return 1
 	}
 	t, err := Resolve(root, id)

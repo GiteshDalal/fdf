@@ -283,6 +283,24 @@ func TestMigrateAlready04IsNoop(t *testing.T) {
 	}
 }
 
+// A root with no bundle in it is refused before anything is written: a
+// mistyped --root used to fill a stray directory with stubs and indexes.
+func TestMigrateRefusesARootWithNoBundle(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "not-a-bundle")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range []string{root, filepath.Join(root, "missing")} {
+		var out bytes.Buffer
+		if code := Run(r, "", &out); code != 1 || !strings.Contains(out.String(), "no bundle at "+r+" (no INDEX.md)") {
+			t.Fatalf("%s: exit %d\n%s", r, code, out.String())
+		}
+	}
+	if entries, _ := os.ReadDir(root); len(entries) != 0 {
+		t.Fatalf("a refused migration writes nothing, found %d entries", len(entries))
+	}
+}
+
 // Half-migrated or hand-mixed layout: nested trail still present AND the
 // stem destination already exists. collectTrailMoves must abort before any
 // rename so migrate never partially applies destructive moves.
@@ -517,7 +535,7 @@ func TestMigrateV06ToV07(t *testing.T) {
 	for _, want := range []string{
 		"fdf_version 0.6 -> 0.7",
 		"0 trail file(s) lifted",
-		"the domain language now reaches every document and name — 1 banned word(s) in 1 place(s)",
+		"the domain language now reaches every document and name — 1 banned word(s) in 1 document(s)",
 		"of the 1 debt(s) on the register",
 		"`fdf mv debts/<id> bugs/<id>`",
 	} {
