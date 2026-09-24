@@ -179,3 +179,106 @@ func TestRetargetAcrossABundleThatMoves(t *testing.T) {
 		{"the bundle itself", "../features/", "../fdf/"},
 	})
 }
+
+// wantLink is one link Find must return: its target, and whether it is a
+// reference definition and whether it is code.
+type wantLink struct {
+	target      string
+	def, inCode bool
+}
+
+func checkFind(t *testing.T, text string, want []wantLink) {
+	t.Helper()
+	got := Find(text)
+	if len(got) != len(want) {
+		t.Fatalf("Find found %d links, want %d: %+v", len(got), len(want), got)
+	}
+	for i, g := range got {
+		w := want[i]
+		if g.Target != w.target || g.Def != w.def || g.InCode != w.inCode {
+			t.Errorf("link %d = %+v; want target %q def=%v inCode=%v", i, g, w.target, w.def, w.inCode)
+		}
+		if text[g.Start:g.End] != g.Target {
+			t.Errorf("link %d: offsets [%d:%d] hold %q, not the target %q", i, g.Start, g.End, text[g.Start:g.End], g.Target)
+		}
+	}
+}
+
+// Find reads every form CommonMark gives a link: a title in any of its three
+// quotings, a destination in angle brackets, which may hold spaces, spaces
+// inside the parentheses, link text that wraps, and a link inside another's
+// text. A "](" that no "[" opens in its paragraph is not a link.
+func TestFindReadsEveryLinkForm(t *testing.T) {
+	checkFind(t, "[a](one.md \"T\") [b](two.md 'T') [c](three.md (T)) [d]( four.md )\n"+
+		"[e](<my notes.md>) ![f](<pics/a b.png> \"T\")\n"+
+		"[g]: <five six.md> \"T\"\n\n"+
+		"Not links: a] (x) and b](seven.md).\n\n"+
+		"[![badge](badge.svg)](eight.md)\n\n"+
+		"[a link that\nwraps](nine.md)\n", []wantLink{
+		{target: "one.md"},
+		{target: "two.md"},
+		{target: "three.md"},
+		{target: "four.md"},
+		{target: "<my notes.md>"},
+		{target: "<pics/a b.png>"},
+		{target: "<five six.md>", def: true},
+		{target: "badge.svg"},
+		{target: "eight.md"},
+		{target: "nine.md"},
+	})
+}
+
+// Code is where CommonMark puts it. A code span closes only on a run of as
+// many backticks as opened it, and may wrap onto the next line of its
+// paragraph. An indented code block starts after a blank line, outside a
+// list, and a tab indents to column four; a line indented after a paragraph
+// line, or inside a list, is prose.
+func TestFindMarksCodeAsCommonMarkDoes(t *testing.T) {
+	checkFind(t, "Intro.\n\n"+
+		"``a `[x](one.md)` b`` then [y](two.md)\n"+
+		"`a span that\nwraps [z](three.md)` then [w](four.md)\n\n"+
+		"    [v](five.md) in an indented block\n\n"+
+		"\t[u]: six.md\n\n"+
+		"A paragraph\n    continued with [t](seven.md)\n\n"+
+		"- a list item\n\n"+
+		"    continued with [s](eight.md)\n", []wantLink{
+		{target: "one.md", inCode: true},
+		{target: "two.md"},
+		{target: "three.md", inCode: true},
+		{target: "four.md"},
+		{target: "five.md", inCode: true},
+		{target: "six.md", def: true, inCode: true},
+		{target: "seven.md"},
+		{target: "eight.md"},
+	})
+}
+
+// A line read on its own, as fdf mv reads one listing line of an index, is
+// never code for its indentation alone.
+func TestFindReadsAnIndentedLineOnItsOwnAsProse(t *testing.T) {
+	checkFind(t, "    * [nested](nested.md) - a nested listing", []wantLink{{target: "nested.md"}})
+}
+
+func TestResolveReadsATargetAsAPath(t *testing.T) {
+	for _, tc := range []struct {
+		target, from, base string
+		want               Dest
+	}{
+		{"../b/c.md#x", "a/f.md", "", Dest{Path: "b/c.md", Suffix: "#x"}},
+		{"c.md?plain=1", "a/f.md", "", Dest{Path: "a/c.md", Suffix: "?plain=1"}},
+		{"/b/c.md", "a/f.md", "", Dest{Path: "b/c.md", FromBase: true}},
+		{"/features/", "docs/fdf/a/f.md", "docs/fdf", Dest{Path: "docs/fdf/features", FromBase: true, Dir: true}},
+		{"../../okf/x.md", "a/f.md", "", Dest{Path: "../okf/x.md"}},
+		{"<my notes.md#top>", "a/f.md", "", Dest{Path: "a/my notes.md", Suffix: "#top", Angle: true}},
+	} {
+		got, ok := Resolve(tc.target, tc.from, tc.base)
+		if !ok || got != tc.want {
+			t.Errorf("Resolve(%q, %q, %q) = %+v, %v; want %+v, true", tc.target, tc.from, tc.base, got, ok, tc.want)
+		}
+	}
+	for _, target := range []string{"", "#anchor", "?q", "https://example.com/a.md", "mailto:team@example.com", "tel:+441234", "<unclosed.md", "<>"} {
+		if got, ok := Resolve(target, "a/f.md", ""); ok {
+			t.Errorf("Resolve(%q) = %+v, true; want it read as no path", target, got)
+		}
+	}
+}
