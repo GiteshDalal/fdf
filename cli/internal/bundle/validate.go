@@ -702,7 +702,7 @@ func Validate(root string, opts Options) int {
 
 	if specV5 {
 		checkChangeLifecycle(changes, pairs, &errs)
-		checkChangeIntegrity(changes, features, pairs, specV6, specV7, &errs)
+		checkChangeIntegrity(changes, features, pairs, specV6, specV7, v1, &errs)
 		if specV7 {
 			checkRegressionLanded(changes, pairs, &warns)
 			checkSurfaces(features, pairs, &errs, &warns)
@@ -712,7 +712,7 @@ func Validate(root string, opts Options) int {
 		for fid, deps := range featureDeps {
 			for _, d := range deps {
 				if features[d] == nil {
-					errs = append(errs, fmt.Sprintf("%s: depends-on %q is not a known feature (F10)", features[fid].rel, d))
+					errs = append(errs, fmt.Sprintf("%s: depends-on %q is not a known feature%s (F10)", features[fid].rel, d, featureHint(d, features, v1)))
 				}
 			}
 		}
@@ -726,7 +726,7 @@ func Validate(root string, opts Options) int {
 		checkDebtIntegrity(debts, debtTrails, &errs, &warns)
 		if specV7 {
 			resolvedBy := checkResolves(changes, bugs, clearedBugs(rootAbs), &errs)
-			checkBugIntegrity(bugs, bugTrails, features, resolvedBy, &errs, &warns)
+			checkBugIntegrity(bugs, bugTrails, features, resolvedBy, v1, &errs, &warns)
 			checkDomainV7(rootAbs, opts.StrictDomain, texts, &errs, &warns)
 		} else {
 			checkDomain(rootAbs, features, changes, opts.StrictDomain, &errs, &warns)
