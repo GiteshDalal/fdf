@@ -331,6 +331,7 @@ func TestMoveDeeperRepairsLinksThatLeaveTheBundle(t *testing.T) {
 	root := fixture(t, "valid-bugs-v07")
 	write(t, root, "changes/old-fix.md", read(t, root, "changes/old-fix.md")+
 		"\n- [auth](../../okf/modules/auth.md#login)\n"+
+		"- [angle](<../../okf/modules/auth.md>)\n"+
 		"- [code](../../src/refund.go)\n"+
 		"- [defined][okf]\n\n"+
 		"[okf]: ../../okf/modules/auth.md\n"+
@@ -340,6 +341,7 @@ func TestMoveDeeperRepairsLinksThatLeaveTheBundle(t *testing.T) {
 	got := read(t, root, "changes/hours/old-fix.md")
 	for _, want := range []string{
 		"(../../../okf/modules/auth.md#login)",
+		"(<../../../okf/modules/auth.md>)",
 		"(../../../src/refund.go)",
 		"[okf]: ../../../okf/modules/auth.md",
 		"[^1]: See the notes.",

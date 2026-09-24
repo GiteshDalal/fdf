@@ -133,6 +133,18 @@ type Site struct {
 // nothing it depends on moved, or it is not a path at all (a URL, an anchor,
 // a mail address).
 func Retarget(target string, s Site, m Move) (string, bool) {
+	// A destination written in angle brackets keeps them; only the path inside
+	// changes. An unclosed bracket is not a destination this can read.
+	if strings.HasPrefix(target, "<") {
+		if len(target) < 2 || !strings.HasSuffix(target, ">") {
+			return "", false
+		}
+		nt, ok := Retarget(target[1:len(target)-1], s, m)
+		if !ok {
+			return "", false
+		}
+		return "<" + nt + ">", true
+	}
 	if target == "" || strings.HasPrefix(target, "#") || strings.Contains(target, "://") ||
 		strings.HasPrefix(target, "mailto:") || strings.HasPrefix(target, "tel:") {
 		return "", false
