@@ -12,31 +12,19 @@ func TestFindReturnsEveryTargetAndMarksCode(t *testing.T) {
 		"~~~markdown\n[z](tilde.md)\n~~~\n" +
 		"````\n```\n[w](inner.md)\n```\n````\n" +
 		"after [b](four.md#frag)\n"
-	want := []Link{
-		{Target: "one.md"},
-		{Target: "pics/x.png"},
-		{Target: "../two.md", Def: true},
-		{Target: "three.md", Def: true},
-		{Target: "code.md", InCode: true},
-		{Target: "fence.md", InCode: true},
-		{Target: "fence-def.md", Def: true, InCode: true},
-		{Target: "tilde.md", InCode: true},
-		{Target: "inner.md", InCode: true},
-		{Target: "four.md#frag"},
+	want := []wantLink{
+		{target: "one.md"},
+		{target: "pics/x.png"},
+		{target: "../two.md", def: true},
+		{target: "three.md", def: true},
+		{target: "code.md", inCode: true},
+		{target: "fence.md", inCode: true},
+		{target: "fence-def.md", def: true, inCode: true},
+		{target: "tilde.md", inCode: true},
+		{target: "inner.md", inCode: true},
+		{target: "four.md#frag"},
 	}
-	got := Find(text)
-	if len(got) != len(want) {
-		t.Fatalf("Find found %d links, want %d: %+v", len(got), len(want), got)
-	}
-	for i, g := range got {
-		w := want[i]
-		if g.Target != w.Target || g.Def != w.Def || g.InCode != w.InCode {
-			t.Errorf("link %d = %+v; want target %q def=%v inCode=%v", i, g, w.Target, w.Def, w.InCode)
-		}
-		if text[g.Start:g.End] != g.Target {
-			t.Errorf("link %d: offsets [%d:%d] hold %q, not the target %q", i, g.Start, g.End, text[g.Start:g.End], g.Target)
-		}
-	}
+	checkFind(t, text, want)
 }
 
 // A fence that never closes — a document cut off mid-edit — still marks
