@@ -241,6 +241,44 @@ func TestFindMarksCodeAsCommonMarkDoes(t *testing.T) {
 	})
 }
 
+// Code returns the ranges Find reads as code, in order: a fenced block from
+// its opening fence through its closing one, a heading it quotes included;
+// each line of an indented block; each code span with its backticks, one of
+// unequal runs included; and a fence that nothing closes, to the end of the
+// text. A link is in code exactly when its target starts in one of them.
+func TestCodeReturnsTheRangesFindReadsAsCode(t *testing.T) {
+	text := "Use ``a`b`` then [x](x.md) and `c`.\n\n" +
+		"```markdown\n# Example\n[y](y.md)\n```\n\n" +
+		"    [z](z.md) indented\n    and more\n\n" +
+		"~~~\n[w](w.md) unclosed"
+	want := []string{
+		"``a`b``",
+		"`c`",
+		"```markdown\n# Example\n[y](y.md)\n```\n",
+		"    [z](z.md) indented\n",
+		"    and more\n",
+		"~~~\n[w](w.md) unclosed",
+	}
+	got := Code(text)
+	if len(got) != len(want) {
+		t.Fatalf("Code found %d ranges, want %d: %+v", len(got), len(want), got)
+	}
+	for i, s := range got {
+		if text[s.Start:s.End] != want[i] {
+			t.Errorf("range %d = %q, want %q", i, text[s.Start:s.End], want[i])
+		}
+	}
+	for _, l := range Find(text) {
+		in := false
+		for _, s := range got {
+			in = in || s.Start <= l.Start && l.Start < s.End
+		}
+		if in != l.InCode || in != (l.Target != "x.md") {
+			t.Errorf("link %q: InCode=%v, in a range of Code=%v; want both %v", l.Target, l.InCode, in, l.Target != "x.md")
+		}
+	}
+}
+
 // A line read on its own, as fdf mv reads one listing line of an index, is
 // never code for its indentation alone.
 func TestFindReadsAnIndentedLineOnItsOwnAsProse(t *testing.T) {

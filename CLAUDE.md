@@ -88,11 +88,13 @@ holds no `INDEX.md`.
 - **`cli/internal/links`** — the one link-repair engine. `Find` returns a Markdown text's
   link targets as CommonMark reads them (inline links and images, with any title or `<…>`
   destination, and reference definitions; a footnote is not a link, and a target in a
-  fenced or indented code block or a code span is marked as a sample), `Resolve` reads one
-  target as a path, and `Retarget` recomputes one after a `Move`: a relative link changes
-  whenever its file or its target moves, wherever the target is, inside the bundle or
-  outside it. A link written from the bundle root changes only when its target moves.
-  `fdf mv` uses it, and so does the validator under a 1.0 pin.
+  fenced or indented code block or a code span is marked as a sample), `Code` returns the
+  byte ranges `Find` reads as code (`[]Span`), `Resolve` reads one target as a path, and
+  `Retarget` recomputes one after a `Move`: a relative link changes whenever its file or
+  its target moves, wherever the target is, inside the bundle or outside it. A link
+  written from the bundle root changes only when its target moves. `fdf mv` uses it, and
+  so does the validator under a 1.0 pin (`sectionTargets` also skips a heading line that
+  starts in `Code`).
 
 - **`cli/internal/layout`** — the one source of 1.0 positions: the closed root (its own
   files, the five Context documents and the six `Registers`), groups nested to any depth in

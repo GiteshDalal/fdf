@@ -24,6 +24,12 @@ flow is [documented][gone], and so are [the notes](<notes/a b.md>).
 
 A span, ``with `[x](nowhere-span.md)` inside``.
 
+A sample, fenced:
+
+```text
+[sample](nowhere-fenced.md)
+```
+
 [gone]: /features/gone.md
 
 # Scenarios

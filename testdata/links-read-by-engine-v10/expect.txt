@@ -5,3 +5,8 @@ not-contains: The approved design
 not-contains: nowhere
 not-contains: (F6)
 not-contains: (F7)
+not-contains: `# Tasks` does not link 02-receipt.md (F6)
+not-contains: `# Tasks` does not link 03-confirm.md (F6)
+not-contains: `# Tasks` links 04-nowhere.md, which does not exist (F6)
+not-contains: version "2.0.0" but not listed in releases/2.0.0.md (F7)
+not-contains: broken cross-link -> nowhere-fenced.md

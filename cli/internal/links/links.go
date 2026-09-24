@@ -33,8 +33,8 @@ var (
 	// match only when a [ opens its link text.
 	inlineRe = regexp.MustCompile(`\]\([ \t]*(<[^<>\n]*>|[^)\s]+)(?:\s+(?:"[^"]*"|'[^']*'|\([^()]*\)))?[ \t]*\)`)
 	// defRe matches a reference definition, [label]: target, at any
-	// indentation: codeRanges decides whether an indented one is code. A
-	// label that starts with ^ is a footnote, whose text is not a link.
+	// indentation: Code decides whether an indented one is code. A label
+	// that starts with ^ is a footnote, whose text is not a link.
 	defRe      = regexp.MustCompile(`(?m)^[ \t]*\[[^\]\n^][^\]\n]*\]:[ \t]*(<[^<>\n]*>|\S+)`)
 	fenceRe    = regexp.MustCompile("^(`{3,}|~{3,})")
 	listItemRe = regexp.MustCompile(`^ {0,3}(?:[-*+]|\d{1,9}[.)])(?:[ \t]|$)`)
@@ -45,7 +45,7 @@ var (
 // and reference definitions. A target inside a code block or a code span is
 // returned with InCode set.
 func Find(text string) []Link {
-	code := codeRanges(text)
+	code := Code(text)
 	var out []Link
 	for _, m := range inlineRe.FindAllStringSubmatchIndex(text, -1) {
 		if opensLink(text, m[0]) {
@@ -88,18 +88,24 @@ func opensLink(text string, end int) bool {
 	return false
 }
 
-type span struct{ start, end int }
+// Span is a run of a text's bytes, text[Start:End].
+type Span struct{ Start, End int }
 
-// codeRanges marks what is code in a text: fenced blocks, indented code
-// blocks and code spans. A fence closes on a line of the same character at
-// least as long as the one that opened it. An indented code block is a line
-// indented four columns or more (a tab reaches the next multiple of four)
-// after a blank line, outside a list, and the indented lines that follow it.
-// The text's first line continues whatever came before it, so a line read on
-// its own, such as one listing line, is never code for its indentation alone.
-// Code spans are marked in each block of prose.
-func codeRanges(text string) []span {
-	var out []span
+// Code returns the byte ranges of text that Find reads as code, in order:
+// each fenced block, from its opening fence through its closing one, or to
+// the end of the text when nothing closes it; each line of an indented code
+// block; and each code span, its backticks included. A link whose target
+// starts in one of them is returned with InCode set.
+//
+// A fence closes on a line of the same character at least as long as the
+// one that opened it. An indented code block is a line indented four columns
+// or more (a tab reaches the next multiple of four) after a blank line,
+// outside a list, and the indented lines that follow it. The text's first
+// line continues whatever came before it, so a line read on its own, such as
+// one listing line, is never code for its indentation alone. Code spans are
+// marked in each block of prose.
+func Code(text string) []Span {
+	var out []Span
 	fence, fenceStart := "", 0
 	prose := -1 // where the current block of prose starts
 	endProse := func(at int) {
@@ -117,7 +123,7 @@ func codeRanges(text string) []span {
 		switch {
 		case fence != "":
 			if strings.HasPrefix(t, fence) && strings.Trim(t, fence[:1]) == "" {
-				out = append(out, span{fenceStart, pos})
+				out = append(out, Span{fenceStart, pos})
 				fence = ""
 			}
 			continue
@@ -131,7 +137,7 @@ func codeRanges(text string) []span {
 			continue
 		case columns(line) >= 4 && (indented || blank && !inList):
 			endProse(start)
-			out = append(out, span{start, pos})
+			out = append(out, Span{start, pos})
 			indented = true
 		default:
 			indented = false
@@ -153,7 +159,7 @@ func codeRanges(text string) []span {
 	}
 	endProse(len(text))
 	if fence != "" {
-		out = append(out, span{fenceStart, len(text)})
+		out = append(out, Span{fenceStart, len(text)})
 	}
 	return out
 }
@@ -178,8 +184,8 @@ func columns(line string) int {
 // codeSpans marks the code spans in text[start:end], one block of prose. A run
 // of backticks opens a span, and the next run of the same length closes it,
 // on the same line or a later one; a run that nothing closes is literal.
-func codeSpans(text string, start, end int) []span {
-	var out []span
+func codeSpans(text string, start, end int) []Span {
+	var out []Span
 	run := func(i int) int { // the end of the backtick run at i
 		for i < end && text[i] == '`' {
 			i++
@@ -200,7 +206,7 @@ func codeSpans(text string, start, end int) []span {
 			}
 			e := run(k)
 			if e-k == open-i {
-				out = append(out, span{i, e})
+				out = append(out, Span{i, e})
 				next = e
 				break
 			}
@@ -211,9 +217,9 @@ func codeSpans(text string, start, end int) []span {
 	return out
 }
 
-func inRanges(rs []span, at int) bool {
+func inRanges(rs []Span, at int) bool {
 	for _, r := range rs {
-		if at >= r.start && at < r.end {
+		if at >= r.Start && at < r.End {
 			return true
 		}
 	}

@@ -767,7 +767,7 @@ func Validate(root string, opts Options) int {
 			listed := map[string]bool{}
 			taskDir := filepath.Join(rootAbs, filepath.FromSlash(fid))
 			planBody := p.planBody
-			if specV7 {
+			if specV7 && !v1 {
 				planBody = linkScanText(planBody) // a link in code is a sample, not a listing
 			}
 			for _, t := range sectionLinks(planBody, "Tasks", v1) {
@@ -1020,12 +1020,23 @@ func sectionLinks(body, heading string, v1 bool) []string {
 // sectionTargets is sectionLinks under 1.0: the links the links engine finds
 // in each `# <heading>` section, outside code. A title after a target, a
 // destination in angle brackets and a reference definition read as they do
-// everywhere else.
+// everywhere else. It reads the body as written, so a heading line that
+// starts in code, such as one a fenced sample quotes, neither opens a
+// section nor closes one.
 func sectionTargets(body, heading string) []string {
+	code := links.Code(body)
+	inCode := func(at int) bool {
+		for _, s := range code {
+			if s.Start <= at && at < s.End {
+				return true
+			}
+		}
+		return false
+	}
 	var sections [][2]int // byte ranges; an end of -1 runs to the end of body
 	pos := 0
 	for _, line := range strings.SplitAfter(body, "\n") {
-		if m := headingRe.FindStringSubmatch(strings.TrimRight(line, "\r\n")); m != nil {
+		if m := headingRe.FindStringSubmatch(strings.TrimRight(line, "\r\n")); m != nil && !inCode(pos) {
 			if n := len(sections); n > 0 && sections[n-1][1] < 0 {
 				sections[n-1][1] = pos
 			}

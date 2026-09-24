@@ -356,7 +356,7 @@ func (c *collection) release(rel, version string, d doc) {
 		c.warn("%s: missing recommended `date`", rel)
 	}
 	body := d.body
-	if c.v7 {
+	if c.v7 && !c.v1 {
 		body = linkScanText(body) // a link in code is a sample, not a listing
 	}
 	c.releases[version] = &releaseInfo{rel, d.status, body}
