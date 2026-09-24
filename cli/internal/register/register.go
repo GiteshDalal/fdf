@@ -241,8 +241,14 @@ func firstParagraphOf(text, heading string) string {
 	return strings.Join(para, " ")
 }
 
-// day trims an ISO timestamp to its date, so the table stays narrow.
+// day is the UTC date an entry was filed, so the table stays narrow: a date
+// as it is, and an RFC 3339 time on the UTC date of its instant — 23:30 at
+// -05:00 is the next day in UTC, the date every fdf command writes. Anything
+// else is cut to a date's width, as it was written.
 func day(ts string) string {
+	if t, err := time.Parse(time.RFC3339, ts); err == nil {
+		return t.UTC().Format(time.DateOnly)
+	}
 	if len(ts) >= 10 {
 		return ts[:10]
 	}

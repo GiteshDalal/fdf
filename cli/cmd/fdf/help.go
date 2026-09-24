@@ -309,8 +309,8 @@ var helpTopics = []helpTopic{
 			"the project says and what the code does — work left undone, and rules\n" +
 			"the codebase does not follow everywhere yet.\n" +
 			"\n" +
-			"Without a slug it prints the register: status, ID, filing date and title.\n" +
-			"With a slug it files a new debt, status `open` (later `accepted` or\n" +
+			"Without a slug it prints the register: status, ID, filing date (UTC) and\n" +
+			"title. With a slug it files a new debt, status `open` (later `accepted` or\n" +
 			"`resolved`), and lists it in the index beside it. Set `resource` to the\n" +
 			"paths that carry the gap: that is how later work finds the debt, and R1\n" +
 			"fails it once those paths are gone.\n" +

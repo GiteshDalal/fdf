@@ -69,6 +69,39 @@ func TestListFiltersAndCounts(t *testing.T) {
 	}
 }
 
+// FILED is the UTC date: an RFC 3339 time with an offset is converted before
+// it is cut to its date, and a date is shown as it is.
+func TestListFiledIsTheUTCDate(t *testing.T) {
+	root := bundleRoot(t)
+	for id, stamp := range map[string]string{
+		"late-evening": "2026-09-16T23:30:00-05:00",
+		"early-hours":  "2026-09-16T01:30:00+05:30",
+		"utc":          "2026-09-16T12:00:00Z",
+		"date-only":    "2026-09-16",
+	} {
+		os.MkdirAll(filepath.Join(root, "debts"), 0o755)
+		os.WriteFile(filepath.Join(root, "debts", id+".md"), []byte("---\ntype: Debt\nstatus: open\ntitle: "+id+"\ntimestamp: "+stamp+"\n---\n\n# Gap\n\nx\n"), 0o644)
+	}
+	var out bytes.Buffer
+	if code := Debt.List(root, "", &out); code != 0 {
+		t.Fatalf("list: %d\n%s", code, out.String())
+	}
+	for id, want := range map[string]string{"late-evening": "2026-09-17", "early-hours": "2026-09-15", "utc": "2026-09-16", "date-only": "2026-09-16"} {
+		found := false
+		for _, line := range strings.Split(out.String(), "\n") {
+			if f := strings.Fields(line); len(f) >= 3 && f[1] == "debts/"+id {
+				found = true
+				if f[2] != want {
+					t.Errorf("debts/%s: FILED %s, want %s", id, f[2], want)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("debts/%s not listed:\n%s", id, out.String())
+		}
+	}
+}
+
 func TestCleanupLogsAndClearsOnlyResolved(t *testing.T) {
 	root := bundleRoot(t)
 	seed(t, root, "one", "open", "")
