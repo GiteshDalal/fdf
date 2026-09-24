@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/GiteshDalal/fdf/cli/internal/fdfroot"
+	"github.com/GiteshDalal/fdf/cli/internal/scaffold"
 )
 
 var (
@@ -112,7 +113,7 @@ func Resolve(root, id string) (target, error) {
 	switch docType {
 	case "Feature":
 		// Before v0.7 a draft had no siblings at all, a log included.
-		if first(statusRe, fm) == "draft" && !pinsV7(root) {
+		if first(statusRe, fm) == "draft" && !scaffold.PinAtLeast(root, 7) {
 			return target{}, fmt.Errorf("%s is a draft, and under this bundle's pin a draft feature has no trail siblings (F4). "+
 				"Log in the bundle-root LOG.md until its spec is approved, or `fdf migrate` to v0.7, where a draft may have a log", id)
 		}
@@ -137,24 +138,6 @@ func Resolve(root, id string) (target, error) {
 		return target{}, fmt.Errorf("%s.md has no `type`, so there is no telling which log it belongs to", id)
 	}
 	return target{}, fmt.Errorf("%s is a %s document, which has no log", id, docType)
-}
-
-var pinRe = regexp.MustCompile(`(?m)^fdf_version:\s*"?0\.(\d+)"?\s*$`)
-
-// pinsV7 reports whether the bundle pins spec v0.7 or later.
-func pinsV7(root string) bool {
-	raw, err := os.ReadFile(filepath.Join(root, "INDEX.md"))
-	if err != nil {
-		return false
-	}
-	fm, _ := split(string(raw))
-	m := pinRe.FindStringSubmatch(fm)
-	if m == nil {
-		return false
-	}
-	minor := 0
-	fmt.Sscanf(m[1], "%d", &minor)
-	return minor >= 7
 }
 
 func rootLog(note string) target {
