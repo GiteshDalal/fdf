@@ -123,11 +123,12 @@ var helpTopics = []helpTopic{
 		body: "Install or upgrade the " + countWord(len(install.SkillNames())) + " FDF skills for an AI agent, plus a\n" +
 			"'## Feature Document Format' primer in its instruction file (CLAUDE.md or\n" +
 			"AGENTS.md). Idempotent: re-running upgrades the skills and refreshes the\n" +
-			"primer, unless you edited it — an edited primer is left as it is, with a\n" +
-			"note. Installs into your home directory by default; --project installs\n" +
-			"into the current git project (nearest .git) so the setup is committed\n" +
-			"with the code. Re-run it after `fdf migrate` so the skills teach the new\n" +
-			"layout.",
+			"primer whenever this build's text differs from the installed one, even at\n" +
+			"the same version, unless you edited the primer — an edited primer is left\n" +
+			"as it is, with a note. Installs into your home directory by default;\n" +
+			"--project installs into the current git project (nearest .git) so the\n" +
+			"setup is committed with the code. Re-run it after `fdf migrate` so the\n" +
+			"skills teach the new layout.",
 		flags: []flagDoc{
 			{"--project", "install into the current git project instead of your home directory"},
 			{"--root <dir>", "bundle root the skills name (default docs/features, or FDF_ROOT_DIR)"},

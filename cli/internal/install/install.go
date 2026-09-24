@@ -6,13 +6,16 @@
 // upgraded in place while it is a primer some fdf version shipped, and left
 // alone, with a note, once someone has edited it.
 //
-// Installs are idempotent: an existing install at the current version and
-// bundle root is reported "up to date"; anything else is upgraded in place.
-// User-level and project-level installs coexist: each destination carries its
-// own .fdf-version markers and upgrades independently.
+// Installs are idempotent: an existing install of this build — same version,
+// same skill and primer text — at the same bundle root is reported "up to
+// date"; anything else is upgraded in place. User-level and project-level
+// installs coexist: each destination carries its own .fdf-version markers and
+// upgrades independently.
 package install
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"io/fs"
@@ -115,27 +118,38 @@ func Run(harnessName, base, root string, project bool, out io.Writer) int {
 	}
 
 	skillsDir := filepath.Join(append([]string{base}, skillsSeg...)...)
-	marker := Version + " root=" + root
+	bodies := make([]string, len(skillNames))
+	for i, name := range skillNames {
+		raw, err := fs.ReadFile(fdf.Assets, "skills/"+name+"/SKILL.md")
+		if err != nil {
+			fmt.Fprintf(out, "error: embedded skills/%s/SKILL.md: %v\n", name, err)
+			return 1
+		}
+		bodies[i] = string(raw)
+	}
+	marker := versionMarker(root, digest(append(append([]string(nil), skillNames...), bodies...)...), digest(strings.TrimRight(primer(root), "\n")))
 
+	// Read before anything is rewritten: the primer an earlier install
+	// recorded is how its untouched section is told from an edited one.
 	upToDate := true
+	recorded := map[string]bool{}
 	for _, name := range skillNames {
-		if v, err := os.ReadFile(filepath.Join(skillsDir, name, ".fdf-version")); err != nil || string(v) != marker {
+		v, err := os.ReadFile(filepath.Join(skillsDir, name, ".fdf-version"))
+		if err != nil || string(v) != marker {
 			upToDate = false
+		}
+		if p := recordedPrimer(string(v)); p != "" {
+			recorded[p] = true
 		}
 	}
 
 	hadAny := false
 	if !upToDate {
-		for _, name := range skillNames {
+		for i, name := range skillNames {
 			if _, err := os.Stat(filepath.Join(skillsDir, name)); err == nil {
 				hadAny = true
 			}
-			raw, err := fs.ReadFile(fdf.Assets, "skills/"+name+"/SKILL.md")
-			if err != nil {
-				fmt.Fprintf(out, "error: embedded skills/%s/SKILL.md: %v\n", name, err)
-				return 1
-			}
-			body := string(raw)
+			body := bodies[i]
 			if root != defaultRoot {
 				body = strings.ReplaceAll(body, defaultRoot, root)
 			}
@@ -164,7 +178,7 @@ func Run(harnessName, base, root string, project bool, out io.Writer) int {
 	}
 
 	instrPath := filepath.Join(append([]string{base}, instrSeg...)...)
-	instrVerb, code := ensurePrimer(instrPath, root, out)
+	instrVerb, code := ensurePrimer(instrPath, root, recorded, out)
 	if code != 0 {
 		return code
 	}
@@ -191,6 +205,38 @@ func Run(harnessName, base, root string, project bool, out io.Writer) int {
 	}
 	fmt.Fprintf(out, "; %s primer %s in %s\n", primerHeading, instrVerb, instrPath)
 	return 0
+}
+
+// versionMarker is what each installed skill's .fdf-version records: the
+// version, digests of the skills and the primer this build installs, and the
+// bundle root baked into them — last, since a root may hold spaces. The
+// digests tell two builds of one version apart, so a development build is
+// upgraded by the release that shares its version number. A marker written by
+// v0.6.3 or earlier is "<version> root=<root>", with no digests.
+func versionMarker(root, skillsDigest, primerDigest string) string {
+	return fmt.Sprintf("%s skills=%s primer=%s root=%s", Version, skillsDigest, primerDigest, root)
+}
+
+// recordedPrimer is the primer digest a .fdf-version records, or "" when it
+// records none.
+func recordedPrimer(marker string) string {
+	head, _, _ := strings.Cut(marker, " root=")
+	for _, f := range strings.Fields(head) {
+		if d, ok := strings.CutPrefix(f, "primer="); ok {
+			return d
+		}
+	}
+	return ""
+}
+
+// digest is a short fingerprint of texts, in order.
+func digest(texts ...string) string {
+	h := sha256.New()
+	for _, t := range texts {
+		io.WriteString(h, t)
+		h.Write([]byte{0})
+	}
+	return hex.EncodeToString(h.Sum(nil))[:12]
 }
 
 // removeLegacyCommands deletes the superseded fdf slash commands from dir and
@@ -949,11 +995,13 @@ func sectionMatchesLegacy(section, root string) bool {
 
 // ensurePrimer places or refreshes the instruction-file primer. A missing
 // section is appended. An existing section that matches a primer some CLI
-// version shipped (current → no-op; superseded → replaced in place) is
-// managed content; anything else was user-edited and is left untouched with
-// a warning. Legacy pre-0.3 managed blocks are removed. Returns a verb for
+// version shipped (current → no-op; superseded → replaced in place), or the
+// primer an earlier install recorded (recorded holds its digests: an earlier
+// build of this same version, or the same text for another root), is managed
+// content; anything else was user-edited and is left untouched with a
+// warning. Legacy pre-0.3 managed blocks are removed. Returns a verb for
 // reporting: "added", "updated", or "unchanged".
-func ensurePrimer(path, root string, out io.Writer) (string, int) {
+func ensurePrimer(path, root string, recorded map[string]bool, out io.Writer) (string, int) {
 	existing, _ := os.ReadFile(path)
 	content := string(existing)
 	verb := "unchanged"
@@ -967,7 +1015,7 @@ func ensurePrimer(path, root string, out io.Writer) (string, int) {
 		switch {
 		case section == strings.TrimRight(primer(root), "\n"):
 			// Current text; nothing to do.
-		case sectionMatchesLegacy(section, root):
+		case sectionMatchesLegacy(section, root) || recorded[digest(section)]:
 			repl := strings.TrimRight(primer(root), "\n") + "\n"
 			if e < len(content) {
 				repl += "\n"
