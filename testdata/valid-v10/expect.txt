@@ -1,0 +1,5 @@
+exit: 0
+contains: Bundle is conformant with FDF v1.0
+not-contains: FAIL
+not-contains: broken cross-link
+not-contains: (F12)

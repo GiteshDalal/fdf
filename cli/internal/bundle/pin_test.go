@@ -22,6 +22,8 @@ func TestPinAtLeast(t *testing.T) {
 		{"0.6", v(0, 7), false},
 		{"0.2", v(0, 2), true},
 		{"0.7", v(1, 0), false},
+		{"1.0", v(1, 0), true},
+		{"1.0", v(0, 7), true}, // 1.0 keeps the rules 0.7 has
 		{"", v(0, 2), false},
 		{"0.9", v(0, 2), false}, // not a version this validator supports
 		{"v0.7", v(0, 2), false},

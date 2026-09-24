@@ -1,5 +1,5 @@
-// Package bundle validates an FDF bundle (spec v0.2 through v0.7). Rules
-// F1-F14 are format conformance; R1 is repo integrity. See SPEC.md.
+// Package bundle validates an FDF bundle (spec v0.2 through v0.7, and v1.0).
+// Rules F1-F14 are format conformance; R1 is repo integrity. See SPEC.md.
 package bundle
 
 import (
@@ -104,8 +104,9 @@ var debtStatuses = []string{"open", "accepted", "resolved"}
 var releaseStatuses = []string{"planned", "shipped"}
 
 // supportedVersions are the spec versions this validator understands; a pin
-// outside this set is an F1 error directing the user to `fdf migrate`.
-var supportedVersions = map[string]bool{"0.2": true, "0.3": true, "0.4": true, "0.5": true, "0.6": true, "0.7": true}
+// outside this set is an F1 error directing the user to `fdf migrate`, or to
+// a newer fdf.
+var supportedVersions = map[string]bool{"0.2": true, "0.3": true, "0.4": true, "0.5": true, "0.6": true, "0.7": true, "1.0": true}
 
 // pinAtLeast reports whether a supported pin is spec version gate or later.
 // An empty or unsupported pin validates under v0.2 rules (F1 reports the
@@ -307,6 +308,9 @@ func Validate(root string, opts Options) int {
 	specV6 := pinAtLeast(pinnedVer, specver.Version{Major: 0, Minor: 6})
 	specV7 := pinAtLeast(pinnedVer, specver.Version{Major: 0, Minor: 7})
 	specHasContext := pinAtLeast(pinnedVer, specver.Version{Major: 0, Minor: 3})
+	// v1: the 1.0 layout, whose positions come from the layout package. A
+	// 1.0 pin is past every 0.x gate: 1.0 keeps the rules 0.7 has.
+	v1 := pinAtLeast(pinnedVer, specver.Version{Major: 1, Minor: 0})
 	// contextDocs[name] records a seen root Context document and whether it is
 	// still an unfilled stub, for F9.
 	contextDocs := map[string]bool{} // name -> isStub
@@ -319,7 +323,9 @@ func Validate(root string, opts Options) int {
 		bugs: bugs, bugTrails: bugTrails, texts: texts, contextDocs: contextDocs,
 	}
 
-	filepath.WalkDir(rootAbs, func(path string, d os.DirEntry, err error) error {
+	// visitV0 reads each file's position from its path, as 0.x lays a bundle
+	// out.
+	visitV0 := func(path string, d os.DirEntry, err error) error {
 		// A hidden directory (.git, .obsidian) holds a tool's state, not FDF's.
 		if err == nil && d.IsDir() && path != rootAbs && strings.HasPrefix(d.Name(), ".") {
 			return filepath.SkipDir
@@ -561,7 +567,12 @@ func Validate(root string, opts Options) int {
 			errs = append(errs, fmt.Sprintf("%s: nested deeper than FDF structure allows (F3)", rel))
 		}
 		return nil
-	})
+	}
+	if v1 {
+		c.walkV1(rootAbs)
+	} else {
+		filepath.WalkDir(rootAbs, visitV0)
+	}
 
 	// No root INDEX.md means no pin: the bundle was just validated under v0.2
 	// rules, which is worth saying — it explains a wall of unexpected errors.
