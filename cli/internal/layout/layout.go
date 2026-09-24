@@ -96,7 +96,9 @@ const (
 )
 
 // Bundle answers position questions about one bundle. Its file system is
-// rooted at the bundle root.
+// rooted at the bundle root. A Bundle reads each directory once, the first
+// time a question needs it, and keeps what it read: it is a snapshot, so a
+// caller that changes the bundle makes a new one to see the change.
 type Bundle struct {
 	fsys  fs.FS
 	names map[string]map[string]bool // directory -> the names it holds, read once

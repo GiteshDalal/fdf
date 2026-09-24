@@ -101,9 +101,10 @@ holds no `INDEX.md`.
   every register but `releases/`, and the directory rule (a directory beside a feature,
   Change or Fix is its task directory; beside a practice, debt or bug it is an error; any
   other is a group). `Bundle.File` gives a Markdown file's `Position` (`Kind`, `Register`,
-  the owner's `ID`, a trail's `Role`), or a `Stray` with the path at fault (`Where`) and its
-  `Problem`; `Bundle.Dir` does the same for a directory. It reads names through an `fs.FS`
-  and matches them exactly, so a case-insensitive disk cannot change a result.
+  the `ID` of the document it is or belongs to, a trail's `Role`), or a `Stray` with the
+  path at fault (`Where`) and its `Problem`; `Bundle.Dir` does the same for a directory.
+  It reads names through an `fs.FS` and matches them exactly, so a case-insensitive disk
+  cannot change a result.
 
 - **`cli/internal/bundle`** (`validate.go`) — the heart of the tool. `Validate()` is the
   enforcement engine for the spec. Rules are coded **F1–F14** (format conformance) and **R1**
