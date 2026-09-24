@@ -64,7 +64,13 @@ The CLI is a flat command dispatcher (`cli/cmd/fdf/main.go`: a `map[string]func`
 `validate|init|new|practice|debt|bug|adopt|mv|lexicon|log|install|serve|migrate|spec|help|change|fix|history|release|version`).
 Each command is a thin wrapper around one
 `cli/internal/` package. Commands write usage/errors to stdout (not stderr) so tests capture
-everything, and flags must precede positional args (`ContinueOnError` FlagSets).
+everything, and flags must precede positional args (`ContinueOnError` FlagSets): every command
+parses through `parseArgs` (main.go), which refuses a flag after an argument and prints the
+command as it should have been typed. `helpTopics` in `help.go` is the single source for each
+command's usage line, its group and summary in the overview, `fdf help <command>` and `-h`;
+`help_test.go` checks that every dispatcher command has one topic and every flag it defines
+is documented. A command that works on a bundle stops with `fdfroot.NoBundle` when the root
+holds no `INDEX.md`.
 
 - **`cli/internal/fdfroot`** — root resolution, used by every command. Bundle root precedence:
   `--root` flag > `FDF_ROOT_DIR` env > `docs/features`. Relative roots resolve against the

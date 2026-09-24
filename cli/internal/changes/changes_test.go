@@ -214,6 +214,24 @@ func TestNewFixFromBugTakesOverTheAnalysis(t *testing.T) {
 	}
 }
 
+// A `# Violates` entry an editor wrapped is one entry: its whole scenario name
+// becomes the regression case, as validation reads it.
+func TestNewFixFromBugReadsAWrappedViolation(t *testing.T) {
+	root := bundle(t)
+	wrapped := strings.Replace(splitCaptureBug,
+		"- Full refund of a settled payment — only the first capture is refunded",
+		"- Full refund of a settled\n  payment — only the first capture is refunded", 1)
+	writeBug(t, root, "bugs/split-capture", wrapped)
+	var out bytes.Buffer
+	if code := NewFrom(root, "split-capture-fix", "Fix", nil, "bugs/split-capture", &out); code != 0 {
+		t.Fatalf("new fix from bug: %d\n%s", code, out.String())
+	}
+	raw, _ := os.ReadFile(filepath.Join(root, "changes", "split-capture-fix.md"))
+	if !strings.Contains(string(raw), "- Full refund of a settled payment — TODO the command") {
+		t.Fatalf("the wrapped name should be copied whole:\n%s", raw)
+	}
+}
+
 // A defect in code no feature documents has nothing for a Fix to amend: the
 // capability is adopted first.
 func TestNewFromBugWithoutAffectsPointsAtAdoption(t *testing.T) {

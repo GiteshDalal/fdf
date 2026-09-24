@@ -14,6 +14,9 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	// Aliased: this package's tests name a helper bundle.
+	validation "github.com/GiteshDalal/fdf/cli/internal/bundle"
 )
 
 var (
@@ -195,7 +198,8 @@ func readBug(root, id string) (*bugDoc, error) {
 		violates:  map[string][]string{},
 	}
 	cur := ""
-	for _, line := range strings.Split(section(text, "Violates"), "\n") {
+	// A wrapped entry is one entry, as validation reads it.
+	for _, line := range validation.LogicalLines(section(text, "Violates")) {
 		t := strings.TrimSpace(line)
 		switch {
 		case strings.HasPrefix(t, "## "):
