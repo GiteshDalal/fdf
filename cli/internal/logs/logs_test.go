@@ -206,6 +206,17 @@ func TestDraftFeatureHasNoLogBeforeV07(t *testing.T) {
 	}
 }
 
+// A pin's value may be single-quoted, as scaffold.Pin (and fdf validate)
+// already read it; fdf log must agree, not just tolerate double quotes.
+func TestDraftFeatureMayHaveALogUnderASingleQuotedPin(t *testing.T) {
+	root := fixture(t, "valid-bugs-v07")
+	index := read(t, root, "INDEX.md")
+	os.WriteFile(filepath.Join(root, "INDEX.md"), []byte(strings.Replace(index, `fdf_version: "0.7"`, `fdf_version: '0.7'`, 1)), 0o644)
+	os.WriteFile(filepath.Join(root, "venues", "holiday-hours.md"), []byte(draftFeature), 0o644)
+	logEntry(t, root, "venues/holiday-hours", "**Drafted**: waiting on the legal review of closure notices.")
+	validates(t, root, "venues/holiday-hours.log.md")
+}
+
 const draftFeature = "---\ntype: Feature\nstatus: draft\ntitle: Holiday hours\ndescription: Close a Venue for a day.\ntimestamp: 2027-01-15\n---\n\n# Feature\n\n```gherkin\nFeature: Holiday hours\n  As a Venue owner\n  I want to close my Venue for a day\n  So that customers are not sent to a closed door\n```\n\n# Scenarios\n\n```gherkin\nScenario: A closed day shows as closed\n  Given a Venue closed on 2027-12-25\n  When a customer views its opening hours\n  Then the day shows as closed\n```\n"
 
 func TestUnknownIDAndMissingBundle(t *testing.T) {
