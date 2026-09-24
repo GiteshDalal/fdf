@@ -124,7 +124,7 @@ code that no longer exists.
 the software doing something observably wrong — that have not been repaired yet:
 not diagnosed, waiting on a decision, in code no feature documents, or
 deferred. A bug states its `# Symptom` and `# Expected`, and cites under
-`# Violates` the scenarios it contradicts, verbatim. It is **never resolved in
+`# Violates` the scenarios it contradicts, verbatim. It is **never repaired in
 place**: its repair is a `Fix` or `Change` that names it in `resolves`
 (`fdf fix --from bugs/<id>` copies the analysis), and rule **F14** will not let
 that repair land while the bug still reads as open — nor let a bug be
@@ -179,7 +179,7 @@ fdf new payments/instant-refunds
 fdf validate                 # F1-F14 + R1; exit 1 on any violation
 fdf validate --strict-domain # …and F12 banned words become errors (or `strict: true` in DOMAIN.md)
 fdf practice permission-checks  # scaffold a Practice under practices/
-fdf adopt --resource src/payments/card.go payments/card-payments  # map existing code
+fdf adopt --resource internal/payments/card.go payments/card-payments  # map existing code
 fdf adopt                    # the adoption map: built, adopted, and unclaimed code
 
 fdf debt                     # the register: status, id, filing date, title
@@ -195,17 +195,17 @@ fdf lexicon --term Venue --fix --dry-run  # …sweep one term, reviewing the dif
 fdf log payments/instant-refunds "**Specified**: design approved"  # into the feature's own log, created on first use
 fdf log "**Checkpoint**: Context documents current"  # the root LOG.md: bundle-wide events only
 fdf spec                     # print the format spec (-v 0.4 for an older one)
-fdf help                     # every command with examples
+fdf help                     # every command with examples (fdf <command> --help for one)
 fdf serve                    # browse the bundle (bun x mdts)
 
-# after a feature ships
+# after a feature is delivered
 fdf change --affects payments/instant-refunds refund-window   # behavior should differ
 fdf fix    --affects payments/instant-refunds refund-rounding # code drifted from the doc
 fdf fix    --from bugs/refund-split-capture refund-split-capture  # …repairing a filed bug
-fdf history payments/instant-refunds                          # what happened since it shipped
+fdf history payments/instant-refunds                          # what happened since it was delivered
 fdf release 1.2.0            # derive the release doc from `version:` fields; --ship to close it
 fdf install claude-code      # user-level skills + "## Feature Document Format" primer
-fdf install codex            #   (primer skipped if the heading is already present)
+fdf install codex            #   (a primer you edited is left alone; an older one is upgraded)
 fdf install opencode
 fdf install --project claude-code   # project-level: skills under .claude/, primer in ./CLAUDE.md
 fdf migrate                  # mechanical upgrade to the current spec version
@@ -288,8 +288,8 @@ the **project** root.
    the `Practice` and `Debt` types, or `DOMAIN.md`, and stay stale in
    CLAUDE.md/AGENTS.md
    until refreshed. `fdf install` upgrades skills automatically when the
-   version marker changes; if your primer heading already exists with old
-   wording, edit or replace that section.
+   version marker changes, and a primer it wrote with them; a primer you
+   edited is left alone, so edit or replace that section yourself.
 
 ## Skills
 
@@ -348,9 +348,9 @@ design gate.
 
 `fdf-debug` → `fdf-execute`
 
-A feature that has not shipped is repaired in place as task work. `Change`
-and `Fix` are only for `done` / `retired` features — F10 rejects anything
-else.
+A feature that has not been delivered is repaired in place as task work. `Change`
+and `Fix` are only for delivered (`done` or `adopted`) and `retired`
+features — F10 rejects anything else.
 
 **Change what a delivered feature does**
 

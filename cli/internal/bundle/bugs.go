@@ -166,7 +166,7 @@ func checkBugIntegrity(bugs map[string]*bugInfo, trails map[string]string, featu
 				*errs = append(*errs, fmt.Sprintf("%s: status 'resolved' requires a `# Resolution` naming what closed it (F14)", b.rel))
 			}
 			// A defect known to contradict a scenario is closed only by the
-			// document that repaired it: a bug is never resolved in place.
+			// document that repaired it: a bug is never repaired in place.
 			if hasHeading(b.body, violatesHeading) && len(resolvedBy[id]) == 0 {
 				*errs = append(*errs, fmt.Sprintf("%s: resolved while it still has a `# Violates` section, but no done Fix or Change names it in `resolves` — a repair goes through the document that authorizes it; if the finding was wrong, drop `# Violates` and say why in `# Resolution` (F14)", b.rel))
 			}

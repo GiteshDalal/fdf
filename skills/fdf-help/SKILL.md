@@ -77,7 +77,7 @@ investigation's `# Symptom` and `# Expected`, and the scenarios they contradict
 under `# Violates`. `fdf bug --open` reads the register. The line between the
 two registers: if someone could observe the software misbehaving it is a bug,
 even when a practice violation is the cause; a gap nobody can observe yet is a
-debt. A bug is **never resolved in place** — its repair is a `Fix` or `Change`
+debt. A bug is **never repaired in place** — its repair is a `Fix` or `Change`
 that names it in `resolves` (`fdf fix --from bugs/<id> …`), and once that lands
 the bug is `resolved`.
 
@@ -275,7 +275,7 @@ and so is the shortcut of doing it first and asking later.
 | "Validate failed, I'll just delete the scenario" | Never weaken content to silence a rule. fdf-validate has the honest fix for each code. |
 | "This already exists in code — I'll write it up as a `done` feature" | That invents a spec, a plan and tasks that never happened. It is an `adopted` feature — fdf-adopt. |
 | "I'll rename this feature file and fix the links myself" | A hand rename misses an `affects`, a heading or a link somewhere. `fdf mv` repairs every reference and logs the move. |
-| "It's a known bug, so I'll just patch it and close the bug" | A bug is never resolved in place. The repair is a Fix or Change that names it in `resolves` — that is what leaves the regression case behind. |
+| "It's a known bug, so I'll just patch it and close the bug" | A bug is never repaired in place. The repair is a Fix or Change that names it in `resolves` — that is what leaves the regression case behind. |
 | "I'll add the back-link on the feature" | Don't. `affects:` is the whole link; `fdf history <feature>` computes the rest. A hand-written back-link drifts. |
 
 ## Precedence

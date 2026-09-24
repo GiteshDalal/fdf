@@ -64,7 +64,7 @@ Fix body's `# Symptom` and `# Root cause` sections are waiting for.
    takes over the bug's analysis as this document's permanent record — its
    `# Symptom` and `# Root cause`, its `# Violates` scenarios as regression
    cases — defaults `affects` to the bug's, and writes `resolves: bugs/<id>`.
-   A bug is never resolved in place; this is how it is resolved.
+   A bug is never repaired in place; this is how it is repaired.
 
    Group it (`payments/refund-window`, usually after the affected feature's
    group) once `changes/` holds more than about ten documents; below that,
