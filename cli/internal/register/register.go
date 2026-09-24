@@ -357,7 +357,7 @@ func (k Kind) Cleanup(root string, dryRun, noLog bool, out io.Writer) int {
 	gone, kept := k.emptied(root, done)
 	if dryRun {
 		for _, g := range gone {
-			fmt.Fprintf(out, "would remove %s/INDEX.md and %s/: the group would hold no entry\n", g, g)
+			fmt.Fprintf(out, "would remove %s: the group would hold no entry\n", groupFiles(root, g))
 			if idx := scaffold.GroupListedIn(root, g); idx != "" {
 				fmt.Fprintf(out, "  would unlist %s/ from %s\n", g, idx)
 			}
@@ -401,6 +401,7 @@ func (k Kind) Cleanup(root string, dryRun, noLog bool, out io.Writer) int {
 	}
 	for _, g := range gone {
 		dir := filepath.Join(root, filepath.FromSlash(g))
+		what := groupFiles(root, g)
 		if err := os.Remove(filepath.Join(dir, "INDEX.md")); err != nil && !os.IsNotExist(err) {
 			fmt.Fprintln(out, "error:", err)
 			return 1
@@ -409,7 +410,7 @@ func (k Kind) Cleanup(root string, dryRun, noLog bool, out io.Writer) int {
 			fmt.Fprintln(out, "error:", err)
 			return 1
 		}
-		fmt.Fprintf(out, "removed %s/INDEX.md and %s/: the group holds no entry\n", g, g)
+		fmt.Fprintf(out, "removed %s: the group holds no entry\n", what)
 		// A listing of the group would link to nothing.
 		if idx, err := scaffold.UnlistGroup(root, g); err != nil {
 			fmt.Fprintln(out, "error:", err)
@@ -475,6 +476,15 @@ func (k Kind) emptied(root string, done []entry) (gone, kept []string) {
 		}
 	}
 	return gone, kept
+}
+
+// groupFiles names what removing an emptied group removes: its directory,
+// and its INDEX.md when it has one.
+func groupFiles(root, g string) string {
+	if fileExists(filepath.Join(root, filepath.FromSlash(g), "INDEX.md")) {
+		return g + "/INDEX.md and " + g + "/"
+	}
+	return g + "/"
 }
 
 func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }
