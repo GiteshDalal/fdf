@@ -39,6 +39,15 @@ func TestFindReturnsEveryTargetAndMarksCode(t *testing.T) {
 	}
 }
 
+// A fence that never closes — a document cut off mid-edit — still marks
+// everything after it as code, to the end of the text.
+func TestFindAnUnclosedFenceRunsToTheEndOfTheText(t *testing.T) {
+	got := Find("Before [a](a.md).\n```\n[b](b.md)\n")
+	if len(got) != 2 || got[0].Target != "a.md" || got[0].InCode || got[1].Target != "b.md" || !got[1].InCode {
+		t.Fatalf("Find = %+v; want a.md not in code and b.md in code", got)
+	}
+}
+
 func TestMoveNewPrefersFilesThenTheLongestDirectory(t *testing.T) {
 	m := Move{
 		Files: map[string]string{"docs/features/ekpie/x.md": "docs/fdf/features/ekpie/renamed.md"},
@@ -106,6 +115,10 @@ func TestRetargetFromAFileThatMovesDeeper(t *testing.T) {
 		{"a URL", "https://example.com/a.md", ""},
 		{"an anchor", "#problem", ""},
 		{"a mail address", "mailto:team@example.com", ""},
+		{"a destination in angle brackets", "<../../okf/modules/auth.md>", "<../../../okf/modules/auth.md>"},
+		{"a destination in angle brackets, with a fragment", "<../../okf/modules/auth.md#login>", "<../../../okf/modules/auth.md#login>"},
+		{"an unclosed angle bracket", "<../../okf/modules/auth.md", ""},
+		{"a URL in angle brackets", "<https://example.com/a.md>", ""},
 	})
 }
 
@@ -123,6 +136,7 @@ func TestRetargetFromAFileThatStaysToOneThatMoves(t *testing.T) {
 		{"the moved document from the bundle root", "/changes/refund-window.md", "/changes/payments/refund-window.md"},
 		{"a file in the moved task directory", "../changes/refund-window/01-shorten.md", "../changes/payments/refund-window/01-shorten.md"},
 		{"nothing moved at either end", "../../okf/modules/auth.md", ""},
+		{"the moved document, in angle brackets", "<../changes/refund-window.md>", "<../changes/payments/refund-window.md>"},
 	})
 }
 

@@ -325,9 +325,6 @@ func relSlash(rootAbs, p string) string {
 // move is the plan as the link engine reads it: bundle-relative paths.
 func (p *plan) move() links.Move { return links.Move{Files: p.files, Dirs: p.dirs} }
 
-// newPathOf maps a bundle-relative path through the move, or returns it as is.
-func (p *plan) newPathOf(rel string) (string, bool) { return p.move().New(rel) }
-
 // edit is one file's new text and how many references changed in it.
 type edit struct {
 	newRel, text string
@@ -344,6 +341,7 @@ type span struct {
 // mention of a moved document's ID.
 func rewriteAll(rootAbs string, p *plan) (map[string]*edit, error) {
 	edits := map[string]*edit{}
+	mv := p.move() // the same Move for every file and every link in it
 	err := filepath.WalkDir(rootAbs, func(q string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -363,7 +361,7 @@ func rewriteAll(rootAbs string, p *plan) (map[string]*edit, error) {
 			return rerr
 		}
 		text := string(raw)
-		newRel, _ := p.newPathOf(rel)
+		newRel, _ := mv.New(rel)
 		base := path.Base(rel)
 		isLog := base == "LOG.md" || strings.HasSuffix(base, ".log.md")
 
@@ -377,7 +375,7 @@ func rewriteAll(rootAbs string, p *plan) (map[string]*edit, error) {
 			if l.InCode {
 				continue // a sample, not a reference
 			}
-			if nt, ok := links.Retarget(l.Target, site, p.move()); ok {
+			if nt, ok := links.Retarget(l.Target, site, mv); ok {
 				reps = append(reps, span{l.Start, l.End, nt})
 			}
 		}
@@ -583,7 +581,10 @@ func moveListings(rootAbs string, p *plan, edits map[string]*edit) []string {
 	for i, line := range movedLines {
 		var reps []span
 		for _, l := range links.Find(line) {
-			if nt, ok := links.Retarget(l.Target, site, links.Move{}); ok && !l.InCode {
+			if l.InCode {
+				continue // a sample, not a reference
+			}
+			if nt, ok := links.Retarget(l.Target, site, links.Move{}); ok {
 				reps = append(reps, span{l.Start, l.End, nt})
 			}
 		}
