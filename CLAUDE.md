@@ -80,6 +80,11 @@ holds no `INDEX.md`.
   file whose gitdir holds `commondir` is a **linked worktree** and ends the walk there:
   the worktree is its own checkout, even inside the main repo's directory.
 
+- **`cli/internal/specver`** — spec versions: `Parse` reads `MAJOR.MINOR` (a bundle's
+  `fdf_version`, a `spec/<version>.md` name), and versions compare by number, so 1.0
+  follows 0.7 and 1.10 follows 1.2. Every version gate (`pinAtLeast` in `bundle` and
+  `scaffold`) and `scaffold.SpecVersions` go through it.
+
 - **`cli/internal/bundle`** (`validate.go`) — the heart of the tool. `Validate()` is the
   enforcement engine for the spec. Rules are coded **F1–F14** (format conformance) and **R1**
   (repo integrity); every error message ends with its rule code, e.g. `(F4)`. Highlights:
