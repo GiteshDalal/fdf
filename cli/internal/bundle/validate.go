@@ -727,7 +727,7 @@ func Validate(root string, opts Options) int {
 		if specV7 {
 			resolvedBy := checkResolves(changes, bugs, clearedBugs(rootAbs), &errs)
 			checkBugIntegrity(bugs, bugTrails, features, resolvedBy, v1, &errs, &warns)
-			checkDomainV7(rootAbs, opts.StrictDomain, texts, &errs, &warns)
+			checkDomainV7(rootAbs, opts.StrictDomain, texts, v1, &errs, &warns)
 		} else {
 			checkDomain(rootAbs, features, changes, opts.StrictDomain, &errs, &warns)
 		}

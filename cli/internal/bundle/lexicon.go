@@ -19,6 +19,9 @@ import (
 	"sort"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/GiteshDalal/fdf/cli/internal/layout"
+	"github.com/GiteshDalal/fdf/cli/internal/specver"
 )
 
 var (
@@ -489,6 +492,17 @@ func dirName(rootAbs, rel string) (string, bool) {
 	return "", false
 }
 
+// groupName is dirName under a 1.0 pin: the name of a group, at any depth in
+// any register. A register's own name, features/ included, is the format's,
+// a task directory is named by its document, and a directory with no
+// position has no name to scan.
+func groupName(b *layout.Bundle, rel string) (string, bool) {
+	if b.Dir(rel).Kind != layout.Group {
+		return "", false
+	}
+	return path.Base(rel), true
+}
+
 // docName returns the name a document's author chose: its slug, or a task's
 // name without its NN- prefix. Reserved and Context files, trail siblings
 // (named by their document) and releases (named by a version) have none.
@@ -508,20 +522,25 @@ func docName(rel string) (string, bool) {
 	return stem, true
 }
 
-// ScanBundle returns every banned word F12 sees in the bundle (v0.7), in path
-// order: a path's name first, then its text.
+// ScanBundle returns every banned word F12 sees in the bundle (v0.7 and
+// later), in path order: a path's name first, then its text.
 func ScanBundle(root string, l *Lexicon) []Occurrence {
 	rootAbs, err := filepath.Abs(root)
 	if err != nil {
 		return nil
 	}
-	return scanBundle(rootAbs, l, nil)
+	return scanBundle(rootAbs, l, nil, pinAtLeast(readPin(rootAbs), specver.Version{Major: 1, Minor: 0}))
 }
 
 // scanBundle is ScanBundle with the documents' texts already read, when the
 // caller has them: validation reads every file once, and reading each again
-// here would double the cost of the gate that runs after every edit.
-func scanBundle(rootAbs string, l *Lexicon, texts map[string]string) []Occurrence {
+// here would double the cost of the gate that runs after every edit. v1 reads
+// the names of a 1.0 bundle's groups through layout.
+func scanBundle(rootAbs string, l *Lexicon, texts map[string]string, v1 bool) []Occurrence {
+	var b *layout.Bundle
+	if v1 {
+		b = layout.New(os.DirFS(rootAbs))
+	}
 	var out []Occurrence
 	filepath.WalkDir(rootAbs, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -536,7 +555,11 @@ func scanBundle(rootAbs string, l *Lexicon, texts map[string]string) []Occurrenc
 			if strings.HasPrefix(d.Name(), ".") {
 				return filepath.SkipDir
 			}
-			if name, ok := dirName(rootAbs, rel); ok {
+			name, ok := dirName(rootAbs, rel)
+			if v1 {
+				name, ok = groupName(b, rel)
+			}
+			if ok {
 				out = append(out, l.scanName(rel+"/", name)...)
 			}
 			return nil
@@ -576,12 +599,13 @@ func LoadLexicon(root string) (*Lexicon, []string) {
 	return lex, append(errs, warns...)
 }
 
-// checkDomainV7 enforces F12 under a v0.7 pin: the lexicon's consistency, then
-// one line per document or name that uses a banned word, capped so a sweep in
-// progress does not bury every other finding. strict comes from the flag;
-// DOMAIN.md's `strict: true` turns it on too. texts holds the documents the
-// validation walk already read, by bundle-relative path.
-func checkDomainV7(rootAbs string, strictFlag bool, texts map[string]string, errs, warns *[]string) {
+// checkDomainV7 enforces F12 under a v0.7 or later pin: the lexicon's
+// consistency, then one line per document or name that uses a banned word,
+// capped so a sweep in progress does not bury every other finding. strict
+// comes from the flag; DOMAIN.md's `strict: true` turns it on too. texts holds
+// the documents the validation walk already read, by bundle-relative path; v1
+// is a 1.0 pin.
+func checkDomainV7(rootAbs string, strictFlag bool, texts map[string]string, v1 bool, errs, warns *[]string) {
 	lex := readLexicon(rootAbs, true, errs, warns)
 	if lex == nil {
 		return
@@ -597,7 +621,7 @@ func checkDomainV7(rootAbs string, strictFlag bool, texts map[string]string, err
 	}
 	var groups []*group
 	byKey := map[string]*group{}
-	for _, o := range scanBundle(rootAbs, lex, texts) {
+	for _, o := range scanBundle(rootAbs, lex, texts, v1) {
 		key := o.Rel
 		if o.InName() {
 			key = "\x00" + o.Rel
