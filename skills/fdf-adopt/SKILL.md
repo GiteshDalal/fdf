@@ -101,7 +101,8 @@ every later piece of work find the capability it is about to touch.
 6. **Log and gate**: one bundle-root `LOG.md` entry per batch, since a batch
    concerns the bundle rather than one feature —
    `fdf log "**Adopted**: 14 capabilities mapped in payments/ and orders/."` —
-   link any new group from the root `INDEX.md`, then `fdf validate` exit 0.
+   then `fdf validate` exit 0. `fdf adopt` lists a new group in the root
+   `INDEX.md` itself.
 
 ### Phase 2 — Backfill on touch
 

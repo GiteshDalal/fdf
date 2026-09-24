@@ -183,7 +183,7 @@ fdf practice permission-checks  # scaffold a Practice under practices/
 fdf adopt --resource internal/payments/card.go payments/card-payments  # map existing code
 fdf adopt                    # the adoption map: built, adopted, and unclaimed code
 
-fdf debt                     # the register: status, id, filing date, title
+fdf debt                     # the register: status, id, filing date (UTC), title
 fdf debt --open              # …only what is outstanding (also --accepted, --resolved)
 fdf debt authz-legacy-handlers  # file a new debt
 fdf debt --cleanup           # fold resolved debts into debts/LOG.md and clear them
@@ -206,7 +206,7 @@ fdf fix    --from bugs/refund-split-capture refund-split-capture  # …repairing
 fdf history payments/instant-refunds                          # what happened since it was delivered
 fdf release 1.2.0            # derive the release doc from `version:` fields; --ship to close it
 fdf install claude-code      # user-level skills + "## Feature Document Format" primer
-fdf install codex            #   (a primer you edited is left alone; an older one is upgraded)
+fdf install codex            #   (a primer you edited is left alone; one fdf wrote is upgraded)
 fdf install opencode
 fdf install --project claude-code   # project-level: skills under .claude/, primer in ./CLAUDE.md
 fdf migrate                  # mechanical upgrade to the current spec version

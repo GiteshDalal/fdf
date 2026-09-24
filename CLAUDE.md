@@ -139,9 +139,15 @@ holds no `INDEX.md`.
     downgrades F9 (unfilled Context stub) from error to warning — only `fdf migrate` sets it.
 
 - **`cli/internal/scaffold`** (`init`, `new`, and `Adopt`, which scaffolds an adopted map
-  entry), **`cli/internal/install`** (skills + a `## Feature Document Format` primer,
-  idempotent, never clobbers user edits; also removes the superseded slash commands by
-  exact name), and **`cli/internal/migrate`** (mechanical upgrades to the current spec
+  entry; `pin.go` mirrors the validator's gates for the commands: `ReservedDirs` is which
+  bundle-root directories the pin reserves, and `RequirePin` refuses to write a document
+  type the pin predates, pointing at `fdf migrate`; `listing.go` keeps the indexes:
+  `ListEntry`/`Unlist` for a document, `ListGroup` for a new group in its parent's index,
+  the root `INDEX.md` for a feature group), **`cli/internal/install`** (skills + a
+  `## Feature Document Format` primer, idempotent, never clobbers user edits; each
+  skill's `.fdf-version` reads `<version> skills=<digest> primer=<digest> root=<root>`, so
+  another build of the same version upgrades, and a primer an earlier install recorded
+  counts as fdf's own; also removes the superseded slash commands by exact name), and **`cli/internal/migrate`** (mechanical upgrades to the current spec
   version; 0.3→0.4 rewrites nested trail files to stem siblings and scaffolds
   `SURFACES.md`; 0.4→0.5, 0.5→0.6 and 0.6→0.7 are **additive**, so the pre-0.4 layout
   transform — pre-flight included — is skipped for bundles already in the stem layout.
@@ -154,8 +160,8 @@ holds no `INDEX.md`.
   **`cli/internal/register`** (`fdf debt` and `fdf bug`: `register.Debt` and
   `register.Bug` are two `Kind`s over one implementation — list with optional status
   filter, scaffold, and `--cleanup`, which folds resolved entries into `<dir>/LOG.md`
-  newest-first, with the first *paragraph* of `# Resolution`, and removes their files;
-  open and accepted entries are never touched, `--dry-run` previews, `--no-log` skips
+  newest-first, with the first *paragraph* of `# Resolution`, and removes their files,
+  listings and any group left empty; open and accepted entries are never touched, `--dry-run` previews, `--no-log` skips
   the log). **`cli/internal/changes`** (`fdf change`/`fdf fix` scaffolding, with
   `--from bugs/<id>` copying a bug's analysis and writing `resolves`, and `fdf history`,
   which computes a feature's post-delivery trail and known bugs from `affects:` rather

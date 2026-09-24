@@ -81,7 +81,8 @@ word" is never a root cause and never routes to a Fix.
    document per feature. An `adopted` feature is delivered like a `done` one.
    **No feature owns the code at all** — common in a codebase that predates
    its bundle — is a finding too: the repair will route through fdf-adopt.
-4. **Check both registers** — `fdf bug --open` and `fdf debt --open`. A bug
+4. **Check both registers** — `fdf bug --open` and `fdf debt --open` (below
+   v0.7 there is no bug register, and `fdf bug` says so). A bug
    or debt whose `resource` names a file in the trace, or whose `affects`
    names the feature, has already diagnosed this and says why it was left.
    Then the conversation changes: the defect was known, and the question is
@@ -182,6 +183,10 @@ the next person starts from it instead of from zero:
 ```bash
 fdf bug --affects <group>/<slug>[,…] [<group>/]<slug>
 ```
+
+On a bundle pinned below v0.7, `fdf bug` refuses, because the bug register
+arrived in v0.7: propose `fdf migrate`, or file the defect as a debt until
+then.
 
 - `# Symptom` — the verbatim reproduction and its failing output; or, for a
   defect found by reading, the code path and the input that reaches it. Say

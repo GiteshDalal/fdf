@@ -164,20 +164,25 @@ it appears as a link to that home, not a copy.
 - **Installed skills.** Each installed fdf skill has a `.fdf-version` file
   beside its `SKILL.md` — in a project install under `.claude/skills/`,
   `.codex/skills/` or `.opencode/skills/` — reading
-  `<version> root=<bundle root>`. A version older than `fdf version` prints,
-  or a root that is not this bundle's, means an install is due: propose
-  `fdf install --project <harness>`, where the harness is `claude-code`,
-  `codex` or `opencode`. It refreshes the skills and the managed primer
-  together; with everything current it writes nothing. A user-level install
-  (under the home directory) loads too: report its version, never change it.
+  `<version> skills=<digest> primer=<digest> root=<bundle root>` (an fdf
+  before v0.7 wrote `<version> root=<bundle root>`). A version older than
+  `fdf version` prints, or a root that is not this bundle's, means an
+  install is due: propose `fdf install --project <harness>`, where the
+  harness is `claude-code`, `codex` or `opencode`. It refreshes the skills
+  and the managed primer together; with everything current it writes
+  nothing. The digests tell two builds of one version apart, and only
+  `fdf install` compares them, so it is also the check when the version and
+  root match. A user-level install (under the home directory) loads too:
+  report its version, never change it.
 - **The managed primer** — the `## Feature Document Format` section of each
   instruction file. `fdf install` writes it word for word and refreshes it
-  only while it is exactly a text some fdf release shipped; once anyone edits
-  it, every later install leaves it alone (reporting `differs from the
-  shipped primer (user-edited?)`) and it goes stale with the next spec
-  version. Any line about *this* project inside it is a hand edit. To see
-  the current primer without touching the project, install into a scratch
-  repository and compare the sections:
+  only while it is exactly a text some fdf release shipped, or the text an
+  earlier install recorded; once anyone edits it, every later install
+  leaves it alone (reporting `differs from the shipped primer
+  (user-edited?)`) and it goes stale with the next spec version. Any line
+  about *this* project inside it is a hand edit. To see the current primer
+  without touching the project, install into a scratch repository and
+  compare the sections:
 
   ```bash
   s=$(mktemp -d) && git -C "$s" init -q && (cd "$s" && fdf install --project <harness> >/dev/null) && cat "$s/CLAUDE.md"   # AGENTS.md for codex/opencode
