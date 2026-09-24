@@ -1,0 +1,2 @@
+exit: 1
+contains: features/onboarding/signup.md: task directories may contain only NN-slug.md tasks (F3)

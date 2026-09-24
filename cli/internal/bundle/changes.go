@@ -226,13 +226,24 @@ func removals(d *changeDecl, replaces bool) []string {
 	return out
 }
 
+// featureHint is what F10 and F14 add under a 1.0 pin when an ID that names
+// no feature is a feature's ID written the 0.7 way, without the features/
+// every 1.0 feature ID starts with.
+func featureHint(id string, features map[string]*featureInfo, v1 bool) string {
+	if v1 && features["features/"+id] != nil {
+		return " — did you mean features/" + id + "?"
+	}
+	return ""
+}
+
 // checkChangeIntegrity is F10. It runs for bundles pinning v0.5 and later;
 // replaces is v0.6's reading of a name both removed and added (see removals).
 // v7 adds the v0.7 rules: a declaration holds only well-formed entries,
 // `retires` declares its features from the start and names only features in
 // `affects`, `replaced-by` names a feature that exists, and a name another
 // done Change adds back is no longer held against the Change that removed it.
-func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*featureInfo, pairs map[string]*pairInfo, replaces, v7 bool, errs *[]string) {
+// v1 suggests the full ID of a feature named the 0.7 way (featureHint).
+func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*featureInfo, pairs map[string]*pairInfo, replaces, v7, v1 bool, errs *[]string) {
 	ids := make([]string, 0, len(changes))
 	for id := range changes {
 		ids = append(ids, id)
@@ -292,7 +303,7 @@ func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*f
 			affected[fid] = true
 			f := features[fid]
 			if f == nil {
-				*errs = append(*errs, fmt.Sprintf("%s: `affects` names unknown feature %q (F10)", c.rel, fid))
+				*errs = append(*errs, fmt.Sprintf("%s: `affects` names unknown feature %q%s (F10)", c.rel, fid, featureHint(fid, features, v1)))
 				continue
 			}
 			// Delivered: done, retired, or (v0.7) adopted — a capability that
@@ -342,14 +353,14 @@ func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*f
 		sort.Strings(declFids)
 		for _, fid := range declFids {
 			if !affected[fid] {
-				*errs = append(*errs, fmt.Sprintf("%s: `# %s` declares `## %s`, which is not listed in `affects` (F10)", c.rel, wantHeading, fid))
+				*errs = append(*errs, fmt.Sprintf("%s: `# %s` declares `## %s`, which is not listed in `affects`%s (F10)", c.rel, wantHeading, fid, featureHint(fid, features, v1)))
 			}
 		}
 
 		for _, fid := range c.retires {
 			f := features[fid]
 			if f == nil {
-				*errs = append(*errs, fmt.Sprintf("%s: `retires` names unknown feature %q (F10)", c.rel, fid))
+				*errs = append(*errs, fmt.Sprintf("%s: `retires` names unknown feature %q%s (F10)", c.rel, fid, featureHint(fid, features, v1)))
 				continue
 			}
 			switch {
@@ -425,7 +436,7 @@ func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*f
 		for _, fid := range sortedFeatureIDs(features) {
 			for _, r := range features[fid].replacedBy {
 				if features[r] == nil {
-					*errs = append(*errs, fmt.Sprintf("%s: `replaced-by` names unknown feature %q (F10)", features[fid].rel, r))
+					*errs = append(*errs, fmt.Sprintf("%s: `replaced-by` names unknown feature %q%s (F10)", features[fid].rel, r, featureHint(r, features, v1)))
 				}
 			}
 		}
@@ -688,7 +699,7 @@ func checkChangeLifecycle(changes map[string]*changeInfo, pairs map[string]*pair
 
 // checkReleaseChanges is the F7 half covering a release's `# Changes` list:
 // the same bidirectional check features get, for Change and Fix documents.
-func checkReleaseChanges(rootAbs string, releases map[string]*releaseInfo, changes map[string]*changeInfo, errs *[]string) {
+func checkReleaseChanges(rootAbs string, releases map[string]*releaseInfo, changes map[string]*changeInfo, v1 bool, errs *[]string) {
 	versions := make([]string, 0, len(releases))
 	for v := range releases {
 		versions = append(versions, v)
@@ -696,8 +707,8 @@ func checkReleaseChanges(rootAbs string, releases map[string]*releaseInfo, chang
 	sort.Strings(versions)
 	for _, version := range versions {
 		r := releases[version]
-		for _, t := range sectionLinks(r.body, "Changes") {
-			resolved := resolveLink(rootAbs, r.rel, t)
+		for _, t := range sectionLinks(r.body, "Changes", v1) {
+			resolved := resolveLink(rootAbs, r.rel, t, v1)
 			if resolved == "" {
 				continue
 			}
@@ -735,8 +746,8 @@ func checkReleaseChanges(rootAbs string, releases map[string]*releaseInfo, chang
 			continue
 		}
 		found := false
-		for _, t := range sectionLinks(r.body, "Changes") {
-			if resolved := resolveLink(rootAbs, r.rel, t); resolved != "" &&
+		for _, t := range sectionLinks(r.body, "Changes", v1) {
+			if resolved := resolveLink(rootAbs, r.rel, t, v1); resolved != "" &&
 				strings.TrimSuffix(toSlash(relTo(rootAbs, resolved)), ".md") == id {
 				found = true
 			}

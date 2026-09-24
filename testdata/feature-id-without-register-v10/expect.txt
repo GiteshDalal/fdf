@@ -1,0 +1,7 @@
+exit: 1
+contains: features/payments/instant-refunds.md: depends-on "payments/card-payments" is not a known feature — did you mean features/payments/card-payments? (F10)
+contains: changes/card-rounding.md: `affects` names unknown feature "payments/card-payments" — did you mean features/payments/card-payments? (F10)
+contains: changes/card-retirement.md: `# Scenario changes` declares `## payments/card-payments`, which is not listed in `affects` — did you mean features/payments/card-payments? (F10)
+contains: changes/card-retirement.md: `retires` names unknown feature "payments/card-payments" — did you mean features/payments/card-payments? (F10)
+contains: bugs/card-declined.md: `affects` names unknown feature "payments/card-payments" — did you mean features/payments/card-payments? (F14)
+contains: bugs/card-settles-late.md: `# Violates` names `## payments/card-payments`, which is not listed in `affects` — did you mean features/payments/card-payments? (F14)

@@ -1,5 +1,5 @@
-// Package bundle validates an FDF bundle (spec v0.2 through v0.7). Rules
-// F1-F14 are format conformance; R1 is repo integrity. See SPEC.md.
+// Package bundle validates an FDF bundle (spec v0.2 through v0.7, and v1.0).
+// Rules F1-F14 are format conformance; R1 is repo integrity. See SPEC.md.
 package bundle
 
 import (
@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/GiteshDalal/fdf/cli/internal/fdfroot"
+	"github.com/GiteshDalal/fdf/cli/internal/links"
 	"github.com/GiteshDalal/fdf/cli/internal/specver"
 )
 
@@ -104,17 +105,19 @@ var debtStatuses = []string{"open", "accepted", "resolved"}
 var releaseStatuses = []string{"planned", "shipped"}
 
 // supportedVersions are the spec versions this validator understands; a pin
-// outside this set is an F1 error directing the user to `fdf migrate`.
-var supportedVersions = map[string]bool{"0.2": true, "0.3": true, "0.4": true, "0.5": true, "0.6": true, "0.7": true}
+// outside this set is an F1 error directing the user to `fdf migrate`, or to
+// a newer fdf.
+var supportedVersions = map[string]bool{"0.2": true, "0.3": true, "0.4": true, "0.5": true, "0.6": true, "0.7": true, "1.0": true}
 
-// pinAtLeast reports whether a supported pin is spec 0.<minor> or later. An
-// empty or unsupported pin validates under v0.2 rules (F1 reports the latter).
-func pinAtLeast(pin string, minor int) bool {
+// pinAtLeast reports whether a supported pin is spec version gate or later.
+// An empty or unsupported pin validates under v0.2 rules (F1 reports the
+// latter).
+func pinAtLeast(pin string, gate specver.Version) bool {
 	if !supportedVersions[pin] {
 		return false
 	}
 	v, ok := specver.Parse(pin)
-	return ok && v.AtLeast(specver.Version{Major: 0, Minor: minor})
+	return ok && v.AtLeast(gate)
 }
 
 // supportedList renders supportedVersions for error messages, so adding a
@@ -126,6 +129,22 @@ func supportedList() string {
 	}
 	specver.Sort(vs)
 	return strings.Join(vs, ", ")
+}
+
+// unsupportedPin is F1's error for a pin this validator does not check. A
+// version newer than every one it supports takes a newer fdf; any other,
+// `fdf migrate`.
+func unsupportedPin(pin string) string {
+	newer, ok := specver.Parse(pin)
+	for s := range supportedVersions {
+		if v, _ := specver.Parse(s); !v.Less(newer) {
+			ok = false
+		}
+	}
+	if ok {
+		return fmt.Sprintf("INDEX.md: fdf_version %q is newer than any version this fdf validates (%s) — upgrade fdf (F1)", pin, supportedList())
+	}
+	return fmt.Sprintf("INDEX.md: fdf_version %q is not a supported version (%s) — run `fdf migrate` (F1)", pin, supportedList())
 }
 
 // isStub reports whether a Context document still carries the stub marker
@@ -261,9 +280,8 @@ func Validate(root string, opts Options) int {
 	}
 
 	var errs, repoErrs, warns []string
-	type link struct{ src, target string }
-	var links []link
-	var resources []struct{ rel, field, path string }
+	var crossLinks []crossLink
+	var resources []resourceRef
 	features := map[string]*featureInfo{}
 	pairs := map[string]*pairInfo{}
 	releases := map[string]*releaseInfo{}
@@ -282,27 +300,33 @@ func Validate(root string, opts Options) int {
 	// SURFACES.md on v0.4+. Anything else validates under v0.2 rules.
 	pinnedVer := readPin(rootAbs)
 	// specStem: the stem-qualified trail layout (v0.4 onward).
-	specStem := pinAtLeast(pinnedVer, 4)
+	specStem := pinAtLeast(pinnedVer, specver.Version{Major: 0, Minor: 4})
 	// specV5: v0.5 and later — changes/, Change/Fix, `retired`, feature
 	// depends-on, F10. specV6 adds practices/, debts/, DOMAIN.md, F11-F13.
 	// specV7 adds bugs/ and F14, the `adopted` feature status, and F12's
 	// reach into every document and name.
-	specV5 := pinAtLeast(pinnedVer, 5)
-	specV6 := pinAtLeast(pinnedVer, 6)
-	specV7 := pinAtLeast(pinnedVer, 7)
-	specHasContext := pinAtLeast(pinnedVer, 3)
+	specV5 := pinAtLeast(pinnedVer, specver.Version{Major: 0, Minor: 5})
+	specV6 := pinAtLeast(pinnedVer, specver.Version{Major: 0, Minor: 6})
+	specV7 := pinAtLeast(pinnedVer, specver.Version{Major: 0, Minor: 7})
+	specHasContext := pinAtLeast(pinnedVer, specver.Version{Major: 0, Minor: 3})
+	// v1: the 1.0 layout, whose positions come from the layout package. A
+	// 1.0 pin is past every 0.x gate: 1.0 keeps the rules 0.7 has.
+	v1 := pinAtLeast(pinnedVer, specver.Version{Major: 1, Minor: 0})
 	// contextDocs[name] records a seen root Context document and whether it is
 	// still an unfilled stub, for F9.
 	contextDocs := map[string]bool{} // name -> isStub
 
-	pair := func(fid string) *pairInfo {
-		if pairs[fid] == nil {
-			pairs[fid] = &pairInfo{tasks: map[string]string{}, deps: map[string][]string{}, depRels: map[string]string{}}
-		}
-		return pairs[fid]
+	c := &collection{
+		stem: specStem, v5: specV5, v6: specV6, v7: specV7, v1: v1,
+		errs: &errs, warns: &warns, crossLinks: &crossLinks, resources: &resources, documents: &documents,
+		features: features, featureDeps: featureDeps, pairs: pairs, releases: releases, changes: changes,
+		practices: practices, practiceTrails: practiceTrails, debts: debts, debtTrails: debtTrails,
+		bugs: bugs, bugTrails: bugTrails, texts: texts, contextDocs: contextDocs,
 	}
 
-	filepath.WalkDir(rootAbs, func(path string, d os.DirEntry, err error) error {
+	// visitV0 reads each file's position from its path, as 0.x lays a bundle
+	// out.
+	visitV0 := func(path string, d os.DirEntry, err error) error {
 		// A hidden directory (.git, .obsidian) holds a tool's state, not FDF's.
 		if err == nil && d.IsDir() && path != rootAbs && strings.HasPrefix(d.Name(), ".") {
 			return filepath.SkipDir
@@ -331,16 +355,7 @@ func Validate(root string, opts Options) int {
 		if rel == "README.md" {
 			return nil
 		}
-		text := strings.TrimPrefix(string(raw), "\uFEFF")
-		if specV7 {
-			texts[filepath.ToSlash(rel)] = string(raw) // F12 reads it again, from here
-			if rel != "SPEC.md" && (placeholderRe.MatchString(linkScanText(text)) || gherkinPlaceholderRe.MatchString(text)) {
-				warns = append(warns, fmt.Sprintf("%s: still holds a scaffold's placeholder text (`TODO —`, `<role>`) — fill it in, or delete what does not apply", rel))
-			}
-		}
-		for _, m := range linkRe.FindAllStringSubmatch(linkScanText(text), -1) {
-			links = append(links, link{rel, m[1]})
-		}
+		text := c.read(rel, raw)
 
 		if reserved[name] {
 			// A changes/ group carries INDEX.md like any group; only a task
@@ -369,24 +384,7 @@ func Validate(root string, opts Options) int {
 				}
 				return nil
 			}
-			block, delimited, _ := splitFrontmatter(text)
-			if name == "INDEX.md" {
-				if delimited {
-					data, _ := parseFrontmatter(block)
-					if rel != "INDEX.md" || data == nil || data["fdf_version"] == nil {
-						warns = append(warns, fmt.Sprintf("%s: index file should not carry frontmatter", rel))
-					} else if v, _ := data["fdf_version"].(string); !supportedVersions[v] {
-						errs = append(errs, fmt.Sprintf("INDEX.md: fdf_version %q is not a supported version (%s) — run `fdf migrate` (F1)", v, supportedList()))
-					}
-				} else if rel == "INDEX.md" {
-					warns = append(warns, "INDEX.md: root index should pin fdf_version")
-				}
-				if !regexp.MustCompile(`(?m)^\s*[-*]\s+\[.*\]\(.*\)`).MatchString(text) {
-					warns = append(warns, fmt.Sprintf("%s: index file has no bulleted listing", rel))
-				}
-			} else { // LOG.md
-				checkLogBody(rel, text, specV7, &errs, &warns)
-			}
+			c.reserved(rel, name, text)
 			return nil
 		}
 
@@ -424,30 +422,10 @@ func Validate(root string, opts Options) int {
 			}
 		}
 
-		documents++
-		block, delimited, body := splitFrontmatter(text)
-		if !delimited {
-			errs = append(errs, fmt.Sprintf("%s: missing or unterminated frontmatter block (F1)", rel))
+		doc, ok := c.document(rel, text)
+		if !ok {
 			return nil
 		}
-		data, perr := parseFrontmatter(block)
-		if perr != nil {
-			errs = append(errs, fmt.Sprintf("%s: frontmatter is not parseable (F1): %v", rel, perr))
-			return nil
-		}
-		docType, _ := data["type"].(string)
-		if docType == "" {
-			errs = append(errs, fmt.Sprintf("%s: missing required non-empty `type` (F1)", rel))
-		}
-		for _, f := range recommended {
-			if data[f] == nil {
-				warns = append(warns, fmt.Sprintf("%s: missing recommended `%s`", rel, f))
-			}
-		}
-		if specV7 {
-			checkTimestamp(rel, data["timestamp"], &errs, &warns)
-		}
-		status, _ := data["status"].(string)
 
 		switch {
 		case specV5 && parts[0] == "changes" && len(parts) > 1:
@@ -469,60 +447,16 @@ func Validate(root string, opts Options) int {
 			case len(rest) == 1:
 				base := rest[0]
 				if m := changeTrailRoleRe.FindStringSubmatch(base); m != nil {
-					want := trailRoleType[m[2]]
-					if docType != want {
-						errs = append(errs, fmt.Sprintf("%s: expected `type: %s`, got %q (F3)", rel, want, docType))
-					}
-					cid := dir + "/" + m[1]
-					p := pair(cid)
-					switch m[2] {
-					case "spec":
-						p.spec = true
-					case "plan":
-						p.plan, p.planRel, p.planBody = true, rel, body
-					case "log":
-						checkLogBody(rel, text, specV7, &errs, &warns)
-					}
+					c.trail(rel, dir+"/"+m[1], m[2], doc, text)
 					return nil
 				}
 				if m := anyTrailAttemptRe.FindStringSubmatch(base); m != nil {
 					errs = append(errs, fmt.Sprintf("%s: unknown trail role %q under changes/ — allowed roles are spec, plan, log (test and surface belong to the affected feature) (F3)", rel, m[2]))
 					return nil
 				}
-				if docType != "Change" && docType != "Fix" {
-					errs = append(errs, fmt.Sprintf("%s: expected `type: Change` or `type: Fix`, got %q (F3)", rel, docType))
-					return nil
-				}
-				if !in(changeStatuses, status) {
-					errs = append(errs, fmt.Sprintf("%s: %s `status` must be one of %s, got %q (F2)", rel, docType, strings.Join(changeStatuses, "|"), status))
-				}
-				version, _ := data["version"].(string)
-				cid := dir + "/" + strings.TrimSuffix(base, ".md")
-				changes[cid] = &changeInfo{
-					rel: rel, id: cid, docType: docType, status: status, version: version, body: body,
-					affects: asList(data["affects"]), retires: asList(data["retires"]),
-					resolves: asList(data["resolves"]), timestamp: stamp(data["timestamp"]),
-				}
-				if len(fenceRe.FindAllStringSubmatch(body, -1)) > 0 {
-					errs = append(errs, fmt.Sprintf("%s: %s documents carry no Gherkin — behavior statements belong in the features they amend (F5)", rel, docType))
-				}
-				for _, res := range asList(data["resource"]) {
-					resources = append(resources, struct{ rel, field, path string }{rel, "resource", res})
-				}
+				c.change(rel, dir+"/"+strings.TrimSuffix(base, ".md"), doc)
 			case len(rest) == 2 && taskFileRe.MatchString(rest[1]):
-				if docType != "Task" {
-					errs = append(errs, fmt.Sprintf("%s: expected `type: Task`, got %q (F3)", rel, docType))
-				}
-				if !in(taskStatuses, status) {
-					errs = append(errs, fmt.Sprintf("%s: Task `status` must be one of %s, got %q (F2)", rel, strings.Join(taskStatuses, "|"), status))
-				}
-				p := pair(dir + "/" + rest[0])
-				p.tasks[rest[1]] = status
-				p.deps[rest[1]] = asList(data["depends-on"])
-				p.depRels[rest[1]] = rel
-				for _, res := range asList(data["resource"]) {
-					resources = append(resources, struct{ rel, field, path string }{rel, "resource", res})
-				}
+				c.task(rel, dir+"/"+rest[0], rest[1], doc)
 			case len(rest) == 2:
 				errs = append(errs, fmt.Sprintf("%s: task directories may contain only NN-slug.md tasks (F3)", rel))
 			default:
@@ -533,9 +467,9 @@ func Validate(root string, opts Options) int {
 			// its optional <slug>.log.md, and one level of groups. No tasks.
 			// debts/ holds Debt documents; bugs/ (v0.7) holds Bug documents.
 			register := parts[0]
-			wantType, noun := "Debt", "debt"
+			noun := "debt"
 			if register == "bugs" {
-				wantType, noun = "Bug", "bug"
+				noun = "bug"
 			}
 			rest := parts[1:]
 			dir := register
@@ -552,45 +486,14 @@ func Validate(root string, opts Options) int {
 			}
 			base := rest[0]
 			if m := logTrailRoleRe.FindStringSubmatch(base); m != nil {
-				if docType != "Log" {
-					errs = append(errs, fmt.Sprintf("%s: expected `type: Log`, got %q (F3)", rel, docType))
-				}
-				checkLogBody(rel, text, specV7, &errs, &warns)
-				if register == "bugs" {
-					bugTrails[dir+"/"+m[1]] = rel
-				} else {
-					debtTrails[dir+"/"+m[1]] = rel
-				}
+				c.registerLog(rel, register, dir+"/"+m[1], doc, text)
 				return nil
 			}
 			if m := anyTrailAttemptRe.FindStringSubmatch(base); m != nil {
 				errs = append(errs, fmt.Sprintf("%s: unknown trail role %q under %s/ — a %s is a register entry, not a unit of work; `log` is the only role (F3)", rel, m[2], register, noun))
 				return nil
 			}
-			if docType != wantType {
-				errs = append(errs, fmt.Sprintf("%s: expected `type: %s`, got %q (F3)", rel, wantType, docType))
-				return nil
-			}
-			if !in(debtStatuses, status) {
-				errs = append(errs, fmt.Sprintf("%s: %s `status` must be one of %s, got %q (F2)", rel, wantType, strings.Join(debtStatuses, "|"), status))
-			}
-			id := dir + "/" + strings.TrimSuffix(base, ".md")
-			title, _ := data["title"].(string)
-			timestamp, _ := data["timestamp"].(string)
-			if register == "bugs" {
-				bugs[id] = &bugInfo{
-					rel: rel, id: id, status: status, body: body,
-					affects: asList(data["affects"]), resource: asList(data["resource"]),
-				}
-			} else {
-				debts[id] = &debtInfo{
-					rel: rel, id: id, status: status, body: body,
-					title: title, timestamp: timestamp, resource: asList(data["resource"]),
-				}
-			}
-			for _, res := range asList(data["resource"]) {
-				resources = append(resources, struct{ rel, field, path string }{rel, "resource", res})
-			}
+			c.entry(rel, register, dir+"/"+strings.TrimSuffix(base, ".md"), doc)
 		case specV6 && parts[0] == "practices" && len(parts) > 1:
 			// Positions under practices/: <slug>.md, <slug>.log.md, and the
 			// same two inside one level of groups. No task directories.
@@ -609,169 +512,52 @@ func Validate(root string, opts Options) int {
 			}
 			base := rest[0]
 			if m := logTrailRoleRe.FindStringSubmatch(base); m != nil {
-				if docType != "Log" {
-					errs = append(errs, fmt.Sprintf("%s: expected `type: Log`, got %q (F3)", rel, docType))
-				}
-				checkLogBody(rel, text, specV7, &errs, &warns)
-				practiceTrails[dir+"/"+m[1]] = rel
+				c.registerLog(rel, "practices", dir+"/"+m[1], doc, text)
 				return nil
 			}
 			if m := anyTrailAttemptRe.FindStringSubmatch(base); m != nil {
 				errs = append(errs, fmt.Sprintf("%s: unknown trail role %q under practices/ — a practice owns no spec, plan, test or surface; `log` is the only role (F3)", rel, m[2]))
 				return nil
 			}
-			if docType != "Practice" {
-				errs = append(errs, fmt.Sprintf("%s: expected `type: Practice`, got %q (F3)", rel, docType))
-				return nil
-			}
-			if !in(practiceStatuses, status) {
-				errs = append(errs, fmt.Sprintf("%s: Practice `status` must be one of %s, got %q (F2)", rel, strings.Join(practiceStatuses, "|"), status))
-			}
-			pid := dir + "/" + strings.TrimSuffix(base, ".md")
-			supersededBy, _ := data["superseded-by"].(string)
-			practices[pid] = &practiceInfo{
-				rel: rel, id: pid, status: status, body: body,
-				supersededBy: supersededBy, appliesTo: asList(data["applies-to"]),
-			}
-			for _, res := range asList(data["applies-to"]) {
-				resources = append(resources, struct{ rel, field, path string }{rel, "applies-to", res})
-			}
+			c.practice(rel, dir+"/"+strings.TrimSuffix(base, ".md"), doc)
 		case len(parts) == 1: // bundle root
-			contextList := "STACK/ARCHITECTURE/INFRA.md"
-			switch {
-			case specV6:
-				contextList = "STACK/ARCHITECTURE/SURFACES/INFRA/DOMAIN.md"
-			case specStem:
-				contextList = "STACK/ARCHITECTURE/SURFACES/INFRA.md"
-			}
-			switch {
-			case isContext:
-				if docType != "Context" {
-					errs = append(errs, fmt.Sprintf("%s: expected `type: Context`, got %q (F3)", rel, docType))
-				}
-				contextDocs[name] = isStub(text)
-			case docType == "Context":
-				errs = append(errs, fmt.Sprintf("%s: `type: Context` is reserved for %s at the bundle root (F3)", rel, contextList))
-			case structural[docType] || (specStem && structuralV4[docType]) || (specV5 && structuralV5[docType]) || (specV6 && structuralV6[docType]) || (specV7 && structuralV7[docType]):
-				errs = append(errs, fmt.Sprintf("%s: `type: %s` documents cannot live at the bundle root — move it to its FDF position (F3)", rel, docType))
-			}
+			c.root(rel, name, isContext, doc, text)
 		case parts[0] == "releases" && len(parts) == 2:
-			if docType != "Release" {
-				errs = append(errs, fmt.Sprintf("%s: expected `type: Release`, got %q (F3)", rel, docType))
-			}
-			if !in(releaseStatuses, status) {
-				errs = append(errs, fmt.Sprintf("%s: Release `status` must be one of %s, got %q (F2)", rel, strings.Join(releaseStatuses, "|"), status))
-			}
-			if data["date"] == nil {
-				warns = append(warns, fmt.Sprintf("%s: missing recommended `date`", rel))
-			}
-			releaseBody := body
-			if specV7 {
-				releaseBody = linkScanText(body) // a link in code is a sample, not a listing
-			}
-			releases[strings.TrimSuffix(parts[1], ".md")] = &releaseInfo{rel, status, releaseBody}
+			c.release(rel, strings.TrimSuffix(parts[1], ".md"), doc)
 		case len(parts) == 2:
 			// v0.4 group-level dotted basenames are stem-qualified trail files.
 			// Trap 14: detect any dotted basename before the feature checks so
 			// unknown roles don't fall through as features named "slug.notes".
 			if specStem {
 				if m := anyTrailAttemptRe.FindStringSubmatch(name); m != nil {
-					stem, rolePart := m[1], m[2]
 					if rm := trailRoleRe.FindStringSubmatch(name); rm != nil {
-						role := rm[2]
-						want := trailRoleType[role]
-						if docType != want {
-							errs = append(errs, fmt.Sprintf("%s: expected `type: %s`, got %q (F3)", rel, want, docType))
-						}
-						fid := parts[0] + "/" + stem
-						p := pair(fid)
-						switch role {
-						case "spec":
-							p.spec = true
-						case "plan":
-							p.plan, p.planRel, p.planBody = true, rel, body
-						case "test":
-							p.test, p.testBody = true, body
-							p.testTimestamp = stamp(data["timestamp"])
-						case "log":
-							// Trap 17: same ISO-date / newest-first rules as LOG.md.
-							p.log = true
-							checkLogBody(rel, text, specV7, &errs, &warns)
-						case "surface":
-							p.surface = true
-						}
+						c.trail(rel, parts[0]+"/"+m[1], rm[2], doc, text)
 					} else {
-						errs = append(errs, fmt.Sprintf("%s: unknown trail role %q — allowed roles are spec, plan, test, surface, log (F3)", rel, rolePart))
+						errs = append(errs, fmt.Sprintf("%s: unknown trail role %q — allowed roles are spec, plan, test, surface, log (F3)", rel, m[2]))
 					}
 					return nil
 				}
 			}
 			// Feature: group/slug.md (all versions; v0.4 slugs carry no dots).
-			if docType != "Feature" {
-				errs = append(errs, fmt.Sprintf("%s: expected `type: Feature`, got %q (F3)", rel, docType))
-			}
-			vocab := featureStatuses
-			switch {
-			case specV7:
-				vocab = featureStatusesV7
-			case specV5:
-				vocab = featureStatusesV5
-			}
-			if !in(vocab, status) {
-				errs = append(errs, fmt.Sprintf("%s: Feature `status` must be one of %s, got %q (F2)", rel, strings.Join(vocab, "|"), status))
-			}
-			version, _ := data["version"].(string)
-			fid := strings.TrimSuffix(filepath.ToSlash(rel), ".md")
-			f := &featureInfo{rel: rel, status: status, version: version, body: body}
-			f.replacedBy = asList(data["replaced-by"])
-			f.surface, _ = data["surface"].(string)
-			if specV7 {
-				// A feature's own `resource` is v0.7: required on an adopted
-				// feature, which has no tasks to reach its code through.
-				f.resource = asList(data["resource"])
-				for _, res := range f.resource {
-					resources = append(resources, struct{ rel, field, path string }{rel, "resource", res})
-				}
-			}
-			features[fid] = f
-			if specV5 {
-				featureDeps[fid] = asList(data["depends-on"])
-			}
-			// An adopted feature may be a map entry: a Feature: block and no
-			// scenarios yet.
-			// A retired one may be too, when it was adopted and never backfilled;
-			// whether it was built is known only after the walk (F4 below).
-			checkFeatureBody(rel, body, specV7 && (status == "adopted" || status == "retired"), &errs)
+			c.feature(rel, strings.TrimSuffix(filepath.ToSlash(rel), ".md"), doc)
 		case len(parts) == 3:
 			fid := parts[0] + "/" + parts[1]
 			switch {
 			case taskFileRe.MatchString(parts[2]): // tasks: all versions
-				if docType != "Task" {
-					errs = append(errs, fmt.Sprintf("%s: expected `type: Task`, got %q (F3)", rel, docType))
-				}
-				if !in(taskStatuses, status) {
-					errs = append(errs, fmt.Sprintf("%s: Task `status` must be one of %s, got %q (F2)", rel, strings.Join(taskStatuses, "|"), status))
-				}
-				p := pair(fid)
-				p.tasks[parts[2]] = status
-				p.deps[parts[2]] = asList(data["depends-on"])
-				p.depRels[parts[2]] = rel
-				for _, res := range asList(data["resource"]) {
-					resources = append(resources, struct{ rel, field, path string }{rel, "resource", res})
-				}
+				c.task(rel, fid, parts[2], doc)
 			case !specStem && trailNames[parts[2]] != "": // nested trail: pre-v0.4 only
 				want := trailNames[parts[2]]
-				if docType != want {
-					errs = append(errs, fmt.Sprintf("%s: expected `type: %s`, got %q (F3)", rel, want, docType))
+				if doc.docType != want {
+					errs = append(errs, fmt.Sprintf("%s: expected `type: %s`, got %q (F3)", rel, want, doc.docType))
 				}
-				p := pair(fid)
+				p := c.pair(fid)
 				switch parts[2] {
 				case "SPEC.md":
 					p.spec = true
 				case "PLAN.md":
-					p.plan, p.planRel, p.planBody = true, rel, body
+					p.plan, p.planRel, p.planBody = true, rel, doc.body
 				case "TEST.md":
-					p.test, p.testBody = true, body
+					p.test, p.testBody = true, doc.body
 				}
 			case specStem: // v0.4 task dir: only NN-slug.md tasks (no nested trail docs)
 				errs = append(errs, fmt.Sprintf("%s: task directories may contain only NN-slug.md tasks (F3)", rel))
@@ -782,7 +568,12 @@ func Validate(root string, opts Options) int {
 			errs = append(errs, fmt.Sprintf("%s: nested deeper than FDF structure allows (F3)", rel))
 		}
 		return nil
-	})
+	}
+	if v1 {
+		c.walkV1(rootAbs)
+	} else {
+		filepath.WalkDir(rootAbs, visitV0)
+	}
 
 	// No root INDEX.md means no pin: the bundle was just validated under v0.2
 	// rules, which is worth saying — it explains a wall of unexpected errors.
@@ -911,7 +702,7 @@ func Validate(root string, opts Options) int {
 
 	if specV5 {
 		checkChangeLifecycle(changes, pairs, &errs)
-		checkChangeIntegrity(changes, features, pairs, specV6, specV7, &errs)
+		checkChangeIntegrity(changes, features, pairs, specV6, specV7, v1, &errs)
 		if specV7 {
 			checkRegressionLanded(changes, pairs, &warns)
 			checkSurfaces(features, pairs, &errs, &warns)
@@ -921,7 +712,7 @@ func Validate(root string, opts Options) int {
 		for fid, deps := range featureDeps {
 			for _, d := range deps {
 				if features[d] == nil {
-					errs = append(errs, fmt.Sprintf("%s: depends-on %q is not a known feature (F10)", features[fid].rel, d))
+					errs = append(errs, fmt.Sprintf("%s: depends-on %q is not a known feature%s (F10)", features[fid].rel, d, featureHint(d, features, v1)))
 				}
 			}
 		}
@@ -935,8 +726,8 @@ func Validate(root string, opts Options) int {
 		checkDebtIntegrity(debts, debtTrails, &errs, &warns)
 		if specV7 {
 			resolvedBy := checkResolves(changes, bugs, clearedBugs(rootAbs), &errs)
-			checkBugIntegrity(bugs, bugTrails, features, resolvedBy, &errs, &warns)
-			checkDomainV7(rootAbs, opts.StrictDomain, texts, &errs, &warns)
+			checkBugIntegrity(bugs, bugTrails, features, resolvedBy, v1, &errs, &warns)
+			checkDomainV7(rootAbs, opts.StrictDomain, texts, v1, &errs, &warns)
 		} else {
 			checkDomain(rootAbs, features, changes, opts.StrictDomain, &errs, &warns)
 		}
@@ -976,14 +767,14 @@ func Validate(root string, opts Options) int {
 			listed := map[string]bool{}
 			taskDir := filepath.Join(rootAbs, filepath.FromSlash(fid))
 			planBody := p.planBody
-			if specV7 {
+			if specV7 && !v1 {
 				planBody = linkScanText(planBody) // a link in code is a sample, not a listing
 			}
-			for _, t := range sectionLinks(planBody, "Tasks") {
+			for _, t := range sectionLinks(planBody, "Tasks", v1) {
 				if specV7 {
 					// A link lists a task only if it reaches this plan's task
 					// directory: a same-named task elsewhere is not this one.
-					if resolved := resolveLink(rootAbs, p.planRel, t); resolved != "" && filepath.Dir(resolved) == taskDir {
+					if resolved := resolveLink(rootAbs, p.planRel, t, v1); resolved != "" && filepath.Dir(resolved) == taskDir {
 						listed[filepath.Base(resolved)] = true
 					}
 					continue
@@ -1021,8 +812,8 @@ func Validate(root string, opts Options) int {
 
 	// F7: release <-> version bidirectional consistency.
 	for version, r := range releases {
-		for _, t := range sectionLinks(r.body, "Features") {
-			resolved := resolveLink(rootAbs, r.rel, t)
+		for _, t := range sectionLinks(r.body, "Features", v1) {
+			resolved := resolveLink(rootAbs, r.rel, t, v1)
 			if resolved == "" {
 				continue
 			}
@@ -1046,7 +837,7 @@ func Validate(root string, opts Options) int {
 		}
 	}
 	if specV5 {
-		checkReleaseChanges(rootAbs, releases, changes, &errs)
+		checkReleaseChanges(rootAbs, releases, changes, v1, &errs)
 	}
 	for fid, f := range features {
 		if f.version == "" {
@@ -1058,8 +849,8 @@ func Validate(root string, opts Options) int {
 			continue
 		}
 		found := false
-		for _, t := range sectionLinks(r.body, "Features") {
-			if resolved := resolveLink(rootAbs, r.rel, t); resolved != "" &&
+		for _, t := range sectionLinks(r.body, "Features", v1) {
+			if resolved := resolveLink(rootAbs, r.rel, t, v1); resolved != "" &&
 				strings.TrimSuffix(filepath.ToSlash(relTo(rootAbs, resolved)), ".md") == fid {
 				found = true
 			}
@@ -1070,8 +861,8 @@ func Validate(root string, opts Options) int {
 	}
 
 	// Soft: broken cross-links.
-	for _, l := range links {
-		resolved := resolveLink(rootAbs, l.src, l.target)
+	for _, l := range crossLinks {
+		resolved := resolveLink(rootAbs, l.src, l.target, v1)
 		if resolved == "" {
 			continue
 		}
@@ -1204,7 +995,12 @@ func findCycle(deps map[string][]string) string {
 	return ""
 }
 
-func sectionLinks(body, heading string) []string {
+// sectionLinks returns the targets of the links in every `# <heading>`
+// section of a body. Under 1.0 the links engine reads them (sectionTargets).
+func sectionLinks(body, heading string, v1 bool) []string {
+	if v1 {
+		return sectionTargets(body, heading)
+	}
 	var out []string
 	inSection := false
 	for _, line := range strings.Split(body, "\n") {
@@ -1221,7 +1017,57 @@ func sectionLinks(body, heading string) []string {
 	return out
 }
 
-func resolveLink(root, srcRel, target string) string {
+// sectionTargets is sectionLinks under 1.0: the links the links engine finds
+// in each `# <heading>` section, outside code. A title after a target, a
+// destination in angle brackets and a reference definition read as they do
+// everywhere else. It reads the body as written, so a heading line that
+// starts in code, such as one a fenced sample quotes, neither opens a
+// section nor closes one.
+func sectionTargets(body, heading string) []string {
+	code := links.Code(body)
+	inCode := func(at int) bool {
+		for _, s := range code {
+			if s.Start <= at && at < s.End {
+				return true
+			}
+		}
+		return false
+	}
+	var sections [][2]int // byte ranges; an end of -1 runs to the end of body
+	pos := 0
+	for _, line := range strings.SplitAfter(body, "\n") {
+		if m := headingRe.FindStringSubmatch(strings.TrimRight(line, "\r\n")); m != nil && !inCode(pos) {
+			if n := len(sections); n > 0 && sections[n-1][1] < 0 {
+				sections[n-1][1] = pos
+			}
+			if strings.EqualFold(strings.TrimSpace(m[1]), heading) {
+				sections = append(sections, [2]int{pos + len(line), -1})
+			}
+		}
+		pos += len(line)
+	}
+	var out []string
+	for _, l := range links.Find(body) {
+		for _, s := range sections {
+			if !l.InCode && l.Start >= s[0] && (s[1] < 0 || l.Start < s[1]) {
+				out = append(out, l.Target)
+			}
+		}
+	}
+	return out
+}
+
+// resolveLink returns the absolute path a link written in srcRel names, or
+// "" when its target is not a path. Under 1.0 the links engine reads the
+// target, as it does the links it repairs.
+func resolveLink(root, srcRel, target string, v1 bool) string {
+	if v1 {
+		d, ok := links.Resolve(target, filepath.ToSlash(srcRel), "")
+		if !ok {
+			return ""
+		}
+		return filepath.Join(root, filepath.FromSlash(d.Path))
+	}
 	t := strings.TrimSpace(target)
 	if t == "" || strings.HasPrefix(t, "#") || strings.Contains(t, "://") ||
 		strings.HasPrefix(t, "mailto:") || strings.HasPrefix(t, "tel:") {

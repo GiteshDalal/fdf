@@ -338,6 +338,7 @@ func TestReservedDirsMirrorTheValidator(t *testing.T) {
 		"0.5": {"STACK.md", "ARCHITECTURE.md", "SURFACES.md", "INFRA.md"},
 		"0.6": {"STACK.md", "ARCHITECTURE.md", "SURFACES.md", "INFRA.md", "DOMAIN.md"},
 		"0.7": {"STACK.md", "ARCHITECTURE.md", "SURFACES.md", "INFRA.md", "DOMAIN.md"},
+		"1.0": {"STACK.md", "ARCHITECTURE.md", "SURFACES.md", "INFRA.md", "DOMAIN.md"},
 	}
 	if len(context) != len(SpecVersions()) {
 		t.Fatalf("this test knows the Context documents of %d spec versions; the binary embeds %v", len(context), SpecVersions())

@@ -91,8 +91,9 @@ func violations(body string) map[string][]string {
 }
 
 // checkBugIntegrity enforces F14. resolvedBy maps a bug ID to the done Fix and
-// Change documents whose `resolves` names it.
-func checkBugIntegrity(bugs map[string]*bugInfo, trails map[string]string, features map[string]*featureInfo, resolvedBy map[string][]string, errs, warns *[]string) {
+// Change documents whose `resolves` names it. v1 suggests the full ID of a
+// feature named the 0.7 way (featureHint).
+func checkBugIntegrity(bugs map[string]*bugInfo, trails map[string]string, features map[string]*featureInfo, resolvedBy map[string][]string, v1 bool, errs, warns *[]string) {
 	ids := make([]string, 0, len(trails))
 	for id := range trails {
 		ids = append(ids, id)
@@ -125,7 +126,7 @@ func checkBugIntegrity(bugs map[string]*bugInfo, trails map[string]string, featu
 		for _, fid := range b.affects {
 			affected[fid] = true
 			if features[fid] == nil {
-				*errs = append(*errs, fmt.Sprintf("%s: `affects` names unknown feature %q (F14)", b.rel, fid))
+				*errs = append(*errs, fmt.Sprintf("%s: `affects` names unknown feature %q%s (F14)", b.rel, fid, featureHint(fid, features, v1)))
 			}
 		}
 
@@ -149,7 +150,7 @@ func checkBugIntegrity(bugs map[string]*bugInfo, trails map[string]string, featu
 		sort.Strings(vfids)
 		for _, fid := range vfids {
 			if !affected[fid] {
-				*errs = append(*errs, fmt.Sprintf("%s: `# Violates` names `## %s`, which is not listed in `affects` (F14)", b.rel, fid))
+				*errs = append(*errs, fmt.Sprintf("%s: `# Violates` names `## %s`, which is not listed in `affects`%s (F14)", b.rel, fid, featureHint(fid, features, v1)))
 			}
 		}
 

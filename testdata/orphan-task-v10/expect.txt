@@ -1,0 +1,3 @@
+exit: 1
+contains: features/platform/refunds/01-api.md: `type: Task`, but features/platform/refunds.md does not exist — a task directory sits beside the feature, Change or Fix it belongs to (F3)
+not-contains: expected `type: Feature`

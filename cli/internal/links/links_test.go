@@ -12,31 +12,19 @@ func TestFindReturnsEveryTargetAndMarksCode(t *testing.T) {
 		"~~~markdown\n[z](tilde.md)\n~~~\n" +
 		"````\n```\n[w](inner.md)\n```\n````\n" +
 		"after [b](four.md#frag)\n"
-	want := []Link{
-		{Target: "one.md"},
-		{Target: "pics/x.png"},
-		{Target: "../two.md", Def: true},
-		{Target: "three.md", Def: true},
-		{Target: "code.md", InCode: true},
-		{Target: "fence.md", InCode: true},
-		{Target: "fence-def.md", Def: true, InCode: true},
-		{Target: "tilde.md", InCode: true},
-		{Target: "inner.md", InCode: true},
-		{Target: "four.md#frag"},
+	want := []wantLink{
+		{target: "one.md"},
+		{target: "pics/x.png"},
+		{target: "../two.md", def: true},
+		{target: "three.md", def: true},
+		{target: "code.md", inCode: true},
+		{target: "fence.md", inCode: true},
+		{target: "fence-def.md", def: true, inCode: true},
+		{target: "tilde.md", inCode: true},
+		{target: "inner.md", inCode: true},
+		{target: "four.md#frag"},
 	}
-	got := Find(text)
-	if len(got) != len(want) {
-		t.Fatalf("Find found %d links, want %d: %+v", len(got), len(want), got)
-	}
-	for i, g := range got {
-		w := want[i]
-		if g.Target != w.Target || g.Def != w.Def || g.InCode != w.InCode {
-			t.Errorf("link %d = %+v; want target %q def=%v inCode=%v", i, g, w.Target, w.Def, w.InCode)
-		}
-		if text[g.Start:g.End] != g.Target {
-			t.Errorf("link %d: offsets [%d:%d] hold %q, not the target %q", i, g.Start, g.End, text[g.Start:g.End], g.Target)
-		}
-	}
+	checkFind(t, text, want)
 }
 
 // A fence that never closes — a document cut off mid-edit — still marks
@@ -178,4 +166,145 @@ func TestRetargetAcrossABundleThatMoves(t *testing.T) {
 		{"a feature in the bundle", "../features/ekpie/x.md", "../fdf/features/ekpie/x.md"},
 		{"the bundle itself", "../features/", "../fdf/"},
 	})
+}
+
+// wantLink is one link Find must return: its target, and whether it is a
+// reference definition and whether it is code.
+type wantLink struct {
+	target      string
+	def, inCode bool
+}
+
+func checkFind(t *testing.T, text string, want []wantLink) {
+	t.Helper()
+	got := Find(text)
+	if len(got) != len(want) {
+		t.Fatalf("Find found %d links, want %d: %+v", len(got), len(want), got)
+	}
+	for i, g := range got {
+		w := want[i]
+		if g.Target != w.target || g.Def != w.def || g.InCode != w.inCode {
+			t.Errorf("link %d = %+v; want target %q def=%v inCode=%v", i, g, w.target, w.def, w.inCode)
+		}
+		if text[g.Start:g.End] != g.Target {
+			t.Errorf("link %d: offsets [%d:%d] hold %q, not the target %q", i, g.Start, g.End, text[g.Start:g.End], g.Target)
+		}
+	}
+}
+
+// Find reads every form CommonMark gives a link: a title in any of its three
+// quotings, a destination in angle brackets, which may hold spaces, spaces
+// inside the parentheses, link text that wraps, and a link inside another's
+// text. A "](" that no "[" opens in its paragraph is not a link.
+func TestFindReadsEveryLinkForm(t *testing.T) {
+	checkFind(t, "[a](one.md \"T\") [b](two.md 'T') [c](three.md (T)) [d]( four.md )\n"+
+		"[e](<my notes.md>) ![f](<pics/a b.png> \"T\")\n"+
+		"[g]: <five six.md> \"T\"\n\n"+
+		"Not links: a] (x) and b](seven.md).\n\n"+
+		"[![badge](badge.svg)](eight.md)\n\n"+
+		"[a link that\nwraps](nine.md)\n", []wantLink{
+		{target: "one.md"},
+		{target: "two.md"},
+		{target: "three.md"},
+		{target: "four.md"},
+		{target: "<my notes.md>"},
+		{target: "<pics/a b.png>"},
+		{target: "<five six.md>", def: true},
+		{target: "badge.svg"},
+		{target: "eight.md"},
+		{target: "nine.md"},
+	})
+}
+
+// Code is where CommonMark puts it. A code span closes only on a run of as
+// many backticks as opened it, and may wrap onto the next line of its
+// paragraph. An indented code block starts after a blank line, outside a
+// list, and a tab indents to column four; a line indented after a paragraph
+// line, or inside a list, is prose.
+func TestFindMarksCodeAsCommonMarkDoes(t *testing.T) {
+	checkFind(t, "Intro.\n\n"+
+		"``a `[x](one.md)` b`` then [y](two.md)\n"+
+		"`a span that\nwraps [z](three.md)` then [w](four.md)\n\n"+
+		"    [v](five.md) in an indented block\n\n"+
+		"\t[u]: six.md\n\n"+
+		"A paragraph\n    continued with [t](seven.md)\n\n"+
+		"- a list item\n\n"+
+		"    continued with [s](eight.md)\n", []wantLink{
+		{target: "one.md", inCode: true},
+		{target: "two.md"},
+		{target: "three.md", inCode: true},
+		{target: "four.md"},
+		{target: "five.md", inCode: true},
+		{target: "six.md", def: true, inCode: true},
+		{target: "seven.md"},
+		{target: "eight.md"},
+	})
+}
+
+// Code returns the ranges Find reads as code, in order: a fenced block from
+// its opening fence through its closing one, a heading it quotes included;
+// each line of an indented block; each code span with its backticks, one of
+// unequal runs included; and a fence that nothing closes, to the end of the
+// text. A link is in code exactly when its target starts in one of them.
+func TestCodeReturnsTheRangesFindReadsAsCode(t *testing.T) {
+	text := "Use ``a`b`` then [x](x.md) and `c`.\n\n" +
+		"```markdown\n# Example\n[y](y.md)\n```\n\n" +
+		"    [z](z.md) indented\n    and more\n\n" +
+		"~~~\n[w](w.md) unclosed"
+	want := []string{
+		"``a`b``",
+		"`c`",
+		"```markdown\n# Example\n[y](y.md)\n```\n",
+		"    [z](z.md) indented\n",
+		"    and more\n",
+		"~~~\n[w](w.md) unclosed",
+	}
+	got := Code(text)
+	if len(got) != len(want) {
+		t.Fatalf("Code found %d ranges, want %d: %+v", len(got), len(want), got)
+	}
+	for i, s := range got {
+		if text[s.Start:s.End] != want[i] {
+			t.Errorf("range %d = %q, want %q", i, text[s.Start:s.End], want[i])
+		}
+	}
+	for _, l := range Find(text) {
+		in := false
+		for _, s := range got {
+			in = in || s.Start <= l.Start && l.Start < s.End
+		}
+		if in != l.InCode || in != (l.Target != "x.md") {
+			t.Errorf("link %q: InCode=%v, in a range of Code=%v; want both %v", l.Target, l.InCode, in, l.Target != "x.md")
+		}
+	}
+}
+
+// A line read on its own, as fdf mv reads one listing line of an index, is
+// never code for its indentation alone.
+func TestFindReadsAnIndentedLineOnItsOwnAsProse(t *testing.T) {
+	checkFind(t, "    * [nested](nested.md) - a nested listing", []wantLink{{target: "nested.md"}})
+}
+
+func TestResolveReadsATargetAsAPath(t *testing.T) {
+	for _, tc := range []struct {
+		target, from, base string
+		want               Dest
+	}{
+		{"../b/c.md#x", "a/f.md", "", Dest{Path: "b/c.md", Suffix: "#x"}},
+		{"c.md?plain=1", "a/f.md", "", Dest{Path: "a/c.md", Suffix: "?plain=1"}},
+		{"/b/c.md", "a/f.md", "", Dest{Path: "b/c.md", FromBase: true}},
+		{"/features/", "docs/fdf/a/f.md", "docs/fdf", Dest{Path: "docs/fdf/features", FromBase: true, Dir: true}},
+		{"../../okf/x.md", "a/f.md", "", Dest{Path: "../okf/x.md"}},
+		{"<my notes.md#top>", "a/f.md", "", Dest{Path: "a/my notes.md", Suffix: "#top", Angle: true}},
+	} {
+		got, ok := Resolve(tc.target, tc.from, tc.base)
+		if !ok || got != tc.want {
+			t.Errorf("Resolve(%q, %q, %q) = %+v, %v; want %+v, true", tc.target, tc.from, tc.base, got, ok, tc.want)
+		}
+	}
+	for _, target := range []string{"", "#anchor", "?q", "https://example.com/a.md", "mailto:team@example.com", "tel:+441234", "<unclosed.md", "<>"} {
+		if got, ok := Resolve(target, "a/f.md", ""); ok {
+			t.Errorf("Resolve(%q) = %+v, true; want it read as no path", target, got)
+		}
+	}
 }

@@ -1,0 +1,5 @@
+exit: 1
+contains: notes.md: the bundle root holds only INDEX.md, LOG.md, SPEC.md, README.md and the five Context documents — file it in a register, or move it out of the bundle (F3)
+contains: payments/: the bundle root holds only the registers features/, changes/, practices/, debts/, bugs/ and releases/ — a feature group belongs under features/; file anything else in its register, or move it out of the bundle (F3)
+not-contains: payments/instant-refunds.md
+not-contains: assets
