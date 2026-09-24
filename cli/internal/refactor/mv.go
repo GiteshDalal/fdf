@@ -245,6 +245,11 @@ func makePlan(rootAbs, from, to string) (*plan, error) {
 		if isDir(src(from)) && fromReg != "changes" {
 			return nil, fmt.Errorf("%s has a directory beside it, which a %s never owns", from, p.reg[fromReg])
 		}
+		if toReg == "changes" {
+			if why := scaffold.ChangePlaceTaken(rootAbs, strings.TrimPrefix(to, "changes/")); why != "" {
+				return nil, fmt.Errorf("%s", why)
+			}
+		}
 		p.addDoc(rootAbs, from, to, fromReg == "changes")
 		if refile {
 			p.flip[to+".md"] = map[string]string{"bugs": "Bug", "debts": "Debt"}[toReg]

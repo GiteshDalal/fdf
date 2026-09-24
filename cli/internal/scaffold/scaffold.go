@@ -185,6 +185,26 @@ func EnsureChangesIndex(root string, out io.Writer) int {
 	return 0
 }
 
+// ChangePlaceTaken says why a Change or Fix cannot be filed as changes/<id>,
+// or returns "". A directory under changes/ is the task directory of the
+// change named like it, when there is one, and a group otherwise (F3): a
+// change and a group of one name cannot both be there.
+func ChangePlaceTaken(root, id string) string {
+	dir := filepath.Join(root, "changes")
+	if group, _, grouped := strings.Cut(id, "/"); grouped {
+		if _, err := os.Stat(filepath.Join(dir, group+".md")); err == nil {
+			return fmt.Sprintf("changes/%s/ is the task directory of changes/%s and holds only its NN-slug.md tasks (F3); file this in a group of another name", group, group)
+		}
+		return ""
+	}
+	if fi, err := os.Stat(filepath.Join(dir, id)); err == nil && fi.IsDir() {
+		if _, err := os.Stat(filepath.Join(dir, id+".md")); err != nil {
+			return fmt.Sprintf("changes/%s/ is a group, and a change named %s would make it that change's task directory (F3); choose another name", id, id)
+		}
+	}
+	return ""
+}
+
 // specVersionRe matches an embedded spec filename stem (spec/<MAJOR.MINOR>.md),
 // so spec/README.md is skipped when listing versions.
 var specVersionRe = regexp.MustCompile(`^\d+\.\d+$`)
@@ -380,8 +400,7 @@ TODO — where this does not apply, and what to do instead there. Optional.
 
 # Rationale
 
-TODO — why it is this way, so a later change knows what it is trading away.
-Optional.
+TODO — why it is this way, so a later change knows what it is trading away. Optional.
 `, title, time.Now().UTC().Format("2006-01-02T15:04:05Z"))
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		fmt.Fprintln(out, "error:", err)

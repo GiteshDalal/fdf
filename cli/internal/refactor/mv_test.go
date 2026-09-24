@@ -298,7 +298,11 @@ func TestMoveRefusals(t *testing.T) {
 		{"venues/opening-hours/01-build", "venues/other/01-build", "within its own task directory"},
 		{"venues/opening-hours", "bugs/hours", "moves to <group>/<slug>"},
 		{"venues/opening-hours", "Venues/Hours", "lowercase"},
+		// A directory under changes/ is a change's task directory or a group (F3).
+		{"changes/old-fix", "changes/closed-hours-fix/old-fix", "task directory of changes/closed-hours-fix"},
+		{"changes/old-fix", "changes/hours", "changes/hours/ is a group"},
 	}
+	write(t, root, "changes/hours/INDEX.md", "# Hours\n")
 	for _, c := range cases {
 		var out bytes.Buffer
 		if code := Move(root, "", c.from, c.to, false, &out); code != 1 || !strings.Contains(out.String(), c.want) {

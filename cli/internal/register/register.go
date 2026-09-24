@@ -65,13 +65,11 @@ timestamp: %s
 
 # Gap
 
-TODO — what is not as it should be, concretely enough that someone else could
-confirm it. Name files and counts, not impressions.
+TODO — what is not as it should be, concretely enough that someone else could confirm it. Name files and counts, not impressions.
 
 # Cost
 
-TODO — what carrying this costs, and what it risks. Optional, but it is what
-lets the register be prioritized without a priority field.
+TODO — what carrying this costs, and what it risks. Optional, but it is what lets the register be prioritized without a priority field.
 `, title, resourceLine(resources, "the paths carrying the gap"), now)
 	},
 	next: func(_ string, _, resources []string) string {
@@ -104,15 +102,11 @@ timestamp: %s
 
 # Symptom
 
-TODO — what the software does wrong, with the evidence: the reproduction and
-its failing output, or — for a defect found by reading — the code path and
-the input that reaches it. Say which.
+TODO — what the software does wrong, with the evidence: the reproduction and its failing output, or — for a defect found by reading — the code path and the input that reaches it. Say which.
 
 # Expected
 
-TODO — what should happen instead. When a scenario already promises it, cite
-it under `+"`# Violates`"+`; when no document decides it, say so and name the open
-question — the repair is then a Change.
+TODO — what should happen instead. When a scenario already promises it, cite it under `+"`# Violates`"+`; when no document decides it, say so and name the open question — the repair is then a Change.
 
 <!-- # Violates — when a scenario already promises the expected behavior. Its
      presence makes the repair a Fix. One heading per feature in `+"`affects`"+`:
@@ -124,13 +118,11 @@ question — the repair is then a Change.
 
 # Root cause
 
-TODO — optional until it is known: the one-sentence diagnosis, with its
-file:line.
+TODO — optional until it is known: the one-sentence diagnosis, with its file:line.
 
 # Cost
 
-TODO — what the defect costs while it stays. Optional, but it is what lets the
-register be prioritized.
+TODO — what the defect costs while it stays. Optional, but it is what lets the register be prioritized.
 `, title, affectsLine, resourceLine(resources, "the paths carrying it"), now)
 	},
 	next: func(id string, affects, resources []string) string {

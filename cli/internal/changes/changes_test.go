@@ -121,6 +121,45 @@ var (
 	newBlockRe = regexp.MustCompile(`^(?:- |#|---|[a-z-]+:)`)
 )
 
+// A directory under changes/ is the task directory of the change named like
+// it, or else a group (F3), so neither may take the other's place.
+func TestNewRefusesAPlaceAChangeOrGroupHolds(t *testing.T) {
+	root := bundle(t)
+	var out bytes.Buffer
+	for _, id := range []string{"refund-window", "payments/refund-rounding"} {
+		if code := New(root, id, "Change", []string{"payments/instant-refunds"}, &out); code != 0 {
+			t.Fatalf("exit %d\n%s", code, out.String())
+		}
+	}
+	for _, c := range []struct{ id, want string }{
+		{"refund-window/extra", "changes/refund-window/ is the task directory of changes/refund-window"},
+		{"payments", "changes/payments/ is a group"},
+	} {
+		out.Reset()
+		if code := New(root, c.id, "Fix", []string{"payments/instant-refunds"}, &out); code != 1 || !strings.Contains(out.String(), c.want) {
+			t.Errorf("fdf fix %s: exit %d, want a refusal containing %q:\n%s", c.id, code, c.want, out.String())
+		}
+		if _, err := os.Stat(filepath.Join(root, "changes", filepath.FromSlash(c.id)+".md")); err == nil {
+			t.Errorf("fdf fix %s wrote the document it refused", c.id)
+		}
+	}
+}
+
+// A Change from a bug whose `# Expected` is still unwritten says so on a
+// line of its own, where validation's placeholder check finds it.
+func TestNewChangeFromBugMarksAMissingExpectation(t *testing.T) {
+	root := bundle(t)
+	writeBug(t, root, "bugs/slow-refunds", "---\ntype: Bug\nstatus: open\ntitle: Slow refunds\naffects: payments/instant-refunds\n---\n\n# Symptom\n\nA refund takes a day.\n\n# Expected\n\nTODO — what should happen instead.\n")
+	var out bytes.Buffer
+	if code := NewFrom(root, "slow-refunds", "Change", nil, "bugs/slow-refunds", &out); code != 0 {
+		t.Fatalf("exit %d\n%s", code, out.String())
+	}
+	raw, _ := os.ReadFile(filepath.Join(root, "changes", "slow-refunds.md"))
+	if !strings.Contains(string(raw), "\nTODO — what should happen instead.\n") || strings.Contains(string(raw), "instead: TODO") {
+		t.Fatalf("the missing expectation should be a placeholder line of its own:\n%s", raw)
+	}
+}
+
 // A changes/ group is listed like every reserved directory's groups: its index
 // is titled after the group and listed once in changes/INDEX.md.
 func TestNewChangeGroupIsTitledAndListed(t *testing.T) {

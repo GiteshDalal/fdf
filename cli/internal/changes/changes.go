@@ -88,6 +88,10 @@ func NewFrom(root, id, docType string, affects []string, fromBug string, out io.
 		fmt.Fprintf(out, "error: changes/%s.md already exists\n", id)
 		return 1
 	}
+	if why := scaffold.ChangePlaceTaken(root, id); why != "" {
+		fmt.Fprintln(out, "error: "+why)
+		return 1
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		fmt.Fprintln(out, "error:", err)
 		return 1
@@ -112,7 +116,13 @@ func NewFrom(root, id, docType string, affects []string, fromBug string, out io.
 	if docType == "Change" {
 		problem := "TODO — what is inadequate about the delivered behavior, and for whom."
 		if b != nil {
-			problem = orTODO(b.symptom, "the observed wrong behavior") + "\n\nWhat should happen instead: " + orTODO(b.expected, "the expected behavior")
+			// A missing `# Expected` leaves a whole placeholder line, which
+			// validation flags; one after "instead: " it would not.
+			expected := "What should happen instead: " + b.expected
+			if t := strings.TrimSpace(b.expected); t == "" || strings.HasPrefix(t, "TODO") {
+				expected = "TODO — what should happen instead."
+			}
+			problem = orTODO(b.symptom, "the observed wrong behavior") + "\n\n" + expected
 		}
 		sb.WriteString("# Problem\n\n" + problem + "\n\n")
 		sb.WriteString("# Scenario changes\n\n")

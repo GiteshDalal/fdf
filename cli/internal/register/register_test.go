@@ -330,6 +330,25 @@ func TestNewListsTheEntryAndCleanupUnlistsIt(t *testing.T) {
 
 // The full ID — what `fdf log`, `fdf mv` and --from take — files the entry
 // where the ID says, not a level deeper under debts/debts/.
+// Every placeholder is one whole line: deleting an optional section's TODO
+// line leaves nothing of it behind.
+func TestTemplatePlaceholdersAreWholeLines(t *testing.T) {
+	root := bundleRoot(t)
+	for _, k := range []Kind{Debt, Bug} {
+		var out bytes.Buffer
+		if code := k.New(root, "gap", nil, nil, &out); code != 0 {
+			t.Fatalf("fdf %s: exit %d\n%s", k.noun, code, out.String())
+		}
+		raw, _ := os.ReadFile(filepath.Join(root, k.Dir, "gap.md"))
+		lines := strings.Split(string(raw), "\n")
+		for i := 1; i < len(lines); i++ {
+			if strings.HasPrefix(lines[i-1], "TODO —") && strings.TrimSpace(lines[i]) != "" {
+				t.Errorf("%s: %q continues a TODO line:\n%s", k.Type, lines[i], raw)
+			}
+		}
+	}
+}
+
 func TestNewTakesTheFullID(t *testing.T) {
 	root := bundleRoot(t)
 	var out bytes.Buffer

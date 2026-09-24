@@ -191,6 +191,23 @@ func TestWithGroupListingPlacesTheGroup(t *testing.T) {
 
 // A new practice is listed in practices/INDEX.md, or in its group's index,
 // which is created and listed on first use.
+// Every placeholder is one whole line: deleting an optional section's TODO
+// line leaves nothing of it behind.
+func TestPracticePlaceholdersAreWholeLines(t *testing.T) {
+	root := pinned(t, currentVersion)
+	var out bytes.Buffer
+	if code := Practice(root, "permission-checks", &out); code != 0 {
+		t.Fatalf("exit %d\n%s", code, out.String())
+	}
+	raw, _ := os.ReadFile(filepath.Join(root, "practices", "permission-checks.md"))
+	lines := strings.Split(string(raw), "\n")
+	for i := 1; i < len(lines); i++ {
+		if strings.Contains(lines[i-1], "TODO —") && strings.TrimSpace(lines[i]) != "" && !strings.HasPrefix(lines[i], "#") && !strings.Contains(lines[i], ":") {
+			t.Errorf("%q continues a TODO line:\n%s", lines[i], raw)
+		}
+	}
+}
+
 func TestPracticeIsListed(t *testing.T) {
 	root := pinned(t, currentVersion)
 	var out bytes.Buffer
