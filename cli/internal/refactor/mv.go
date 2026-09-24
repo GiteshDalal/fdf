@@ -519,8 +519,6 @@ func applySpans(text string, reps []span) string {
 	return b.String()
 }
 
-var listLinkRe = regexp.MustCompile(`^\s*[-*]\s+.*\]\(([^)\s]+)`)
-
 // moveListings moves a moved document's line from its old index to its new
 // one, when the move changes the directory it is listed in. It edits the
 // already-rewritten texts and reports what it did.
@@ -546,21 +544,9 @@ func moveListings(rootAbs string, p *plan, edits map[string]*edit) []string {
 	}
 	var kept, movedLines []string
 	for _, line := range strings.Split(src, "\n") {
-		if m := listLinkRe.FindStringSubmatch(line); m != nil {
-			target := m[1]
-			if i := strings.IndexAny(target, "#?"); i >= 0 {
-				target = target[:i]
-			}
-			var resolved string
-			if strings.HasPrefix(target, "/") {
-				resolved = path.Clean(strings.TrimPrefix(target, "/"))
-			} else {
-				resolved = path.Clean(path.Join(oldDir, target))
-			}
-			if resolved == p.to+".md" { // the old index's line, already retargeted
-				movedLines = append(movedLines, line)
-				continue
-			}
+		if scaffold.ListingTarget(line, oldDir) == p.to+".md" { // the old index's line, already retargeted
+			movedLines = append(movedLines, line)
+			continue
 		}
 		kept = append(kept, line)
 	}
