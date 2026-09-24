@@ -212,7 +212,46 @@ func ListedIn(root, rel string) string {
 // as "debts/venues/slow-hours.md") from the INDEX.md beside it, and returns
 // that index's path when it changed.
 func Unlist(root, rel string) (string, error) {
-	idxRel := path.Dir(rel) + "/INDEX.md"
+	return unlistFrom(root, path.Dir(rel)+"/INDEX.md", rel)
+}
+
+// UnlistGroup removes the listing of a group (bundle-relative, such as
+// "debts/venues") from its parent's INDEX.md — a link to the group's index
+// or to the directory — and returns that index's path when it changed.
+func UnlistGroup(root, group string) (string, error) {
+	return unlistFrom(root, path.Join(path.Dir(group), "INDEX.md"), group+"/INDEX.md", group)
+}
+
+// GroupListedIn returns the path of the parent index that lists a group (see
+// UnlistGroup), or "".
+func GroupListedIn(root, group string) string {
+	idxRel := path.Join(path.Dir(group), "INDEX.md")
+	for _, t := range Listed(root, idxRel) {
+		if t == group+"/INDEX.md" || t == group {
+			return idxRel
+		}
+	}
+	return ""
+}
+
+// Listed returns the bundle-relative targets the index at idxRel lists.
+func Listed(root, idxRel string) []string {
+	raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(idxRel)))
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, l := range strings.Split(string(raw), "\n") {
+		if t := listingTarget(l, path.Dir(idxRel)); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// unlistFrom removes every listing of targets from the index at idxRel, and
+// returns idxRel when it changed.
+func unlistFrom(root, idxRel string, targets ...string) (string, error) {
 	p := filepath.Join(root, filepath.FromSlash(idxRel))
 	raw, err := os.ReadFile(p)
 	if err != nil {
@@ -221,7 +260,12 @@ func Unlist(root, rel string) (string, error) {
 	var kept []string
 	lines := strings.Split(string(raw), "\n")
 	for _, l := range lines {
-		if listingTarget(l, path.Dir(idxRel)) != rel {
+		t := listingTarget(l, path.Dir(idxRel))
+		listed := false
+		for _, target := range targets {
+			listed = listed || t == target
+		}
+		if !listed {
 			kept = append(kept, l)
 		}
 	}

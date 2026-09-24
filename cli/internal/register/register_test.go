@@ -348,6 +348,76 @@ func TestCleanupDryRunNamesTheLogAndTheListing(t *testing.T) {
 	}
 }
 
+// Clearing a group's last entry leaves nothing for the group to hold: its
+// index would list nothing (a validation warning) and still be linked from
+// the register's. The group goes — index, directory, listing — and a dry run
+// says so first. A group that holds anything more, its log say, stays.
+func TestCleanupRemovesAGroupItEmpties(t *testing.T) {
+	root := bundleRoot(t)
+	var out bytes.Buffer
+	for _, id := range []string{"platform/slow-boot", "venues/stale-cache", "venues/slow-hours"} {
+		if code := Debt.New(root, id, nil, nil, &out); code != 0 {
+			t.Fatalf("fdf debt %s: exit %d\n%s", id, code, out.String())
+		}
+	}
+	seed(t, root, "platform/slow-boot", "resolved", "\n# Resolution\n\nCached in changes/x.\n")
+	seed(t, root, "venues/slow-hours", "resolved", "\n# Resolution\n\nIndexed in changes/y.\n")
+	os.WriteFile(filepath.Join(root, "debts", "platform", "slow-boot.log.md"), []byte("---\ntype: Log\n---\n\n## 2026-09-16\n\n* note\n"), 0o644)
+	read := func(rel string) string {
+		raw, _ := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+		return string(raw)
+	}
+
+	out.Reset()
+	if code := Debt.Cleanup(root, true, false, &out); code != 0 {
+		t.Fatalf("dry run: exit %d\n%s", code, out.String())
+	}
+	want := "would remove debts/platform/INDEX.md and debts/platform/: the group would hold no entry\n" +
+		"  would unlist debts/platform/ from debts/INDEX.md\n"
+	if !strings.Contains(out.String(), want) || strings.Contains(out.String(), "debts/venues/:") {
+		t.Errorf("the dry run names the emptied group, and only it:\n%s\nwant:\n%s", out.String(), want)
+	}
+	if !strings.Contains(read("debts/INDEX.md"), "/debts/platform/INDEX.md") {
+		t.Fatal("a dry run changes nothing")
+	}
+
+	out.Reset()
+	if code := Debt.Cleanup(root, false, false, &out); code != 0 {
+		t.Fatalf("cleanup: exit %d\n%s", code, out.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, "debts", "platform")); err == nil {
+		t.Errorf("the emptied group should be gone:\n%s", out.String())
+	}
+	if top := read("debts/INDEX.md"); strings.Contains(top, "platform") || !strings.Contains(top, "/debts/venues/INDEX.md") {
+		t.Errorf("debts/INDEX.md unlists the emptied group, and only it:\n%s", top)
+	}
+	for _, want := range []string{
+		"removed debts/platform/INDEX.md and debts/platform/: the group holds no entry\n",
+		"unlisted debts/platform/ from debts/INDEX.md\n",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("cleanup should say %q:\n%s", want, out.String())
+		}
+	}
+
+	// A group with its own log keeps it, and the index beside it.
+	if code := Bug.New(root, "ui/label", nil, nil, &out); code != 0 {
+		t.Fatalf("fdf bug: exit %d\n%s", code, out.String())
+	}
+	seedBug(t, root, "ui/label", "resolved", "\n# Resolution\n\nRepaired by changes/label-fix.\n")
+	os.WriteFile(filepath.Join(root, "bugs", "ui", "LOG.md"), []byte("# UI — log\n\n## 2026-09-16\n* A decision.\n"), 0o644)
+	out.Reset()
+	if code := Bug.Cleanup(root, false, false, &out); code != 0 {
+		t.Fatalf("bug cleanup: exit %d\n%s", code, out.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, "bugs", "ui", "LOG.md")); err != nil {
+		t.Fatal("a group's log is never removed")
+	}
+	if !strings.Contains(out.String(), "note: bugs/ui/INDEX.md lists nothing now, but bugs/ui/ holds more than its entries — both stay\n") {
+		t.Errorf("the kept group is named:\n%s", out.String())
+	}
+}
+
 // A register exists from the version that introduced it. Under an older pin
 // its directory is a feature group: a Bug filed in a v0.6 bundle's bugs/
 // fails validation (F3), so the command refuses and points at `fdf migrate` —

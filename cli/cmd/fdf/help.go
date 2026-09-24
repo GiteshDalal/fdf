@@ -316,9 +316,10 @@ var helpTopics = []helpTopic{
 			"fails it once those paths are gone.\n" +
 			"\n" +
 			"--cleanup clears resolved debts: each gets one line in debts/LOG.md, and\n" +
-			"its file, its log and its index listing are removed. Open and accepted\n" +
-			"debts are never touched. --dry-run shows the plan first; --no-log clears\n" +
-			"them without the LOG.md line. v0.6 bundles and later.",
+			"its file, its log and its index listing are removed; a group left with no\n" +
+			"entry goes too, index and listing included. Open and accepted debts are\n" +
+			"never touched. --dry-run shows the plan first; --no-log clears them\n" +
+			"without the LOG.md line. v0.6 bundles and later.",
 		flags: []flagDoc{
 			{"--open", "list only open debts (also --accepted, --resolved)"},
 			{"--cleanup", "clear resolved debts, recording each in debts/LOG.md"},

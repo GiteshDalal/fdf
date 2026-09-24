@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -303,8 +304,9 @@ func (k Kind) List(root, filter string, out io.Writer) int {
 
 // Cleanup retires resolved entries from the register: each is recorded in
 // <dir>/LOG.md and its file removed. Open and accepted entries are never
-// touched. dryRun prints the plan and changes nothing; noLog skips the log
-// entry and only removes the files.
+// touched. A group left with no entry goes too (emptied). dryRun prints the
+// plan and changes nothing; noLog skips the log entry and only removes the
+// files.
 func (k Kind) Cleanup(root string, dryRun, noLog bool, out io.Writer) int {
 	if !k.pinned(root, out) {
 		return 1
@@ -346,7 +348,17 @@ func (k Kind) Cleanup(root string, dryRun, noLog bool, out io.Writer) int {
 			fmt.Fprintf(out, "  would unlist it from %s\n", idx)
 		}
 	}
+	gone, kept := k.emptied(root, done)
 	if dryRun {
+		for _, g := range gone {
+			fmt.Fprintf(out, "would remove %s/INDEX.md and %s/: the group would hold no entry\n", g, g)
+			if idx := scaffold.GroupListedIn(root, g); idx != "" {
+				fmt.Fprintf(out, "  would unlist %s/ from %s\n", g, idx)
+			}
+		}
+		for _, g := range kept {
+			fmt.Fprintf(out, "note: %s/INDEX.md would list nothing, but %s/ holds more than its entries — both would stay\n", g, g)
+		}
 		fmt.Fprintf(out, "\ndry run: %d resolved %s(s) left in place. Re-run without --dry-run to clear them.\n", len(done), k.noun)
 		return 0
 	}
@@ -381,12 +393,82 @@ func (k Kind) Cleanup(root string, dryRun, noLog bool, out io.Writer) int {
 			fmt.Fprintf(out, "removed %s.log.md\n", e.id)
 		}
 	}
+	for _, g := range gone {
+		dir := filepath.Join(root, filepath.FromSlash(g))
+		if err := os.Remove(filepath.Join(dir, "INDEX.md")); err != nil && !os.IsNotExist(err) {
+			fmt.Fprintln(out, "error:", err)
+			return 1
+		}
+		if err := os.Remove(dir); err != nil {
+			fmt.Fprintln(out, "error:", err)
+			return 1
+		}
+		fmt.Fprintf(out, "removed %s/INDEX.md and %s/: the group holds no entry\n", g, g)
+		// A listing of the group would link to nothing.
+		if idx, err := scaffold.UnlistGroup(root, g); err != nil {
+			fmt.Fprintln(out, "error:", err)
+			return 1
+		} else if idx != "" {
+			fmt.Fprintf(out, "unlisted %s/ from %s\n", g, idx)
+		}
+	}
+	for _, g := range kept {
+		fmt.Fprintf(out, "note: %s/INDEX.md lists nothing now, but %s/ holds more than its entries — both stay\n", g, g)
+	}
 	if noLog {
 		fmt.Fprintf(out, "\ncleared %d resolved %s(s); nothing was logged (--no-log).\n", removed, k.noun)
 		return 0
 	}
 	fmt.Fprintf(out, "\ncleared %d resolved %s(s); each is recorded in %s/LOG.md.\n", removed, k.noun, k.Dir)
 	return 0
+}
+
+// emptied sorts out the groups a cleanup takes the last entries from. A group
+// whose directory then holds nothing but an index listing nothing is gone:
+// the index, the directory and the group's own listing go too, or validation
+// would warn of an index with no listing, linked from its register's. A group
+// whose index lists nothing but which holds anything else — its LOG.md, an
+// entry the index never listed — is kept, and named so a person can decide.
+func (k Kind) emptied(root string, done []entry) (gone, kept []string) {
+	removed := map[string]bool{} // bundle-relative paths the cleanup removes
+	groups := map[string]bool{}
+	for _, e := range done {
+		rel, _ := filepath.Rel(root, e.path)
+		rel = filepath.ToSlash(rel)
+		removed[rel] = true
+		if fileExists(logOf(e)) {
+			removed[strings.TrimSuffix(rel, ".md")+".log.md"] = true
+		}
+		if g := path.Dir(rel); g != k.Dir {
+			groups[g] = true
+		}
+	}
+	names := make([]string, 0, len(groups))
+	for g := range groups {
+		names = append(names, g)
+	}
+	sort.Strings(names)
+	for _, g := range names {
+		lists := false
+		for _, t := range scaffold.Listed(root, g+"/INDEX.md") {
+			lists = lists || !removed[t]
+		}
+		if lists {
+			continue
+		}
+		files, _ := os.ReadDir(filepath.Join(root, filepath.FromSlash(g)))
+		alone := true
+		for _, f := range files {
+			alone = alone && (f.Name() == "INDEX.md" || removed[g+"/"+f.Name()])
+		}
+		switch {
+		case alone:
+			gone = append(gone, g)
+		case fileExists(filepath.Join(root, filepath.FromSlash(g), "INDEX.md")):
+			kept = append(kept, g)
+		}
+	}
+	return gone, kept
 }
 
 func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }
