@@ -77,8 +77,23 @@ func TestLexiconReportsPlacesAndNames(t *testing.T) {
 func TestLexiconFixNeedsATerm(t *testing.T) {
 	root := lexiconBundle(t)
 	var out bytes.Buffer
-	if code := Lexicon(root, LexiconOptions{Fix: true}, &out); code != 1 || !strings.Contains(out.String(), "one term at a time") {
-		t.Fatalf("an unscoped --fix is refused: %d\n%s", code, out.String())
+	if code := Lexicon(root, LexiconOptions{Fix: true}, &out); code != 2 || !strings.Contains(out.String(), "one term at a time") {
+		t.Fatalf("an unscoped --fix is a usage error (exit 2): %d\n%s", code, out.String())
+	}
+	if !strings.Contains(out.String(), "`fdf lexicon --term <Term> --fix --dry-run`") {
+		t.Fatalf("the refusal names the command that works:\n%s", out.String())
+	}
+}
+
+// The report ends with the next step, and that step is a command that runs:
+// a sweep is one term at a time, so it names --term.
+func TestLexiconReportEndsWithACommandThatRuns(t *testing.T) {
+	root := lexiconBundle(t)
+	if out := lexicon(t, root, LexiconOptions{}); !strings.Contains(out, "Then, one term at a time:\n`fdf lexicon --term <Term> --fix --dry-run`, review, and `--fix`.") {
+		t.Fatalf("the closing hint must name --term:\n%s", out)
+	}
+	if out := lexicon(t, root, LexiconOptions{Term: "Venue"}); !strings.Contains(out, "`fdf lexicon --term Venue --fix --dry-run`") {
+		t.Fatalf("with --term, the hint names that term:\n%s", out)
 	}
 }
 

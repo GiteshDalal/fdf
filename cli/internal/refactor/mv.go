@@ -102,7 +102,9 @@ func Move(root, projectRoot, from, to string, dryRun bool, out io.Writer) int {
 		if e.count > 0 {
 			changed++
 			refs += e.count
-			fmt.Fprintf(out, "  %s: %d reference(s) repaired\n", rel, e.count)
+			// Named where the file is once the move is done: a moved or
+			// re-filed document's repairs are reported at its new path.
+			fmt.Fprintf(out, "  %s: %d reference(s) repaired\n", e.newRel, e.count)
 		}
 	}
 	for _, m := range listingMoves {

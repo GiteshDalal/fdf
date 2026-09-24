@@ -159,6 +159,10 @@ func TestMoveRefilesADebtAsABug(t *testing.T) {
 	if !strings.Contains(s, "type: Bug") || !strings.Contains(s, "# Symptom") || strings.Contains(s, "# Gap") {
 		t.Fatalf("a re-filed debt is typed and headed as a bug:\n%s", s)
 	}
+	// Its repairs are reported where the document now is.
+	if !strings.Contains(out.String(), "  bugs/deferred-batch-import.md: ") || strings.Contains(out.String(), "  debts/deferred-batch-import.md: ") {
+		t.Fatalf("the repairs are reported under the new path:\n%s", out.String())
+	}
 	if idx := read(t, root, "bugs/INDEX.md"); !strings.HasPrefix(idx, "# Bugs\n") || !strings.Contains(idx, "deferred-batch-import") {
 		t.Fatalf("the listing moves to a new bugs/INDEX.md, headed as a register:\n%s", idx)
 	}

@@ -120,9 +120,18 @@ func printFeatures(features []feature, out io.Writer) {
 			inFlight++
 		}
 	}
-	fmt.Fprintf(out, "\n%d feature(s): %d built, %d in flight, %d retired, %d adopted (%d with scenarios, %d map entries).\n",
-		len(features), built, inFlight, retired, adopted, withScen, adopted-withScen)
+	entries := "map entries"
+	if adopted-withScen == 1 {
+		entries = "map entry"
+	}
+	fmt.Fprintf(out, "\n%d feature(s): %d built, %d in flight, %d retired, %d adopted (%d with scenarios, %d %s).\n",
+		len(features), built, inFlight, retired, adopted, withScen, adopted-withScen, entries)
 }
+
+// namedFiles is how many unclaimed files a row of the map names outright: a
+// directory holding that few is usually one stray file, go.mod or a script,
+// and a count alone does not say which.
+const namedFiles = 3
 
 // printUnclaimed groups the project's tracked files by directory and lists
 // the groups holding code no document claims, most unclaimed first.
@@ -146,6 +155,7 @@ func printUnclaimed(root, projectRoot string, depth int, claims []string, out io
 	type bucket struct {
 		dir            string
 		files, claimed int
+		unclaimed      []string // relative to dir
 	}
 	buckets := map[string]*bucket{}
 	for _, file := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
@@ -160,11 +170,17 @@ func printUnclaimed(root, projectRoot string, depth int, claims []string, out io
 			buckets[dir] = b
 		}
 		b.files++
+		claimed := false
 		for _, c := range claims {
 			if file == c || strings.HasPrefix(file, c+"/") {
-				b.claimed++
+				claimed = true
 				break
 			}
+		}
+		if claimed {
+			b.claimed++
+		} else {
+			b.unclaimed = append(b.unclaimed, strings.TrimPrefix(file, dir))
 		}
 	}
 	var rows []*bucket
@@ -181,15 +197,14 @@ func printUnclaimed(root, projectRoot string, depth int, claims []string, out io
 		return rows[i].dir < rows[j].dir
 	})
 	if len(rows) == 0 {
-		fmt.Fprintln(out, "\nevery tracked source file is claimed by a feature, task, change or fix.")
+		fmt.Fprintln(out, "\nevery tracked source file is claimed by a feature, task, Change or Fix.")
 		return 0
 	}
 	fmt.Fprintf(out, "\ncode no document claims yet (git ls-files, grouped %d level(s) deep; markdown and dotfiles skipped):\n\n", depth)
-	w := len("DIRECTORY")
+	w, wOf := len("DIRECTORY"), len("OF")
 	for _, b := range rows {
-		if len(b.dir) > w {
-			w = len(b.dir)
-		}
+		w = max(w, len(b.dir))
+		wOf = max(wOf, len(fmt.Sprint(b.files)))
 	}
 	const shown = 25
 	fmt.Fprintf(out, "  %-*s  %9s  %s\n", w, "DIRECTORY", "UNCLAIMED", "OF")
@@ -198,9 +213,13 @@ func printUnclaimed(root, projectRoot string, depth int, claims []string, out io
 			fmt.Fprintf(out, "  …and %d more director(ies) — narrow with --depth\n", len(rows)-shown)
 			break
 		}
-		fmt.Fprintf(out, "  %-*s  %9d  %d\n", w, b.dir, b.files-b.claimed, b.files)
+		line := fmt.Sprintf("  %-*s  %9d  %-*d", w, b.dir, b.files-b.claimed, wOf, b.files)
+		if len(b.unclaimed) <= namedFiles {
+			line += "  " + strings.Join(b.unclaimed, ", ")
+		}
+		fmt.Fprintln(out, strings.TrimRight(line, " "))
 	}
-	fmt.Fprintln(out, "\nA claim is a `resource` path on an adopted feature, a task, a change or a fix. Map a capability")
+	fmt.Fprintln(out, "\nA claim is a `resource` path on an adopted feature, a task, a Change or a Fix. Map a capability")
 	fmt.Fprintln(out, "with `fdf adopt --resource <path> <group>/<slug>`; this list is a heuristic, not a verdict.")
 	return 0
 }

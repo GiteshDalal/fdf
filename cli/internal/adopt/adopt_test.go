@@ -29,6 +29,10 @@ func TestMapCountsFeaturesAndListsUnclaimedCode(t *testing.T) {
 	write(t, repo, "src/cards/settle.go", "package cards\n")
 	write(t, repo, "src/wallet/topup.go", "package wallet\n")
 	write(t, repo, "src/wallet/README.md", "not code\n")
+	write(t, repo, "go.mod", "module x\n")
+	for _, f := range []string{"a.go", "b.go", "c.go", "d.go"} {
+		write(t, repo, "src/api/"+f, "package api\n")
+	}
 	root := filepath.Join(repo, "docs", "features")
 	write(t, root, "payments/card-payments.md", "---\ntype: Feature\nstatus: adopted\nresource: [src/cards]\n---\n\n```gherkin\nFeature: Card payments\n```\n\n```gherkin\nScenario: A settled payment is marked settled\n  Given x\n```\n")
 	write(t, root, "payments/card-payments.test.md", "---\ntype: Test\n---\n\n# Test Cases\n\n## A settled payment is marked settled\n\n`go test`\n")
@@ -51,7 +55,7 @@ func TestMapCountsFeaturesAndListsUnclaimedCode(t *testing.T) {
 	s := out.String()
 	for _, want := range []string{
 		"adopted       payments/card-payments          1       1",
-		"2 feature(s): 0 built, 0 in flight, 0 retired, 2 adopted (1 with scenarios, 1 map entries).",
+		"2 feature(s): 0 built, 0 in flight, 0 retired, 2 adopted (1 with scenarios, 1 map entry).",
 		"src/wallet/",
 	} {
 		if !strings.Contains(s, want) {
@@ -60,6 +64,20 @@ func TestMapCountsFeaturesAndListsUnclaimedCode(t *testing.T) {
 	}
 	if strings.Contains(s, "src/cards/") {
 		t.Fatalf("claimed code is not listed as unclaimed:\n%s", s)
+	}
+	// A row of three or fewer unclaimed files names them; a bigger one only
+	// counts them.
+	rows := map[string]string{}
+	for _, line := range strings.Split(s, "\n") {
+		if f := strings.Fields(line); len(f) >= 3 {
+			rows[f[0]] = line
+		}
+	}
+	if !strings.HasSuffix(rows["src/wallet/"], "  topup.go") || !strings.HasSuffix(rows["."], "  go.mod") {
+		t.Fatalf("a small row names its unclaimed files:\n%s", s)
+	}
+	if !strings.HasSuffix(rows["src/api/"], "4  4") {
+		t.Fatalf("a row of four unclaimed files only counts them:\n%s", s)
 	}
 	if strings.Contains(s, "docs/features") {
 		t.Fatalf("the bundle itself is not code to claim:\n%s", s)

@@ -43,17 +43,22 @@ func Lexicon(root string, opts LexiconOptions, out io.Writer) int {
 	for _, pr := range problems {
 		fmt.Fprintln(out, "lexicon: "+pr)
 	}
+	if opts.Fix && opts.Term == "" {
+		terms := "DOMAIN.md bans no word yet"
+		if lex != nil {
+			terms = "terms: " + strings.Join(lex.TermNames(), ", ")
+		}
+		fmt.Fprintf(out, "error: --fix sweeps one term at a time — add --term <Term> (%s).\n", terms)
+		fmt.Fprintln(out, "  A sweep is reviewed before it lands: `fdf lexicon --term <Term>` to triage, then")
+		fmt.Fprintln(out, "  `fdf lexicon --term <Term> --fix --dry-run`, and `--fix` once the diff is right.")
+		return 2
+	}
 	if lex == nil {
 		fmt.Fprintln(out, "nothing to scan with: DOMAIN.md is missing, still a stub, or bans no word.")
 		if len(problems) > 0 {
 			return 1
 		}
 		return 0
-	}
-	if opts.Fix && opts.Term == "" {
-		fmt.Fprintf(out, "error: --fix sweeps one term at a time — add --term <Term> (terms: %s).\n", strings.Join(lex.TermNames(), ", "))
-		fmt.Fprintln(out, "  A sweep is reviewed before it lands: `fdf lexicon --term <Term>` to triage, then --fix --dry-run.")
-		return 1
 	}
 	occ := bundle.ScanBundle(rootAbs, lex)
 	if opts.Term != "" {
@@ -85,7 +90,7 @@ func Lexicon(root string, opts LexiconOptions, out io.Writer) int {
 	if opts.Fix {
 		return fixLexicon(rootAbs, lex, occ, textOf, opts.DryRun, out)
 	}
-	return reportLexicon(lex, occ, textOf, opts.All, out)
+	return reportLexicon(lex, occ, textOf, opts.All, opts.Term, out)
 }
 
 // manual reports why an occurrence is left for a person, or "".
@@ -134,7 +139,9 @@ func inGherkin(text string, at int) bool {
 	return in
 }
 
-func reportLexicon(lex *bundle.Lexicon, occ []bundle.Occurrence, textOf func(string) string, all bool, out io.Writer) int {
+// reportLexicon prints the occurrences, grouped by word. term is the --term
+// the report was narrowed to, or "": the closing hint names it.
+func reportLexicon(lex *bundle.Lexicon, occ []bundle.Occurrence, textOf func(string) string, all bool, term string, out io.Writer) int {
 	if len(occ) == 0 {
 		fmt.Fprintln(out, "no banned word anywhere F12 reads — the bundle speaks its lexicon.")
 		return 0
@@ -165,7 +172,7 @@ func reportLexicon(lex *bundle.Lexicon, occ []bundle.Occurrence, textOf func(str
 	if lex.Strict {
 		strict = "strict: every one is a validation error"
 	}
-	fmt.Fprintf(out, "F12 — %d banned word(s) in %d place(s); DOMAIN.md is %s.\n", len(occ), len(docs), strict)
+	fmt.Fprintf(out, "F12 — %d banned word(s) in %d document(s); DOMAIN.md is %s.\n", len(occ), len(docs), strict)
 
 	groups := make([]*group, 0, len(byWord))
 	for _, g := range byWord {
@@ -200,8 +207,16 @@ func reportLexicon(lex *bundle.Lexicon, occ []bundle.Occurrence, textOf func(str
 			fmt.Fprintf(out, "  %s  %q → %q   e.g. fdf mv %s %s\n", o.Rel, o.Banned, o.Term, id, suggestName(id, o))
 		}
 	}
+	t := "<Term>"
+	if term != "" {
+		t = term
+		if strings.ContainsAny(t, " \t") {
+			t = `"` + t + `"`
+		}
+	}
 	fmt.Fprintln(out, "\nTriage before fixing: a word used in another sense is qualified and listed under the term's `except:`;")
-	fmt.Fprintln(out, "a mention of the word goes in a code span. Then `fdf lexicon --fix --dry-run`, review, and `--fix`.")
+	fmt.Fprintln(out, "a mention of the word goes in a code span. Then, one term at a time:")
+	fmt.Fprintf(out, "`fdf lexicon --term %s --fix --dry-run`, review, and `--fix`.\n", t)
 	return 0
 }
 

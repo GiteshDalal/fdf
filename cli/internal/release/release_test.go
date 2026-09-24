@@ -101,3 +101,24 @@ func TestSyncRefusesWhenNothingCarriesTheVersion(t *testing.T) {
 		t.Errorf("should explain why:\n%s", out.String())
 	}
 }
+
+// releases/INDEX.md says it is newest first, so a later release is listed
+// above an earlier one rather than appended below it.
+func TestIndexListsNewestFirst(t *testing.T) {
+	root := bundle(t, "done", "done")
+	os.WriteFile(filepath.Join(root, "payments", "other.md"), []byte("---\ntype: Feature\ntitle: Other\nstatus: done\nversion: \"1.2.0\"\n---\n\n# Feature\n"), 0o644)
+	var out bytes.Buffer
+	for _, v := range []string{"1.1.0", "1.2.0"} {
+		if code := Sync(root, v, "", false, &out); code != 0 {
+			t.Fatalf("release %s: exit %d\n%s", v, code, out.String())
+		}
+	}
+	idx, _ := os.ReadFile(filepath.Join(root, "releases", "INDEX.md"))
+	want := "# Releases\n\nNewest first.\n\n* [1.2.0](/releases/1.2.0.md) - release.\n* [1.1.0](/releases/1.1.0.md) - release.\n"
+	if string(idx) != want {
+		t.Errorf("releases/INDEX.md:\n%s\nwant:\n%s", idx, want)
+	}
+	if !strings.Contains(out.String(), `updated releases/INDEX.md (now lists "1.2.0")`) {
+		t.Errorf("the listing is reported:\n%s", out.String())
+	}
+}
