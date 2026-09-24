@@ -6,7 +6,25 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/GiteshDalal/fdf/cli/internal/scaffold"
 )
+
+// bundleRoot returns a temp bundle root pinning fdf_version pin, or the
+// current version when none is given: both registers exist from v0.7.
+func bundleRoot(t *testing.T, pin ...string) string {
+	t.Helper()
+	root := t.TempDir()
+	v := scaffold.CurrentVersion()
+	if len(pin) > 0 {
+		v = pin[0]
+	}
+	index := "---\nfdf_version: \"" + v + "\"\n---\n\n# Bundle\n\n* [Spec](/SPEC.md) - the format.\n"
+	if err := os.WriteFile(filepath.Join(root, "INDEX.md"), []byte(index), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
 
 func seed(t *testing.T, root, id, status, extra string) {
 	t.Helper()
@@ -22,7 +40,7 @@ func seed(t *testing.T, root, id, status, extra string) {
 }
 
 func TestListFiltersAndCounts(t *testing.T) {
-	root := t.TempDir()
+	root := bundleRoot(t)
 	seed(t, root, "one", "open", "")
 	seed(t, root, "two", "accepted", "\n# Rationale\n\nNot worth it.\n")
 	seed(t, root, "three", "resolved", "\n# Resolution\n\nDone in changes/x.\n")
@@ -52,7 +70,7 @@ func TestListFiltersAndCounts(t *testing.T) {
 }
 
 func TestCleanupLogsAndClearsOnlyResolved(t *testing.T) {
-	root := t.TempDir()
+	root := bundleRoot(t)
 	seed(t, root, "one", "open", "")
 	seed(t, root, "two", "accepted", "\n# Rationale\n\nNot worth it.\n")
 	seed(t, root, "three", "resolved", "\n# Resolution\n\nUnified in changes/config.\n")
@@ -103,7 +121,7 @@ func TestCleanupLogsAndClearsOnlyResolved(t *testing.T) {
 // The log is newest-first like every FDF log, so a later run's heading must
 // land above an earlier one rather than being appended to the bottom.
 func TestCleanupLogStaysNewestFirst(t *testing.T) {
-	root := t.TempDir()
+	root := bundleRoot(t)
 	os.MkdirAll(filepath.Join(root, "debts"), 0o755)
 	os.WriteFile(filepath.Join(root, "debts", "LOG.md"),
 		[]byte("# Debt Log\n\n## 2020-01-01\n* **debts/ancient** — old one. done.\n"), 0o644)
@@ -120,7 +138,7 @@ func TestCleanupLogStaysNewestFirst(t *testing.T) {
 }
 
 func TestCleanupNoLogSkipsTheLog(t *testing.T) {
-	root := t.TempDir()
+	root := bundleRoot(t)
 	seed(t, root, "gone", "resolved", "\n# Resolution\n\nDone.\n")
 	var out bytes.Buffer
 	if code := Debt.Cleanup(root, false, true, &out); code != 0 {
@@ -135,7 +153,7 @@ func TestCleanupNoLogSkipsTheLog(t *testing.T) {
 }
 
 func TestNewRejectsStatusWordAsSlug(t *testing.T) {
-	root := t.TempDir()
+	root := bundleRoot(t)
 	var out bytes.Buffer
 	if code := Debt.New(root, "open", nil, nil, &out); code != 1 {
 		t.Fatal("a status word is not a slug")
@@ -148,7 +166,7 @@ func TestNewRejectsStatusWordAsSlug(t *testing.T) {
 // A resolution is prose, wrapped like any other: the log gets its whole first
 // paragraph, never a line cut off mid-sentence.
 func TestCleanupLogsTheWholeFirstParagraph(t *testing.T) {
-	root := t.TempDir()
+	root := bundleRoot(t)
 	seed(t, root, "wrapped", "resolved", "\n# Resolution\n\nClosed by changes/config, which moved every\nhandler onto the shared loader.\n\nA second paragraph stays out of the log.\n")
 	var out bytes.Buffer
 	if code := Debt.Cleanup(root, false, false, &out); code != 0 {
@@ -177,7 +195,7 @@ func seedBug(t *testing.T, root, id, status, extra string) {
 }
 
 func TestBugRegisterListsAndClearsBugsOnly(t *testing.T) {
-	root := t.TempDir()
+	root := bundleRoot(t)
 	seedBug(t, root, "crash", "open", "")
 	seedBug(t, root, "ui/label", "resolved", "\n# Resolution\n\nRepaired by changes/label-fix.\n")
 	seed(t, root, "gap", "open", "") // a debt is not a bug
@@ -209,7 +227,7 @@ func TestBugRegisterListsAndClearsBugsOnly(t *testing.T) {
 }
 
 func TestNewBugScaffoldsAffectsAndChecksThem(t *testing.T) {
-	root := t.TempDir()
+	root := bundleRoot(t)
 	os.MkdirAll(filepath.Join(root, "venues"), 0o755)
 	os.WriteFile(filepath.Join(root, "venues", "hours.md"), []byte("---\ntype: Feature\n---\n"), 0o644)
 
@@ -241,7 +259,7 @@ func TestNewBugScaffoldsAffectsAndChecksThem(t *testing.T) {
 // A new entry is listed in the index beside it — a group's index is created
 // and listed on first use — and a cleared entry's listing goes with its file.
 func TestNewListsTheEntryAndCleanupUnlistsIt(t *testing.T) {
-	root := t.TempDir()
+	root := bundleRoot(t)
 	var out bytes.Buffer
 	for _, id := range []string{"venues/slow-hours", "venues/stale-cache", "loose-config"} {
 		if code := Debt.New(root, id, nil, nil, &out); code != 0 {
@@ -280,7 +298,7 @@ func TestNewListsTheEntryAndCleanupUnlistsIt(t *testing.T) {
 // The full ID — what `fdf log`, `fdf mv` and --from take — files the entry
 // where the ID says, not a level deeper under debts/debts/.
 func TestNewTakesTheFullID(t *testing.T) {
-	root := t.TempDir()
+	root := bundleRoot(t)
 	var out bytes.Buffer
 	if code := Debt.New(root, "debts/loose-config", nil, nil, &out); code != 0 {
 		t.Fatalf("fdf debt debts/loose-config: exit %d\n%s", code, out.String())
@@ -303,7 +321,7 @@ func TestNewTakesTheFullID(t *testing.T) {
 // A dry run names everything the real run removes: the entry's log goes with
 // it, entries and all, and its listing leaves the index.
 func TestCleanupDryRunNamesTheLogAndTheListing(t *testing.T) {
-	root := t.TempDir()
+	root := bundleRoot(t)
 	var out bytes.Buffer
 	if code := Debt.New(root, "venues/slow-hours", nil, nil, &out); code != 0 {
 		t.Fatalf("fdf debt: exit %d\n%s", code, out.String())
@@ -327,5 +345,41 @@ func TestCleanupDryRunNamesTheLogAndTheListing(t *testing.T) {
 	}
 	if _, err := os.Stat(logSib); err != nil {
 		t.Fatal("a dry run changes nothing")
+	}
+}
+
+// A register exists from the version that introduced it. Under an older pin
+// its directory is a feature group: a Bug filed in a v0.6 bundle's bugs/
+// fails validation (F3), so the command refuses and points at `fdf migrate` —
+// for filing, listing and clearing alike.
+func TestRegistersRefuseAnOlderPin(t *testing.T) {
+	for _, tc := range []struct {
+		k   Kind
+		pin string
+	}{
+		{Bug, "0.6"},
+		{Debt, "0.5"},
+	} {
+		root := bundleRoot(t, tc.pin)
+		for name, run := range map[string]func(*bytes.Buffer) int{
+			"file":    func(out *bytes.Buffer) int { return tc.k.New(root, "late-close", nil, nil, out) },
+			"list":    func(out *bytes.Buffer) int { return tc.k.List(root, "", out) },
+			"cleanup": func(out *bytes.Buffer) int { return tc.k.Cleanup(root, false, false, out) },
+		} {
+			var out bytes.Buffer
+			want := "error: the " + tc.k.noun + " register arrived in spec v0." + map[string]string{"Bug": "7", "Debt": "6"}[tc.k.Type] +
+				", and this bundle pins fdf_version " + tc.pin + ": under that pin " + tc.k.Dir + "/ is a feature group"
+			if code := run(&out); code != 1 || !strings.HasPrefix(out.String(), want) || !strings.Contains(out.String(), "run `fdf migrate`") {
+				t.Errorf("%s %s on a %s bundle: exit %d, want a refusal starting %q:\n%s", tc.k.noun, name, tc.pin, code, want, out.String())
+			}
+		}
+		if _, err := os.Stat(filepath.Join(root, tc.k.Dir)); err == nil {
+			t.Errorf("a refused %s must write nothing, %s/ included", tc.k.noun, tc.k.Dir)
+		}
+	}
+	// The debt register is there from v0.6.
+	var out bytes.Buffer
+	if code := Debt.New(bundleRoot(t, "0.6"), "late-close", nil, nil, &out); code != 0 {
+		t.Fatalf("fdf debt on a v0.6 bundle: exit %d\n%s", code, out.String())
 	}
 }

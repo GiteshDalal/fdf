@@ -20,8 +20,26 @@ func bundle(t *testing.T) string {
 			t.Fatal(err)
 		}
 	}
+	mk("INDEX.md", "---\nfdf_version: \"0.7\"\n---\n\n# Bundle\n\n* [Payments](/payments/INDEX.md) - payments.\n")
 	mk("payments/instant-refunds.md", "---\ntype: Feature\ntitle: Instant refunds\nstatus: done\n---\n\n# Feature\n")
 	return root
+}
+
+// Changes and Fixes are v0.5: under an older pin changes/ is a feature group,
+// where a Change fails validation (F3), so neither command writes one there.
+func TestNewRefusesAPinBeforeChanges(t *testing.T) {
+	root := bundle(t)
+	os.WriteFile(filepath.Join(root, "INDEX.md"), []byte("---\nfdf_version: \"0.4\"\n---\n\n# Bundle\n"), 0o644)
+	for _, docType := range []string{"Change", "Fix"} {
+		var out bytes.Buffer
+		if code := New(root, "refund-window", docType, []string{"payments/instant-refunds"}, &out); code != 1 ||
+			!strings.HasPrefix(out.String(), "error: Changes and Fixes arrived in spec v0.5, and this bundle pins fdf_version 0.4: under that pin changes/ is a feature group, and a "+docType+" written there fails validation (F3).") {
+			t.Errorf("%s on a v0.4 bundle: exit %d\n%s", docType, code, out.String())
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, "changes")); err == nil {
+		t.Error("a refused Change or Fix writes nothing")
+	}
 }
 
 func TestNewFixScaffoldsRegressionSectionAndIndex(t *testing.T) {

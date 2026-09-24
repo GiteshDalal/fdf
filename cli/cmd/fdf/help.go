@@ -185,7 +185,8 @@ var helpTopics = []helpTopic{
 			"never built through FDF, so it has no spec, plan or tasks. It starts as a\n" +
 			"map entry: a `Feature:` block, and `resource` naming the code it lives in\n" +
 			"(which must exist). Scenarios are backfilled later, each with its case in\n" +
-			"slug.test.md, passing against the code as it stands.\n" +
+			"slug.test.md, passing against the code as it stands. Older pins have no\n" +
+			"`adopted` status, so mapping one needs a v0.7 bundle.\n" +
 			"\n" +
 			"Without an ID it prints the adoption map: every feature with its status,\n" +
 			"scenario count and tested count, then the tracked code (git ls-files) that\n" +
@@ -216,7 +217,7 @@ var helpTopics = []helpTopic{
 			"name several features: one Change can span them. --from bugs/<id> starts\n" +
 			"from a filed bug that no scenario covers yet: it copies the bug's\n" +
 			"`# Symptom` and `# Expected` into `# Problem`, takes its `affects`, and\n" +
-			"names it in `resolves`.",
+			"names it in `resolves`. v0.5 bundles and later.",
 		flags: []flagDoc{
 			{"--affects <ids>", "comma-separated feature IDs this touches (required unless --from supplies them)"},
 			{"--from bugs/<id>", "the bug this repairs: copies its analysis, writes `resolves`"},
@@ -240,7 +241,8 @@ var helpTopics = []helpTopic{
 			"existing scenarios it proves, each with its verification; the lasting\n" +
 			"record is each case in the affected feature's slug.test.md. --from\n" +
 			"bugs/<id> takes over a bug's `# Symptom` and `# Root cause`, turns its\n" +
-			"`# Violates` scenarios into regression cases, and names it in `resolves`.",
+			"`# Violates` scenarios into regression cases, and names it in `resolves`.\n" +
+			"v0.5 bundles and later.",
 		flags: []flagDoc{
 			{"--affects <ids>", "comma-separated feature IDs this touches (required unless --from supplies them)"},
 			{"--from bugs/<id>", "the bug this repairs: copies its analysis, writes `resolves`"},
@@ -282,7 +284,8 @@ var helpTopics = []helpTopic{
 			"duplicate) is resolved with a `# Resolution` saying why.\n" +
 			"\n" +
 			"--cleanup clears resolved bugs as `fdf debt --cleanup` does, but always\n" +
-			"logs them: F10 checks a done Fix or Change against bugs/LOG.md.",
+			"logs them: F10 checks a done Fix or Change against bugs/LOG.md. v0.7\n" +
+			"bundles and later.",
 		flags: []flagDoc{
 			{"--open", "list only open bugs (also --accepted, --resolved)"},
 			{"--cleanup", "clear resolved bugs, recording each in bugs/LOG.md"},

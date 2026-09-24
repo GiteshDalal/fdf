@@ -124,7 +124,7 @@ func TestNewScaffoldsDraftFeature(t *testing.T) {
 // A new practice is listed in practices/INDEX.md, or in its group's index,
 // which is created and listed on first use.
 func TestPracticeIsListed(t *testing.T) {
-	root := t.TempDir()
+	root := pinned(t, currentVersion)
 	var out bytes.Buffer
 	for _, id := range []string{"permission-checks", "payments/capture"} {
 		if code := Practice(root, id, &out); code != 0 {
@@ -158,7 +158,7 @@ func TestPracticeIsListed(t *testing.T) {
 
 // The full ID files a practice where it says, not under practices/practices/.
 func TestPracticeTakesTheFullID(t *testing.T) {
-	root := t.TempDir()
+	root := pinned(t, currentVersion)
 	var out bytes.Buffer
 	if code := Practice(root, "practices/permission-checks", &out); code != 0 {
 		t.Fatalf("exit %d\n%s", code, out.String())
@@ -277,6 +277,39 @@ func TestReservedDirsMirrorTheValidator(t *testing.T) {
 				t.Errorf("pin %s: ReservedDirs says %s/ reserved=%v, but a feature there validates=%v:\n%s", pin, dir, reserved, passes, out.String())
 			}
 		}
+	}
+}
+
+// A command whose document an older pin rejects refuses to write it and
+// points at `fdf migrate`: a Practice in a v0.5 bundle's practices/ fails F3,
+// and `status: adopted` in a v0.6 bundle fails F2.
+func TestScaffoldsRefuseAnOlderPin(t *testing.T) {
+	root := pinned(t, "0.5")
+	var out bytes.Buffer
+	if code := Practice(root, "permission-checks", &out); code != 1 ||
+		!strings.HasPrefix(out.String(), "error: practices arrived in spec v0.6, and this bundle pins fdf_version 0.5: under that pin practices/ is a feature group") ||
+		!strings.Contains(out.String(), "run `fdf migrate` to bring the bundle to v"+currentVersion+" first") {
+		t.Errorf("fdf practice on a v0.5 bundle: exit %d\n%s", code, out.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, "practices")); err == nil {
+		t.Error("a refused practice writes nothing")
+	}
+	root = pinned(t, "0.6")
+	out.Reset()
+	if code := Adopt(root, "", "venues/card-payments", []string{"main.go"}, &out); code != 1 ||
+		!strings.HasPrefix(out.String(), "error: adopted features arrived in spec v0.7, and this bundle pins fdf_version 0.6") {
+		t.Errorf("fdf adopt on a v0.6 bundle: exit %d\n%s", code, out.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, "venues")); err == nil {
+		t.Error("a refused adoption writes nothing")
+	}
+	out.Reset()
+	if code := Practice(pinned(t, ""), "permission-checks", &out); code != 1 || !strings.Contains(out.String(), "this bundle pins no fdf_version") {
+		t.Errorf("fdf practice on an unpinned bundle: exit %d\n%s", code, out.String())
+	}
+	out.Reset()
+	if code := Practice(pinned(t, "0.6"), "permission-checks", &out); code != 0 {
+		t.Errorf("fdf practice on a v0.6 bundle: exit %d\n%s", code, out.String())
 	}
 }
 

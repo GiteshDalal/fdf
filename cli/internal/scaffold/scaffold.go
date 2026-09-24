@@ -336,8 +336,12 @@ func reservedGroup(root, id string, out io.Writer) bool {
 // Practice scaffolds practices/<id>.md, where id is "<slug>" or
 // "<group>/<slug>" — or the full ID, practices/<slug>, which files it in the
 // same place. A practice has no trail and no tasks: the document is the whole
-// thing, so there is nothing else to create.
+// thing, so there is nothing else to create. Practices are v0.6: an older
+// pin reads practices/ as a feature group, so the command refuses there.
 func Practice(root, id string, out io.Writer) int {
+	if !RequirePin(root, 6, "practices", "practices/ is a feature group, and a Practice written there fails validation (F3)", out) {
+		return 1
+	}
 	id = strings.TrimPrefix(id, "practices/")
 	if !practiceSlugRe.MatchString(id) && !practiceGroupedRe.MatchString(id) {
 		fmt.Fprintf(out, "error: id must be <slug> or <group>/<slug>, lowercase [a-z0-9-]; got %q\n", id)
@@ -548,8 +552,12 @@ func appendGroupIndex(root, group, entry string, out io.Writer) int {
 // built through the lifecycle. It starts as a map entry — a Feature: block
 // and the code it lives in, no scenarios — and gets no spec, plan or tasks,
 // ever. resources are the project-relative paths of that code; projectRoot,
-// when set, is where they must exist.
+// when set, is where they must exist. An older pin has no `adopted` status,
+// so the command refuses there.
 func Adopt(root, projectRoot, id string, resources []string, out io.Writer) int {
+	if !RequirePin(root, 7, "adopted features", "`adopted` is not a feature status, and an adopted feature fails validation (F2)", out) {
+		return 1
+	}
 	if !idRe.MatchString(id) {
 		fmt.Fprintf(out, "error: feature id must be <group>/<slug>, lowercase [a-z0-9-]; got %q\n", id)
 		return 1

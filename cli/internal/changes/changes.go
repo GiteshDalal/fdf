@@ -17,6 +17,7 @@ import (
 
 	// Aliased: this package's tests name a helper bundle.
 	validation "github.com/GiteshDalal/fdf/cli/internal/bundle"
+	"github.com/GiteshDalal/fdf/cli/internal/scaffold"
 )
 
 var (
@@ -39,7 +40,12 @@ func New(root, id, docType string, affects []string, out io.Writer) int {
 // the bug in `resolves`, which F10 holds to: once the work is done, the bug
 // must not read as open. affects defaults to the bug's own. id may also be
 // the full ID, changes/<slug>, which files the document in the same place.
+// Changes and Fixes are v0.5: an older pin reads changes/ as a feature group,
+// so the command refuses there.
 func NewFrom(root, id, docType string, affects []string, fromBug string, out io.Writer) int {
+	if !scaffold.RequirePin(root, 5, "Changes and Fixes", "changes/ is a feature group, and a "+docType+" written there fails validation (F3)", out) {
+		return 1
+	}
 	id = strings.TrimPrefix(id, "changes/")
 	if !slugRe.MatchString(id) && !groupedRe.MatchString(id) {
 		fmt.Fprintf(out, "error: id must be <slug> or <group>/<slug>, lowercase [a-z0-9-]; got %q\n", id)

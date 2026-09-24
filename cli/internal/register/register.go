@@ -41,6 +41,7 @@ type Kind struct {
 	Dir      string // "debts" or "bugs"
 	Type     string // the document type: "Debt" or "Bug"
 	noun     string
+	since    int // the spec minor version that introduced the register
 	logTitle string
 	template func(title, now string, affects, resources []string) string
 	next     func(id string, affects, resources []string) string
@@ -49,7 +50,7 @@ type Kind struct {
 
 // Debt is the debt register (v0.6).
 var Debt = Kind{
-	Dir: "debts", Type: "Debt", noun: "debt",
+	Dir: "debts", Type: "Debt", noun: "debt", since: 6,
 	logTitle: "# Debt Log\n\nDebts retired from the register by `fdf debt --cleanup`.\nThe register itself is the files beside this one; this is what they became.\n",
 	template: func(title, now string, _, resources []string) string {
 		return fmt.Sprintf(`---
@@ -83,7 +84,7 @@ lets the register be prioritized without a priority field.
 
 // Bug is the bug register (v0.7).
 var Bug = Kind{
-	Dir: "bugs", Type: "Bug", noun: "bug",
+	Dir: "bugs", Type: "Bug", noun: "bug", since: 7,
 	logTitle: "# Bug Log\n\nBugs retired from the register by `fdf bug --cleanup`.\nThe register itself is the files beside this one; the Fix or Change that\nrepaired each one is its permanent record.\n",
 	template: func(title, now string, affects, resources []string) string {
 		affectsLine := "# affects: [group/slug]              # the features it shows up in (each must exist)"
@@ -153,6 +154,15 @@ register be prioritized.
 type entry struct {
 	id, path, status, title, timestamp string
 	resolution                         string
+}
+
+// pinned reports whether the bundle's pin has this register, and says why not
+// when it does not: under an older pin the validator reads the register's
+// directory as a feature group, so an entry filed there fails validation and
+// there is no register to list or clear.
+func (k Kind) pinned(root string, out io.Writer) bool {
+	return scaffold.RequirePin(root, k.since, "the "+k.noun+" register",
+		k.Dir+"/ is a feature group, and a "+k.Type+" filed there fails validation (F3)", out)
 }
 
 // scan reads every entry of the register. Trail siblings (<slug>.log.md) and
@@ -241,6 +251,9 @@ func day(ts string) string {
 // List prints the register as a table. filter is "" for everything, or one of
 // Statuses.
 func (k Kind) List(root, filter string, out io.Writer) int {
+	if !k.pinned(root, out) {
+		return 1
+	}
 	entries, err := k.scan(root)
 	if err != nil {
 		fmt.Fprintf(out, "no %s/ directory at %s — nothing is on the register yet.\n", k.Dir, root)
@@ -293,6 +306,9 @@ func (k Kind) List(root, filter string, out io.Writer) int {
 // touched. dryRun prints the plan and changes nothing; noLog skips the log
 // entry and only removes the files.
 func (k Kind) Cleanup(root string, dryRun, noLog bool, out io.Writer) int {
+	if !k.pinned(root, out) {
+		return 1
+	}
 	entries, err := k.scan(root)
 	if err != nil {
 		fmt.Fprintf(out, "no %s/ directory at %s — nothing to clean up.\n", k.Dir, root)
@@ -416,6 +432,9 @@ func resourceLine(resources []string, what string) string {
 // features the defect shows up in; each must exist. resources are the
 // project-relative paths carrying the entry.
 func (k Kind) New(root, id string, affects, resources []string, out io.Writer) int {
+	if !k.pinned(root, out) {
+		return 1
+	}
 	id = strings.TrimPrefix(id, k.Dir+"/")
 	for _, s := range Statuses {
 		if id == s {
