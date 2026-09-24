@@ -688,7 +688,7 @@ func checkChangeLifecycle(changes map[string]*changeInfo, pairs map[string]*pair
 
 // checkReleaseChanges is the F7 half covering a release's `# Changes` list:
 // the same bidirectional check features get, for Change and Fix documents.
-func checkReleaseChanges(rootAbs string, releases map[string]*releaseInfo, changes map[string]*changeInfo, errs *[]string) {
+func checkReleaseChanges(rootAbs string, releases map[string]*releaseInfo, changes map[string]*changeInfo, v1 bool, errs *[]string) {
 	versions := make([]string, 0, len(releases))
 	for v := range releases {
 		versions = append(versions, v)
@@ -696,8 +696,8 @@ func checkReleaseChanges(rootAbs string, releases map[string]*releaseInfo, chang
 	sort.Strings(versions)
 	for _, version := range versions {
 		r := releases[version]
-		for _, t := range sectionLinks(r.body, "Changes") {
-			resolved := resolveLink(rootAbs, r.rel, t)
+		for _, t := range sectionLinks(r.body, "Changes", v1) {
+			resolved := resolveLink(rootAbs, r.rel, t, v1)
 			if resolved == "" {
 				continue
 			}
@@ -735,8 +735,8 @@ func checkReleaseChanges(rootAbs string, releases map[string]*releaseInfo, chang
 			continue
 		}
 		found := false
-		for _, t := range sectionLinks(r.body, "Changes") {
-			if resolved := resolveLink(rootAbs, r.rel, t); resolved != "" &&
+		for _, t := range sectionLinks(r.body, "Changes", v1) {
+			if resolved := resolveLink(rootAbs, r.rel, t, v1); resolved != "" &&
 				strings.TrimSuffix(toSlash(relTo(rootAbs, resolved)), ".md") == id {
 				found = true
 			}

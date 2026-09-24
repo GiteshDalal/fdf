@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/GiteshDalal/fdf/cli/internal/links"
 )
 
 // crossLink is one link a document writes, for the broken-link soft check.
@@ -30,8 +32,9 @@ type doc struct {
 // they always have.
 type collection struct {
 	// stem, v5, v6 and v7 gate the rules each document records under: the
-	// pin is 0.4, 0.5, 0.6 or 0.7, or later.
-	stem, v5, v6, v7 bool
+	// pin is 0.4, 0.5, 0.6 or 0.7, or later. v1 is a 1.0 pin, whose links
+	// the links engine reads.
+	stem, v5, v6, v7, v1 bool
 
 	errs, warns *[]string
 	crossLinks  *[]crossLink
@@ -87,6 +90,14 @@ func (c *collection) read(rel string, raw []byte) string {
 		if rel != "SPEC.md" && (placeholderRe.MatchString(linkScanText(text)) || gherkinPlaceholderRe.MatchString(text)) {
 			c.warn("%s: still holds a scaffold's placeholder text (`TODO —`, `<role>`) — fill it in, or delete what does not apply", rel)
 		}
+	}
+	if c.v1 {
+		for _, l := range links.Find(text) {
+			if !l.InCode {
+				*c.crossLinks = append(*c.crossLinks, crossLink{rel, l.Target})
+			}
+		}
+		return text
 	}
 	for _, m := range linkRe.FindAllStringSubmatch(linkScanText(text), -1) {
 		*c.crossLinks = append(*c.crossLinks, crossLink{rel, m[1]})

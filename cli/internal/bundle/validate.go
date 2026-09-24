@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/GiteshDalal/fdf/cli/internal/fdfroot"
+	"github.com/GiteshDalal/fdf/cli/internal/links"
 	"github.com/GiteshDalal/fdf/cli/internal/specver"
 )
 
@@ -316,7 +317,7 @@ func Validate(root string, opts Options) int {
 	contextDocs := map[string]bool{} // name -> isStub
 
 	c := &collection{
-		stem: specStem, v5: specV5, v6: specV6, v7: specV7,
+		stem: specStem, v5: specV5, v6: specV6, v7: specV7, v1: v1,
 		errs: &errs, warns: &warns, crossLinks: &crossLinks, resources: &resources, documents: &documents,
 		features: features, featureDeps: featureDeps, pairs: pairs, releases: releases, changes: changes,
 		practices: practices, practiceTrails: practiceTrails, debts: debts, debtTrails: debtTrails,
@@ -769,11 +770,11 @@ func Validate(root string, opts Options) int {
 			if specV7 {
 				planBody = linkScanText(planBody) // a link in code is a sample, not a listing
 			}
-			for _, t := range sectionLinks(planBody, "Tasks") {
+			for _, t := range sectionLinks(planBody, "Tasks", v1) {
 				if specV7 {
 					// A link lists a task only if it reaches this plan's task
 					// directory: a same-named task elsewhere is not this one.
-					if resolved := resolveLink(rootAbs, p.planRel, t); resolved != "" && filepath.Dir(resolved) == taskDir {
+					if resolved := resolveLink(rootAbs, p.planRel, t, v1); resolved != "" && filepath.Dir(resolved) == taskDir {
 						listed[filepath.Base(resolved)] = true
 					}
 					continue
@@ -811,8 +812,8 @@ func Validate(root string, opts Options) int {
 
 	// F7: release <-> version bidirectional consistency.
 	for version, r := range releases {
-		for _, t := range sectionLinks(r.body, "Features") {
-			resolved := resolveLink(rootAbs, r.rel, t)
+		for _, t := range sectionLinks(r.body, "Features", v1) {
+			resolved := resolveLink(rootAbs, r.rel, t, v1)
 			if resolved == "" {
 				continue
 			}
@@ -836,7 +837,7 @@ func Validate(root string, opts Options) int {
 		}
 	}
 	if specV5 {
-		checkReleaseChanges(rootAbs, releases, changes, &errs)
+		checkReleaseChanges(rootAbs, releases, changes, v1, &errs)
 	}
 	for fid, f := range features {
 		if f.version == "" {
@@ -848,8 +849,8 @@ func Validate(root string, opts Options) int {
 			continue
 		}
 		found := false
-		for _, t := range sectionLinks(r.body, "Features") {
-			if resolved := resolveLink(rootAbs, r.rel, t); resolved != "" &&
+		for _, t := range sectionLinks(r.body, "Features", v1) {
+			if resolved := resolveLink(rootAbs, r.rel, t, v1); resolved != "" &&
 				strings.TrimSuffix(filepath.ToSlash(relTo(rootAbs, resolved)), ".md") == fid {
 				found = true
 			}
@@ -861,7 +862,7 @@ func Validate(root string, opts Options) int {
 
 	// Soft: broken cross-links.
 	for _, l := range crossLinks {
-		resolved := resolveLink(rootAbs, l.src, l.target)
+		resolved := resolveLink(rootAbs, l.src, l.target, v1)
 		if resolved == "" {
 			continue
 		}
@@ -994,7 +995,12 @@ func findCycle(deps map[string][]string) string {
 	return ""
 }
 
-func sectionLinks(body, heading string) []string {
+// sectionLinks returns the targets of the links in every `# <heading>`
+// section of a body. Under 1.0 the links engine reads them (sectionTargets).
+func sectionLinks(body, heading string, v1 bool) []string {
+	if v1 {
+		return sectionTargets(body, heading)
+	}
 	var out []string
 	inSection := false
 	for _, line := range strings.Split(body, "\n") {
@@ -1011,7 +1017,46 @@ func sectionLinks(body, heading string) []string {
 	return out
 }
 
-func resolveLink(root, srcRel, target string) string {
+// sectionTargets is sectionLinks under 1.0: the links the links engine finds
+// in each `# <heading>` section, outside code. A title after a target, a
+// destination in angle brackets and a reference definition read as they do
+// everywhere else.
+func sectionTargets(body, heading string) []string {
+	var sections [][2]int // byte ranges; an end of -1 runs to the end of body
+	pos := 0
+	for _, line := range strings.SplitAfter(body, "\n") {
+		if m := headingRe.FindStringSubmatch(strings.TrimRight(line, "\r\n")); m != nil {
+			if n := len(sections); n > 0 && sections[n-1][1] < 0 {
+				sections[n-1][1] = pos
+			}
+			if strings.EqualFold(strings.TrimSpace(m[1]), heading) {
+				sections = append(sections, [2]int{pos + len(line), -1})
+			}
+		}
+		pos += len(line)
+	}
+	var out []string
+	for _, l := range links.Find(body) {
+		for _, s := range sections {
+			if !l.InCode && l.Start >= s[0] && (s[1] < 0 || l.Start < s[1]) {
+				out = append(out, l.Target)
+			}
+		}
+	}
+	return out
+}
+
+// resolveLink returns the absolute path a link written in srcRel names, or
+// "" when its target is not a path. Under 1.0 the links engine reads the
+// target, as it does the links it repairs.
+func resolveLink(root, srcRel, target string, v1 bool) string {
+	if v1 {
+		d, ok := links.Resolve(target, filepath.ToSlash(srcRel), "")
+		if !ok {
+			return ""
+		}
+		return filepath.Join(root, filepath.FromSlash(d.Path))
+	}
 	t := strings.TrimSpace(target)
 	if t == "" || strings.HasPrefix(t, "#") || strings.Contains(t, "://") ||
 		strings.HasPrefix(t, "mailto:") || strings.HasPrefix(t, "tel:") {
