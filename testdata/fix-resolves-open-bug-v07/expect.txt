@@ -1,0 +1,3 @@
+exit: 1
+contains: changes/hours-fix.md: done, but the bug it resolves, bugs/still-open, is still 'open'
+contains: (F10)

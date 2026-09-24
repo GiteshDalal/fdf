@@ -14,13 +14,16 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	// Aliased: this package's tests name a helper bundle.
+	validation "github.com/GiteshDalal/fdf/cli/internal/bundle"
+	"github.com/GiteshDalal/fdf/cli/internal/scaffold"
 )
 
 var (
 	slugRe    = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 	groupedRe = regexp.MustCompile(`^([a-z0-9][a-z0-9-]*)/([a-z0-9][a-z0-9-]*)$`)
 	featureRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*$`)
-	affectsRe = regexp.MustCompile(`(?m)^affects:\s*(.+)$`)
 	typeRe    = regexp.MustCompile(`(?m)^type:\s*(\S+)`)
 	statusRe  = regexp.MustCompile(`(?m)^status:\s*(\S+)`)
 	titleRe   = regexp.MustCompile(`(?m)^title:\s*(.+)$`)
@@ -29,13 +32,45 @@ var (
 // New scaffolds a Change (docType "Change") or Fix (docType "Fix") at
 // changes/<id>.md, where id is "<slug>" or "<group>/<slug>".
 func New(root, id, docType string, affects []string, out io.Writer) int {
+	return NewFrom(root, id, docType, affects, "", out)
+}
+
+// NewFrom is New for work that repairs a bug on the register (v0.7): the new
+// document takes over the bug's analysis as its permanent record and names
+// the bug in `resolves`, which F10 holds to: once the work is done, the bug
+// must not read as open. affects defaults to the bug's own. id may also be
+// the full ID, changes/<slug>, which files the document in the same place.
+// Changes and Fixes are v0.5: an older pin reads changes/ as a feature group,
+// so the command refuses there.
+func NewFrom(root, id, docType string, affects []string, fromBug string, out io.Writer) int {
+	if !scaffold.RequirePin(root, 5, "Changes and Fixes", "changes/ is a feature group, and a "+docType+" written there fails validation (F3)", out) {
+		return 1
+	}
+	id = strings.TrimPrefix(id, "changes/")
 	if !slugRe.MatchString(id) && !groupedRe.MatchString(id) {
 		fmt.Fprintf(out, "error: id must be <slug> or <group>/<slug>, lowercase [a-z0-9-]; got %q\n", id)
 		return 1
 	}
+	var b *bugDoc
+	if fromBug != "" {
+		var err error
+		if b, err = readBug(root, fromBug); err != nil {
+			fmt.Fprintln(out, "error:", err)
+			return 1
+		}
+		if len(affects) == 0 {
+			affects = b.affects
+		}
+		if len(affects) == 0 {
+			fmt.Fprintf(out, "error: %s names no feature in `affects`, so there is nothing for a %s to amend.\n", fromBug, docType)
+			fmt.Fprintln(out, "  a defect in code no feature documents is repaired after its capability is adopted:")
+			fmt.Fprintln(out, "  `fdf adopt --resource <path> <group>/<slug>`, add that feature to the bug's `affects`, then retry.")
+			return 1
+		}
+	}
 	if len(affects) == 0 {
-		fmt.Fprintf(out, "error: --affects is required — name the delivered feature(s) this %s touches\n", strings.ToLower(docType))
-		return 1
+		fmt.Fprintf(out, "error: --affects is required — name the delivered feature(s) this %s touches\n", docType)
+		return 2
 	}
 	for _, f := range affects {
 		if !featureRe.MatchString(f) {
@@ -53,6 +88,10 @@ func New(root, id, docType string, affects []string, out io.Writer) int {
 		fmt.Fprintf(out, "error: changes/%s.md already exists\n", id)
 		return 1
 	}
+	if why := scaffold.ChangePlaceTaken(root, id); why != "" {
+		fmt.Fprintln(out, "error: "+why)
+		return 1
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		fmt.Fprintln(out, "error:", err)
 		return 1
@@ -67,25 +106,53 @@ func New(root, id, docType string, affects []string, out io.Writer) int {
 	if len(affects) > 1 {
 		affectsField = "[" + strings.Join(affects, ", ") + "]"
 	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "---\ntype: %s\ntitle: %s\ndescription: TODO — one sentence.\nstatus: draft\naffects: %s\ntimestamp: %s\n---\n\n",
-		docType, title, affectsField, time.Now().UTC().Format("2006-01-02T15:04:05Z"))
+	var sb strings.Builder
+	resolvesLine := ""
+	if b != nil {
+		resolvesLine = "resolves: " + b.id + "\n"
+	}
+	fmt.Fprintf(&sb, "---\ntype: %s\ntitle: %s\ndescription: TODO — one sentence.\nstatus: draft\naffects: %s\n%stimestamp: %s\n---\n\n",
+		docType, title, affectsField, resolvesLine, time.Now().UTC().Format("2006-01-02T15:04:05Z"))
 	if docType == "Change" {
-		b.WriteString("# Problem\n\nTODO — what is inadequate about the delivered behavior, and for whom.\n\n")
-		b.WriteString("# Scenario changes\n\n")
-		for _, f := range affects {
-			fmt.Fprintf(&b, "## %s\n\n- add: TODO — a scenario name that must exist once this is done\n- modify: TODO — an existing scenario whose steps change (name unchanged)\n- remove: TODO — a scenario name that must not exist once this is done\n\n", f)
+		problem := "TODO — what is inadequate about the delivered behavior, and for whom."
+		if b != nil {
+			// A missing `# Expected` leaves a whole placeholder line, which
+			// validation flags; one after "instead: " it would not.
+			expected := "What should happen instead: " + b.expected
+			if t := strings.TrimSpace(b.expected); t == "" || strings.HasPrefix(t, "TODO") {
+				expected = "TODO — what should happen instead."
+			}
+			problem = orTODO(b.symptom, "the observed wrong behavior") + "\n\n" + expected
 		}
-		b.WriteString("Delete the lines that do not apply. Names are matched verbatim against\nthe feature's Gherkin (F10).\n\n# Impact\n\nTODO — migrations, compatibility, rollout. Optional.\n")
-	} else {
-		b.WriteString("# Symptom\n\nTODO — the observed wrong behavior, with a reproduction.\n\n")
-		b.WriteString("# Root cause\n\nTODO — why the code diverged from the documented behavior.\n\n")
-		b.WriteString("# Regression cases\n\n")
+		sb.WriteString("# Problem\n\n" + problem + "\n\n")
+		sb.WriteString("# Scenario changes\n\n")
 		for _, f := range affects {
-			fmt.Fprintf(&b, "## %s\n\n- TODO scenario name (verbatim, must already exist) — TODO the command, test path, or manual procedure\n\n", f)
+			fmt.Fprintf(&sb, "## %s\n\n- add: TODO — a scenario name that must exist once this is done\n- modify: TODO — an existing scenario whose steps change (name unchanged)\n- remove: TODO — a scenario name that must not exist once this is done\n\n", f)
+		}
+		// One line: the fdf-change skill deletes each line starting `TODO —`,
+		// and a wrapped sentence would leave its second half behind.
+		sb.WriteString("TODO — delete the lines that do not apply, and this one. Names are matched verbatim against the feature's Gherkin (F10).\n\n# Impact\n\nTODO — migrations, compatibility, rollout. Optional.\n")
+	} else {
+		symptom, cause := "TODO — the observed wrong behavior, with a reproduction.", "TODO — why the code diverged from the documented behavior."
+		if b != nil {
+			symptom, cause = orTODO(b.symptom, "the observed wrong behavior"), orTODO(b.rootCause, "why the code diverged from the documented behavior")
+		}
+		sb.WriteString("# Symptom\n\n" + symptom + "\n\n")
+		sb.WriteString("# Root cause\n\n" + cause + "\n\n")
+		sb.WriteString("# Regression cases\n\n")
+		for _, f := range affects {
+			fmt.Fprintf(&sb, "## %s\n\n", f)
+			if b != nil && len(b.violates[f]) > 0 {
+				for _, n := range b.violates[f] {
+					fmt.Fprintf(&sb, "- %s — TODO the command, test path, or manual procedure\n", n)
+				}
+				sb.WriteString("\n")
+				continue
+			}
+			sb.WriteString("- TODO scenario name (verbatim, must already exist) — TODO the command, test path, or manual procedure\n\n")
 		}
 	}
-	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(sb.String()), 0o644); err != nil {
 		fmt.Fprintln(out, "error:", err)
 		return 1
 	}
@@ -95,6 +162,10 @@ func New(root, id, docType string, affects []string, out io.Writer) int {
 		return code
 	}
 	fmt.Fprintf(out, "\ndone: %s changes/%s affects %s\n", docType, id, strings.Join(affects, ", "))
+	if b != nil {
+		fmt.Fprintf(out, "resolves %s — its analysis is copied here; once this is done, flip the bug to resolved with a\n", b.id)
+		fmt.Fprintf(out, "  `# Resolution` naming changes/%s (F10 holds the bug to it).\n", id)
+	}
 	if docType == "Change" {
 		fmt.Fprintln(out, "next: fill `# Scenario changes`, then write changes/"+id+".spec.md and get the design approved (status: specified).")
 	} else {
@@ -103,35 +174,137 @@ func New(root, id, docType string, affects []string, out io.Writer) int {
 	return 0
 }
 
-// ensureIndex appends the new document to changes/INDEX.md (and a group index
-// when one is in play), creating either if absent.
-func ensureIndex(root, id, title, docType string, out io.Writer) int {
-	rel := "/changes/" + id + ".md"
-	idxDir := filepath.Join(root, "changes")
-	listedIn := "changes/INDEX.md"
-	if m := groupedRe.FindStringSubmatch(id); m != nil {
-		idxDir = filepath.Join(idxDir, m[1])
-		listedIn = "changes/" + m[1] + "/INDEX.md"
+// orTODO returns s, or a TODO naming what belongs there when s is empty or is
+// still a scaffold's own TODO — copying a placeholder would only disguise it.
+func orTODO(s, what string) string {
+	if t := strings.TrimSpace(s); t == "" || strings.HasPrefix(t, "TODO") {
+		return "TODO — " + what + "."
 	}
-	idx := filepath.Join(idxDir, "INDEX.md")
-	entry := fmt.Sprintf("* [%s](%s) - %s. (**draft**)\n", title, rel, strings.ToLower(docType))
-	raw, err := os.ReadFile(idx)
-	if err != nil {
-		raw = []byte("# Changes\n\nPost-delivery changes and fixes for delivered features.\n\n")
-	}
-	if err := os.WriteFile(idx, append(raw, []byte(entry)...), 0o644); err != nil {
-		fmt.Fprintln(out, "error:", err)
-		return 1
-	}
-	fmt.Fprintf(out, "updated %s (now lists %q)\n", listedIn, title)
-	return 0
+	return s
 }
 
-type entry struct{ id, docType, status, title string }
+var bugIDRe = regexp.MustCompile(`^bugs/[a-z0-9][a-z0-9-]*(/[a-z0-9][a-z0-9-]*)?$`)
 
-// History prints every Change and Fix whose `affects` names a feature. The
-// edge is computed from frontmatter, never from a hand-written back-link on
-// the feature — a required back-link is a standing invitation to drift.
+// bugDoc is the part of a Bug a Fix or Change takes over.
+type bugDoc struct {
+	id                           string
+	affects                      []string
+	symptom, expected, rootCause string
+	violates                     map[string][]string
+}
+
+// readBug loads bugs/<id>.md for NewFrom.
+func readBug(root, id string) (*bugDoc, error) {
+	id = strings.TrimSuffix(strings.TrimPrefix(id, "/"), ".md")
+	if !bugIDRe.MatchString(id) {
+		return nil, fmt.Errorf("--from takes a bug ID of the form bugs/<slug> or bugs/<group>/<slug>; got %q", id)
+	}
+	raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(id)+".md"))
+	if err != nil {
+		return nil, fmt.Errorf("--from names %s, which is not a bug on the register", id)
+	}
+	text := string(raw)
+	if m := typeRe.FindStringSubmatch(text); m == nil || strings.Trim(m[1], `"'`) != "Bug" {
+		return nil, fmt.Errorf("--from names %s, whose type is not Bug", id)
+	}
+	b := &bugDoc{
+		id:        id,
+		affects:   listField(text, "affects"),
+		symptom:   section(text, "Symptom"),
+		expected:  section(text, "Expected"),
+		rootCause: section(text, "Root cause"),
+		violates:  map[string][]string{},
+	}
+	cur := ""
+	// A wrapped entry is one entry, as validation reads it.
+	for _, line := range validation.LogicalLines(section(text, "Violates")) {
+		t := strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(t, "## "):
+			cur = strings.TrimSpace(t[3:])
+		case cur != "" && (strings.HasPrefix(t, "- ") || strings.HasPrefix(t, "* ")):
+			name := strings.TrimSpace(t[2:])
+			if loc := noteSepRe.FindStringIndex(name); loc != nil {
+				name = strings.TrimSpace(name[:loc[0]])
+			}
+			b.violates[cur] = append(b.violates[cur], name)
+		}
+	}
+	return b, nil
+}
+
+var noteSepRe = regexp.MustCompile(`\s(?:—|–|--)\s`)
+
+// section returns the trimmed text under a top-level `# heading`.
+func section(text, heading string) string {
+	var b strings.Builder
+	in := false
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(line, "# ") {
+			if in {
+				break
+			}
+			in = strings.EqualFold(strings.TrimSpace(line[2:]), heading)
+			continue
+		}
+		if in {
+			b.WriteString(line)
+			b.WriteString("\n")
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// listField reads a frontmatter key written as a scalar, an inline list, or a
+// block list.
+func listField(text, key string) []string {
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		if !strings.HasPrefix(line, key+":") {
+			continue
+		}
+		val := strings.TrimSpace(strings.TrimPrefix(line, key+":"))
+		var out []string
+		if val == "" {
+			for _, l := range lines[i+1:] {
+				t := strings.TrimSpace(l)
+				if !strings.HasPrefix(t, "- ") {
+					break
+				}
+				out = append(out, strings.Trim(strings.TrimSpace(t[2:]), `"'`))
+			}
+			return out
+		}
+		for _, p := range strings.Split(strings.Trim(val, "[]"), ",") {
+			if p = strings.Trim(strings.TrimSpace(p), `"'`); p != "" {
+				out = append(out, p)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// ensureIndex lists the new document in changes/INDEX.md, or in its group's
+// index, as every reserved directory lists its documents: a group's index is
+// created on first use, titled after the group, and listed in
+// changes/INDEX.md so the group can be found.
+func ensureIndex(root, id, title, docType string, out io.Writer) int {
+	if code := scaffold.EnsureChangesIndex(root, out); code != 0 {
+		return code
+	}
+	return scaffold.ListEntry(root, "changes", id, title, strings.ToLower(docType), out)
+}
+
+type entry struct {
+	id, docType, status, title string
+	resolves                   []string
+}
+
+// History prints every Change and Fix whose `affects` names a feature, and
+// (v0.7) every bug on the register that shows up in it. The edges are computed
+// from frontmatter, never from a hand-written back-link on the feature — a
+// required back-link is a standing invitation to drift.
 func History(root, featureID string, out io.Writer) int {
 	if !featureRe.MatchString(featureID) {
 		fmt.Fprintf(out, "error: feature id must be <group>/<slug>; got %q\n", featureID)
@@ -141,10 +314,34 @@ func History(root, featureID string, out io.Writer) int {
 		fmt.Fprintf(out, "error: %s is not a feature in this bundle\n", featureID)
 		return 1
 	}
+	found := collect(root, "changes", featureID, func(t string) bool { return t == "Change" || t == "Fix" })
+	bugs := collect(root, "bugs", featureID, func(t string) bool { return t == "Bug" })
+	if len(found) == 0 {
+		fmt.Fprintf(out, "%s: no Change or Fix names it in `affects`\n", featureID)
+	} else {
+		fmt.Fprintf(out, "%s — %d post-delivery document(s):\n\n", featureID, len(found))
+		for _, e := range found {
+			fmt.Fprintf(out, "  %-6s %-10s %s\n         %s\n", e.docType, e.status, e.title, e.id)
+			for _, r := range e.resolves {
+				fmt.Fprintf(out, "         resolves %s\n", r)
+			}
+		}
+	}
+	if len(bugs) > 0 {
+		fmt.Fprintf(out, "\nknown bugs — %d on the register:\n\n", len(bugs))
+		for _, e := range bugs {
+			fmt.Fprintf(out, "  %-10s %s\n             %s\n", e.status, e.title, e.id)
+		}
+	}
+	return 0
+}
+
+// collect reads the documents under one bundle directory whose type passes
+// want and whose `affects` names featureID, in ID order.
+func collect(root, dir, featureID string, want func(string) bool) []entry {
 	var found []entry
-	changesDir := filepath.Join(root, "changes")
-	filepath.WalkDir(changesDir, func(p string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".md") || d.Name() == "INDEX.md" {
+	filepath.WalkDir(filepath.Join(root, dir), func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".md") || d.Name() == "INDEX.md" || d.Name() == "LOG.md" {
 			return nil
 		}
 		raw, rerr := os.ReadFile(p)
@@ -153,17 +350,12 @@ func History(root, featureID string, out io.Writer) int {
 		}
 		text := string(raw)
 		m := typeRe.FindStringSubmatch(text)
-		if m == nil || (m[1] != "Change" && m[1] != "Fix") {
+		if m == nil || !want(strings.Trim(m[1], `"'`)) {
 			return nil
 		}
-		am := affectsRe.FindStringSubmatch(text)
-		if am == nil {
-			return nil
-		}
-		list := strings.Trim(strings.TrimSpace(am[1]), "[]")
 		hit := false
-		for _, f := range strings.Split(list, ",") {
-			if strings.Trim(strings.TrimSpace(f), `"'`) == featureID {
+		for _, f := range listField(text, "affects") {
+			if f == featureID {
 				hit = true
 			}
 		}
@@ -171,7 +363,7 @@ func History(root, featureID string, out io.Writer) int {
 			return nil
 		}
 		rel, _ := filepath.Rel(root, p)
-		e := entry{id: strings.TrimSuffix(filepath.ToSlash(rel), ".md"), docType: m[1]}
+		e := entry{id: strings.TrimSuffix(filepath.ToSlash(rel), ".md"), docType: m[1], resolves: listField(text, "resolves")}
 		if sm := statusRe.FindStringSubmatch(text); sm != nil {
 			e.status = sm[1]
 		}
@@ -182,13 +374,5 @@ func History(root, featureID string, out io.Writer) int {
 		return nil
 	})
 	sort.Slice(found, func(i, j int) bool { return found[i].id < found[j].id })
-	if len(found) == 0 {
-		fmt.Fprintf(out, "%s: no changes or fixes since delivery\n", featureID)
-		return 0
-	}
-	fmt.Fprintf(out, "%s — %d post-delivery document(s):\n\n", featureID, len(found))
-	for _, e := range found {
-		fmt.Fprintf(out, "  %-6s %-10s %s\n         %s\n", e.docType, e.status, e.title, e.id)
-	}
-	return 0
+	return found
 }

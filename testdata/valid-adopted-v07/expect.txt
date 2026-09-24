@@ -1,0 +1,6 @@
+exit: 0
+contains: repo integrity (R1) verified
+not-contains: (F4)
+not-contains: (F5)
+not-contains: (F8)
+not-contains: (F10)

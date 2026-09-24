@@ -1,0 +1,2 @@
+exit: 1
+contains: venues/opening-hours.md: status 'draft' but trail siblings or task directory venues/opening-hours/ exist (F4)

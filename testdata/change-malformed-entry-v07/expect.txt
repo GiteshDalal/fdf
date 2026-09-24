@@ -1,0 +1,3 @@
+exit: 1
+contains: changes/hours-wording.md: `# Scenario changes` entry "modify: Venue owner sets opening hours" sits under no `## <feature-id>` heading (F10)
+contains: changes/hours-wording.md: `## venues/opening-hours` entry "Modify: Venue owner sets opening hours" is not `- add: <scenario>`, `- modify: <scenario>` or `- remove: <scenario>` (F10)

@@ -1,0 +1,2 @@
+exit: 1
+contains: bugs/wontfix.md: Bug `status` must be one of open|accepted|resolved, got "wontfix" (F2)

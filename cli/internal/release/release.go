@@ -43,12 +43,12 @@ type member struct {
 // document is still open.
 func Sync(root, version, date string, ship bool, out io.Writer) int {
 	if strings.TrimSpace(version) == "" {
-		fmt.Fprintln(out, "usage: fdf release [--root <dir>] [--date <YYYY-MM-DD>] [--ship] <version>")
+		fmt.Fprintln(out, "error: a release needs a version, such as 1.2.0")
 		return 2
 	}
 	feats, chgs := scan(root, version)
 	if len(feats)+len(chgs) == 0 {
-		fmt.Fprintf(out, "error: no feature, change or fix carries `version: %q` — set it on the documents that ship in this release first\n", version)
+		fmt.Fprintf(out, "error: no feature, Change or Fix carries `version: %q` — set it on the documents that ship in this release first\n", version)
 		fmt.Fprintln(out, "  membership is a human decision; this command only derives the lists from it")
 		return 1
 	}
@@ -131,7 +131,7 @@ func Sync(root, version, date string, ship bool, out io.Writer) int {
 		return 1
 	}
 	fmt.Fprintf(out, "%s releases/%s.md (status: %s, date: %s)\n", verb, version, status, when)
-	fmt.Fprintf(out, "  %d feature(s), %d change(s)/fix(es) derived from `version: %q`\n", len(feats), len(chgs), version)
+	fmt.Fprintf(out, "  %d feature(s), %d Change(s) or Fix(es) derived from `version: %q`\n", len(feats), len(chgs), version)
 	if code := ensureIndex(root, version, out); code != 0 {
 		return code
 	}
@@ -190,21 +190,37 @@ func scan(root, version string) (feats, chgs []member) {
 	return feats, chgs
 }
 
-// ensureIndex lists the release in releases/INDEX.md, newest first.
+var listingRe = regexp.MustCompile(`^\s*[-*+]\s+.*\]\(`)
+
+// ensureIndex lists the release in releases/INDEX.md, newest first: a new
+// release goes above the first one listed.
 func ensureIndex(root, version string, out io.Writer) int {
 	idx := filepath.Join(root, "releases", "INDEX.md")
-	entry := fmt.Sprintf("* [%s](/releases/%s.md) - release.\n", version, version)
+	entry := fmt.Sprintf("* [%s](/releases/%s.md) - release.", version, version)
 	raw, err := os.ReadFile(idx)
 	if err == nil && strings.Contains(string(raw), "/releases/"+version+".md") {
 		return 0
 	}
 	if err != nil {
-		raw = []byte("# Releases\n\nNewest first.\n\n")
+		raw = []byte("# Releases\n\nNewest first.\n")
 	}
-	if err := os.WriteFile(idx, append(raw, []byte(entry)...), 0o644); err != nil {
+	lines := strings.Split(strings.TrimRight(string(raw), "\n"), "\n")
+	at := -1
+	for i, l := range lines {
+		if listingRe.MatchString(l) {
+			at = i
+			break
+		}
+	}
+	if at < 0 {
+		lines = append(lines, "") // a list starts after a blank line
+		at = len(lines)
+	}
+	lines = append(lines[:at], append([]string{entry}, lines[at:]...)...)
+	if err := os.WriteFile(idx, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
 		fmt.Fprintln(out, "error:", err)
 		return 1
 	}
-	fmt.Fprintln(out, "updated releases/INDEX.md")
+	fmt.Fprintf(out, "updated releases/INDEX.md (now lists %q)\n", version)
 	return 0
 }

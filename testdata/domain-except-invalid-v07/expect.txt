@@ -1,0 +1,4 @@
+exit: 1
+contains: DOMAIN.md: `except: shop` under "Venue" is a banned word alone
+contains: DOMAIN.md: `except: data warehouse` under "Venue" contains none of the words "Venue" bans
+not-contains: `except: data store`

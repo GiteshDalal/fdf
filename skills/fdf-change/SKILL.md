@@ -1,6 +1,6 @@
 ---
 name: fdf-change
-description: Use when a delivered (done or retired) FDF feature needs to change, a diagnosed defect in it needs fixing, or it is being retired — including work spanning several features. An undiagnosed bug goes to fdf-debug first. Not for features still in draft/specified/planned/implementing.
+description: Use when a delivered (done, adopted or retired) FDF feature needs to change, a diagnosed defect in it needs fixing — including a bug on the register — or it is being retired, including work spanning several features. An undiagnosed bug goes to fdf-debug first. Not for features still in draft/specified/planned/implementing.
 ---
 
 # FDF Change
@@ -40,7 +40,7 @@ Change.
 
 If the new behavior reads as its own `Feature:` block with its own
 As-a / I-want / So-that, it is not a change at all — it is a **new feature**
-(fdf-brainstorm), which may record its lineage with `depends-on`.
+(fdf-brainstorm), which names the feature it builds on in `depends-on`.
 
 Do not settle this from the report's wording. A defect's route follows from
 its **root cause**, so if nobody has diagnosed it yet, run **fdf-debug**
@@ -50,15 +50,28 @@ Fix body's `# Symptom` and `# Root cause` sections are waiting for.
 ## Process
 
 1. **Confirm the feature is delivered.** `affects` may only name features that
-   are `done` or `retired`. A feature still in flight is edited directly —
-   route back to fdf-brainstorm/plan/execute.
+   are `done`, `adopted` or `retired`. A feature still in flight is edited
+   directly — route back to fdf-brainstorm/plan/execute. Code no feature
+   documents is adopted first (fdf-adopt), then changed here. For an `adopted`
+   feature, backfill first whatever behavior this work will alter, decided
+   from the code rather than from the scenario list (a map entry has none):
+   fdf-adopt, *Phase 2*. Behavior the code does not have yet needs no
+   backfill, and a defect is never backfilled.
 2. **Scaffold**, flags before the slug:
    - `fdf change --affects <group>/<slug>[,…] [<group>/]<slug>`
    - `fdf fix --affects <group>/<slug>[,…] [<group>/]<slug>`
 
-   Group it (`payments/refund-window`) when `changes/` is getting long. The
-   group is filing only — nothing ties it to the affected feature's group, and
-   nothing checks that it does. Below, `<id>` is the document's path under
+   When the work repairs a bug on the register, scaffold **from** it:
+   `fdf fix --from bugs/<id> [<group>/]<slug>` (or `fdf change --from …`). It
+   takes over the bug's analysis as this document's permanent record — its
+   `# Symptom` and `# Root cause`, its `# Violates` scenarios as regression
+   cases — defaults `affects` to the bug's, and writes `resolves: bugs/<id>`.
+   A bug is never repaired in place; this is how it is repaired.
+
+   Group it (`payments/refund-window`, usually after the affected feature's
+   group) once `changes/` holds more than about ten documents; below that,
+   flat is fine. The group is filing only — nothing ties it to the affected
+   feature's group, and nothing checks that it does. Below, `<id>` is the document's path under
    `changes/` without `.md` — `refund-window` or `payments/refund-window`.
 3. **Understand the change** through questions, ONE at a time: what is wrong,
    for whom, what should happen instead, what must not break? Chase ambiguous
@@ -76,8 +89,10 @@ Fix body's `# Symptom` and `# Root cause` sections are waiting for.
 
    A rename is `remove:` the old plus `add:` the new. A rename whose only
    reason is a word `DOMAIN.md` bans is not a Change at all: it is a lexicon
-   fix, made in place across the bundle (fdf-validate, F12). Delete the
-   scaffold's TODO lines that do not apply.
+   fix, made in place across the bundle — `fdf lexicon --term <Term> --fix`
+   renames a scenario everywhere it is a join (fdf-validate, F12). Delete
+   every scaffold line that starts `TODO —` once it is answered or does not
+   apply; `fdf validate` warns about any left behind.
 
    For a `Fix`, under `# Regression cases`, one heading per affected feature
    and one entry per scenario it proves:
@@ -113,26 +128,42 @@ Fix body's `# Symptom` and `# Root cause` sections are waiting for.
      message, a URL, a button label) is named as an outcome in the scenario
      and pinned in `slug.test.md`. Never reword the label to suit
      `DOMAIN.md` — the lexicon stops at the surface.
-   - The feature's **`slug.test.md`** — a case for every scenario (F8), and
-     for a `Fix` the regression case you named.
-   - The feature's **`slug.surface.md`**, when the interface changed.
+   - The feature's **`slug.test.md`** — a `## <scenario name>` case for every
+     scenario, the name exactly as in the Gherkin (F8), and for a `Fix` a case
+     for each regression you named (F10). Drop the case of a removed
+     scenario; a case that names no scenario draws a warning.
+   - The feature's **`slug.surface.md`**, when the work changed or added an
+     interface: an endpoint's codes, a screen's copy, a flag, an event's
+     fields. It describes the interfaces as they are today, so the old shape
+     is replaced, not kept beside the new one. A feature that has an interface
+     but no surface document gets one now.
 
    Do **not** touch the feature's `slug.spec.md`, `slug.plan.md`, or tasks.
    Those are the frozen record of how it was first built — the context someone
    needs to judge this change and the next one.
 9. **Flip to `done`** — with tasks, the last task and the document in the
-   same edit, as fdf-execute does — and update timestamps. If the work closes
-   an open debt, flip it to `resolved` with a `# Resolution` now too.
+   same edit, as fdf-execute does — and set their timestamps to now, in UTC.
+   If the work closes an open debt, flip it to `resolved` with a
+   `# Resolution` now too. Every bug this document `resolves` is flipped to
+   `resolved` in the same edit, its `# Resolution` naming this document — F10
+   refuses a done repair whose bug still reads as open.
    **Gate**: `fdf validate` exit 0. F10 refuses a `done` change whose declared
    effects are not reality.
-10. **Log it** in each affected feature's `slug.log.md` — what changed and
-    why. The work is feature-scoped, so it stays out of the root `LOG.md`.
+10. **Log it** in each affected feature's own log, one entry naming this
+    document, so the feature's log tells its whole life:
+    `fdf log <group>/<slug> "**Changed**: [<id>](/changes/<id>.md) <what now differs>."`
+    (`**Fixed**` for a Fix). Decisions taken while doing the work go in this
+    document's own log (`fdf log changes/<id> "**Decision**: …"`). Both are
+    feature-scoped, so neither goes in the root `LOG.md`.
 11. **Project-document review**, exactly as in fdf-execute — all four
     questions. Did this make a Context document stale (including a term in
     DOMAIN.md)? Did the code diverge from a practice that governs its paths,
     and is that a defect or an approved `# Exceptions` entry? Did it establish
     a mechanism a second feature now repeats, which should become a practice?
-    Did it knowingly leave something undone — `fdf debt [<group>/]<slug>`?
+    Did it knowingly leave something undone — `fdf debt [<group>/]<slug>` —
+    or find a defect it is not repairing — `fdf bug [<group>/]<slug>`? When
+    the work spread a gap an open debt already names to new code, amend that
+    debt's `# Gap` and `resource` instead of filing a second one.
     *Propose* each edit and wait for explicit approval. Never edit a Context
     document or a practice silently. See *Practices and a change* below —
     post-delivery work is where practice drift actually surfaces.
@@ -162,8 +193,8 @@ project now does something a *different* way, the practice must change too. It
 is a **living** document, so amend it in place — the practice always describes
 today — and let the Change document record why. Two shapes:
 
-- *The mechanism is refined* — edit the `# Rules`, log it in
-  `practices/<slug>.log.md`.
+- *The mechanism is refined* — edit the `# Rules`, log it in the practice's
+  own log (`fdf log practices/<slug> "**Amended**: …"`).
 - *The mechanism is replaced* — set the old practice to
   `status: superseded` with `superseded-by: practices/<new-slug>` and write
   the replacement. Never delete it: code in the tree still follows it, and the
@@ -192,12 +223,12 @@ deleted — the document records behavior the software once had.
   what it did.
 - Set the feature to `status: retired`, and `replaced-by: <feature-id>` when a
   successor exists.
-- Order matters, because F10 checks both ends at every status: `retires:` is
-  only valid once the feature is `retired`, and a `retired` feature needs a
-  `done` Change retiring it. So take the Change through its design gate
-  *without* `retires:`, then land the retirement in one edit — add
-  `retires:`, flip the Change to `done`, flip the feature to `retired` — and
-  validate after that edit.
+- Declare `retires:` from the start, like the rest of the Change's effects.
+  While the Change is not `done`, the feature it retires is still delivered
+  (`done` or `adopted`), and it must be in `affects`. Land the retirement in
+  one edit — flip the Change to `done` and the feature to `retired` — because
+  a done Change's `retires` names a `retired` feature and a `retired` feature
+  needs a done Change retiring it (F10). Validate after that edit.
 - A `Fix` can never retire anything — removing behavior is deliberate.
 - Retirement is terminal. A capability that comes back is a new feature
   (fdf-brainstorm), which may name the retired one in `depends-on`; the retired
@@ -208,9 +239,14 @@ deleted — the document records behavior the software once had.
 - Never fork a second feature document for the same capability.
 - Never edit a delivered feature's Gherkin outside a Change or Fix: then
   nothing records why, and nothing verified that the code followed. A
-  lexicon fix is the one exception — it changes words, not behavior.
+  lexicon fix is the one exception — it changes words, not behavior — and so
+  is backfilling an adopted feature: adding a scenario that its code already
+  passes (fdf-adopt).
 - Never rewrite the feature's original spec, plan, or tasks, except for a
-  lexicon fix.
+  maintenance edit — a lexicon fix, a reference repair after `fdf mv`, a path
+  repair after the code moved.
+- Never resolve a bug in place. Its repair is this document, which names it in
+  `resolves`.
 - Never fork a practice per change: amend the one that exists, or supersede
   it. A practice describes today, and there is only one today.
 - Never hand-write a back-link on the feature. `affects:` is the whole link;

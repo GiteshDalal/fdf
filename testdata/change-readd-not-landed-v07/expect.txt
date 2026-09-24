@@ -1,0 +1,2 @@
+exit: 1
+contains: changes/b-restore-hours.md: done, but venues/opening-hours has no scenario "Venue owner sets opening hours" (F10)

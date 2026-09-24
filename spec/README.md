@@ -3,7 +3,22 @@
 One file per spec version; each is the normative text for bundles pinning that
 version. The current version is the highest-numbered file.
 
-- [`0.6.md`](0.6.md) — current. Adds `DOMAIN.md` (a fifth Context document
+- [`0.7.md`](0.7.md) — current. Adds `Bug` documents under `bugs/` (a register
+  of known defects that have not been repaired yet) with rule F14, the
+  `adopted` feature status (a capability documented from code that predates
+  the bundle, with no invented build trail), and *maintenance edits* — the
+  lexicon fix, reference repair after a move, and path repair — which are
+  allowed on every document. F12 now reaches every document except
+  `SPEC.md`, `DOMAIN.md`, `slug.test.md` and `slug.surface.md`, and every
+  document name, with `except:` phrases and `strict: true` in `DOMAIN.md`.
+  Dates and times are UTC. Additive over 0.6 except that F12 reports more,
+  `bugs/` becomes a reserved name, a test case must be a `## <scenario name>`
+  heading matched exactly (F8), a `timestamp` or log heading that is not a
+  real date or time is an error (F1), and the declarations are checked more
+  closely (F10, F14); the file's *Versioning* section lists every
+  difference.
+- [`0.6.md`](0.6.md) — superseded. Still validated for back-compat. Adds
+  `DOMAIN.md` (a fifth Context document
   holding the project's domain language), `Practice` documents under
   `practices/`, `Debt` documents under `debts/`, and rules F11 (practice
   integrity), F12 (domain integrity) and F13 (debt integrity). Additive over

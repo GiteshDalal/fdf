@@ -16,7 +16,7 @@ import (
 	fdf "github.com/GiteshDalal/fdf"
 )
 
-const currentVersion = "0.6"
+const currentVersion = "0.7"
 const specURL = "https://github.com/GiteshDalal/fdf/blob/main/spec/" + currentVersion + ".md"
 
 // contextDocs are the bundle-root Context documents fdf init scaffolds as
@@ -45,13 +45,18 @@ var contextDocs = []struct{ file, title, purpose, headings string }{
 const domainTermsStub = "# Terms\n\n" +
 	"<!-- One `## <Term>` heading per canonical term. The first line under it is\n" +
 	"     the definition; then, optionally:\n" +
-	"       - instead-of: the words this term replaces (banned in documents and\n" +
-	"         code identifiers, not in the copy a surface shows people)\n" +
+	"       - instead-of: the words this term replaces (banned in every document\n" +
+	"         and code identifier, not in the copy a surface shows people)\n" +
+	"       - except: phrases in which a banned word means something else\n" +
+	"         (\"data store\"), never the banned word alone\n" +
 	"       - code: how the term appears in the code (type, table, field)\n" +
-	"       - see: a link to the practice that explains it in depth\n\n" +
+	"       - see: a link to the practice that explains it in depth\n" +
+	"     Once no document uses a banned word, add `strict: true` to this file's\n" +
+	"     frontmatter: every validation then treats one as an error.\n\n" +
 	"## Venue\n" +
 	"A physical location where a merchant sells.\n" +
 	"- instead-of: store, business, tenant\n" +
+	"- except: data store\n" +
 	"- code: `Venue` (model), `venues` (table)\n" +
 	"-->\n"
 
@@ -125,6 +130,38 @@ func EnsureDebtsIndex(root string, out io.Writer) int {
 	return 0
 }
 
+// EnsureBugsIndex creates bugs/INDEX.md if absent. The bug register (v0.7)
+// records known defects that have not been repaired yet.
+func EnsureBugsIndex(root string, out io.Writer) int {
+	dir := filepath.Join(root, "bugs")
+	idx := filepath.Join(dir, "INDEX.md")
+	if _, err := os.Stat(idx); err == nil {
+		return 0
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		fmt.Fprintln(out, "error:", err)
+		return 1
+	}
+	body := "# Bugs\n\nKnown defects — the software doing something wrong that someone could\nobserve — that have not been repaired yet. Each is repaired by a Fix or a\nChange that names it in `resolves`. Run `fdf bug` to read the register.\n\n* [Format reference](/SPEC.md) - how bugs are structured.\n"
+	if err := os.WriteFile(idx, []byte(body), 0o644); err != nil {
+		fmt.Fprintln(out, "error:", err)
+		return 1
+	}
+	fmt.Fprintln(out, "wrote bugs/INDEX.md (the bug register)")
+	return 0
+}
+
+// ensureIndexes creates whichever of the reserved directories' indexes
+// `fdf init` scaffolds are absent.
+func ensureIndexes(root string, out io.Writer) int {
+	for _, ensure := range []func(string, io.Writer) int{EnsureChangesIndex, EnsurePracticesIndex, EnsureDebtsIndex, EnsureBugsIndex} {
+		if code := ensure(root, out); code != 0 {
+			return code
+		}
+	}
+	return 0
+}
+
 // EnsureChangesIndex creates changes/INDEX.md if absent. Post-delivery work
 // (v0.5) lives under changes/; scaffolding the index makes the directory
 // discoverable in a fresh bundle rather than something the first change has
@@ -146,6 +183,26 @@ func EnsureChangesIndex(root string, out io.Writer) int {
 	}
 	fmt.Fprintln(out, "wrote changes/INDEX.md (post-delivery changes and fixes)")
 	return 0
+}
+
+// ChangePlaceTaken says why a Change or Fix cannot be filed as changes/<id>,
+// or returns "". A directory under changes/ is the task directory of the
+// change named like it, when there is one, and a group otherwise (F3): a
+// change and a group of one name cannot both be there.
+func ChangePlaceTaken(root, id string) string {
+	dir := filepath.Join(root, "changes")
+	if group, _, grouped := strings.Cut(id, "/"); grouped {
+		if _, err := os.Stat(filepath.Join(dir, group+".md")); err == nil {
+			return fmt.Sprintf("changes/%s/ is the task directory of changes/%s and holds only its NN-slug.md tasks (F3); file this in a group of another name", group, group)
+		}
+		return ""
+	}
+	if fi, err := os.Stat(filepath.Join(dir, id)); err == nil && fi.IsDir() {
+		if _, err := os.Stat(filepath.Join(dir, id+".md")); err != nil {
+			return fmt.Sprintf("changes/%s/ is a group, and a change named %s would make it that change's task directory (F3); choose another name", id, id)
+		}
+	}
+	return ""
 }
 
 // specVersionRe matches an embedded spec filename stem (spec/<MAJOR.MINOR>.md),
@@ -254,10 +311,6 @@ func writeSpec(root string, force bool, out io.Writer) int {
 
 // contextDocNames lists the Context documents for user-facing messages, so a
 // new one never leaves a stale literal behind.
-// ContextDocNames is contextDocNames for other packages (migrate's next-step
-// message), so the list of Context documents has one source.
-func ContextDocNames() string { return contextDocNames() }
-
 func contextDocNames() string {
 	names := make([]string, 0, len(contextDocs))
 	for _, c := range contextDocs {
@@ -273,10 +326,39 @@ var idRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*$`)
 var practiceSlugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 var practiceGroupedRe = regexp.MustCompile(`^([a-z0-9][a-z0-9-]*)/([a-z0-9][a-z0-9-]*)$`)
 
+// reservedGroups are the bundle-root directories that each hold one kind of
+// document, with the command that files one there. A feature's group is any
+// other name — and any of these the bundle's pin does not reserve yet
+// (ReservedDirs): on a v0.6 bundle, bugs/ is a feature group like any other.
+var reservedGroups = map[string]string{
+	"changes":   "holds Changes and Fixes (start one with fdf change or fdf fix)",
+	"practices": "holds the project's practices (write one with fdf practice <slug>)",
+	"debts":     "holds the debt register (file one with fdf debt <slug>)",
+	"bugs":      "holds the bug register (file one with fdf bug <slug>)",
+	"releases":  "holds the releases (write one with fdf release <version>)",
+}
+
+// reservedGroup refuses a feature ID whose group the bundle's pin reserves,
+// naming the command that files what belongs there.
+func reservedGroup(root, id string, out io.Writer) bool {
+	group, _, _ := strings.Cut(id, "/")
+	if ReservedDirs(root)[group] {
+		fmt.Fprintf(out, "error: %s/ %s; a feature's group is any other name\n", group, reservedGroups[group])
+		return true
+	}
+	return false
+}
+
 // Practice scaffolds practices/<id>.md, where id is "<slug>" or
-// "<group>/<slug>". A practice has no trail and no tasks: the document is the
-// whole thing, so there is nothing else to create.
+// "<group>/<slug>" — or the full ID, practices/<slug>, which files it in the
+// same place. A practice has no trail and no tasks: the document is the whole
+// thing, so there is nothing else to create. Practices are v0.6: an older
+// pin reads practices/ as a feature group, so the command refuses there.
 func Practice(root, id string, out io.Writer) int {
+	if !RequirePin(root, 6, "practices", "practices/ is a feature group, and a Practice written there fails validation (F3)", out) {
+		return 1
+	}
+	id = strings.TrimPrefix(id, "practices/")
 	if !practiceSlugRe.MatchString(id) && !practiceGroupedRe.MatchString(id) {
 		fmt.Fprintf(out, "error: id must be <slug> or <group>/<slug>, lowercase [a-z0-9-]; got %q\n", id)
 		return 1
@@ -318,8 +400,7 @@ TODO — where this does not apply, and what to do instead there. Optional.
 
 # Rationale
 
-TODO — why it is this way, so a later change knows what it is trading away.
-Optional.
+TODO — why it is this way, so a later change knows what it is trading away. Optional.
 `, title, time.Now().UTC().Format("2006-01-02T15:04:05Z"))
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		fmt.Fprintln(out, "error:", err)
@@ -329,7 +410,10 @@ Optional.
 		return code
 	}
 	fmt.Fprintf(out, "wrote practices/%s.md (type: Practice, status: active)\n", id)
-	fmt.Fprintln(out, "next: fill `# Rules` and set `applies-to` to the paths this governs, then link it from practices/INDEX.md.")
+	if code := ListEntry(root, "practices", id, title, "practice", out); code != 0 {
+		return code
+	}
+	fmt.Fprintln(out, "next: fill `# Rules` and set `applies-to` to the paths this governs.")
 	fmt.Fprintln(out, "      a practice binds all future code — get human approval before it lands.")
 	return 0
 }
@@ -342,12 +426,15 @@ func Init(root string, out io.Writer) int {
 	idx := filepath.Join(root, "INDEX.md")
 	if raw, err := os.ReadFile(idx); err == nil {
 		if m := pinRe.FindSubmatch(raw); m != nil && string(m[1]) == currentVersion {
-			// Backfill the spec copy and context stubs for bundles
-			// initialized before they existed.
+			// Backfill what a bundle initialized before it existed, or since
+			// lost, is missing: the spec copy, Context stubs and indexes.
 			if code := writeSpec(root, false, out); code != 0 {
 				return code
 			}
 			if code := writeContextStubs(root, out); code != 0 {
+				return code
+			}
+			if code := ensureIndexes(root, out); code != 0 {
 				return code
 			}
 			fmt.Fprintf(out, "\ndone: bundle at %s was already initialized and up to date (fdf_version %s)\n", root, currentVersion)
@@ -382,25 +469,23 @@ func Init(root string, out io.Writer) int {
 	if code := writeContextStubs(root, out); code != 0 {
 		return code
 	}
-	if code := EnsureChangesIndex(root, out); code != 0 {
-		return code
-	}
-	if code := EnsurePracticesIndex(root, out); code != 0 {
-		return code
-	}
-	if code := EnsureDebtsIndex(root, out); code != 0 {
+	if code := ensureIndexes(root, out); code != 0 {
 		return code
 	}
 	fmt.Fprintf(out, "\ndone: initialized FDF bundle at %s\n", root)
 	fmt.Fprintf(out, "  pinned fdf_version %s; wrote INDEX.md, LOG.md, SPEC.md and %d Context stub(s)\n", currentVersion, len(contextDocs))
 	fmt.Fprintln(out, "next: run the fdf-init skill to fill "+contextDocNames()+" before adding features.")
-	fmt.Fprintln(out, "      `fdf validate` fails F9 until those stubs are filled and a feature exists.")
+	fmt.Fprintln(out, "      `fdf validate` warns about them now, and fails F9 once a feature exists while any is unfilled.")
+	fmt.Fprintln(out, "      On an existing codebase, map what it already does with `fdf adopt` (the fdf-adopt skill).")
 	return 0
 }
 
 func New(root, id string, out io.Writer) int {
 	if !idRe.MatchString(id) {
 		fmt.Fprintf(out, "error: feature id must be <group>/<slug>, lowercase [a-z0-9-]; got %q\n", id)
+		return 1
+	}
+	if reservedGroup(root, id, out) {
 		return 1
 	}
 	group, slug, _ := strings.Cut(id, "/")
@@ -445,27 +530,124 @@ Scenario: Replace me
 		fmt.Fprintln(out, "error:", err)
 		return 1
 	}
-	// Create or append the group index.
-	gidx := filepath.Join(root, group, "INDEX.md")
-	entry := fmt.Sprintf("* [%s](/%s/%s.md) - TODO. (**draft**)\n", title, group, slug)
-	if raw, err := os.ReadFile(gidx); err == nil {
-		if err := os.WriteFile(gidx, append(raw, []byte(entry)...), 0o644); err != nil {
-			fmt.Fprintln(out, "error:", err)
-			return 1
-		}
-	} else if errors.Is(err, fs.ErrNotExist) {
-		heading := strings.ToUpper(group[:1]) + group[1:]
-		if err := os.WriteFile(gidx, fmt.Appendf(nil, "# %s features\n\n%s", heading, entry), 0o644); err != nil {
-			fmt.Fprintln(out, "error:", err)
-			return 1
-		}
-	} else {
-		fmt.Fprintln(out, "error:", err)
-		return 1
+	newGroup, code := appendGroupIndex(root, group, fmt.Sprintf("* [%s](/%s/%s.md) - TODO.\n", title, group, slug), out)
+	if code != 0 {
+		return code
 	}
 	fmt.Fprintf(out, "created %s (status: draft)\n", filepath.Join(group, slug+".md"))
 	fmt.Fprintf(out, "updated %s (now lists %q)\n", filepath.Join(group, "INDEX.md"), title)
+	if newGroup {
+		if code := ListGroup(root, "", group, out); code != 0 {
+			return code
+		}
+	}
 	fmt.Fprintf(out, "\ndone: feature %s is a draft — one Feature: fence, one Scenario: fence, no trail siblings yet\n", id)
 	fmt.Fprintln(out, "next: write the Gherkin, then add "+slug+".spec.md to reach `specified` (the fdf-brainstorm skill drives this).")
+	return 0
+}
+
+// appendGroupIndex adds one listing line to a group's INDEX.md, creating the
+// index when the group is new — which it reports, so the caller can list the
+// new group in the root INDEX.md (ListGroup).
+func appendGroupIndex(root, group, entry string, out io.Writer) (created bool, code int) {
+	gidx := filepath.Join(root, group, "INDEX.md")
+	if raw, err := os.ReadFile(gidx); err == nil {
+		if err := os.WriteFile(gidx, append(raw, []byte(entry)...), 0o644); err != nil {
+			fmt.Fprintln(out, "error:", err)
+			return false, 1
+		}
+	} else if errors.Is(err, fs.ErrNotExist) {
+		if err := os.WriteFile(gidx, fmt.Appendf(nil, "# %s\n\n%s", GroupTitle("", group), entry), 0o644); err != nil {
+			fmt.Fprintln(out, "error:", err)
+			return false, 1
+		}
+		return true, 0
+	} else {
+		fmt.Fprintln(out, "error:", err)
+		return false, 1
+	}
+	return false, 0
+}
+
+// Adopt scaffolds an adopted feature (v0.7) at <group>/<slug>.md: a
+// capability the software already has, documented from the code rather than
+// built through the lifecycle. It starts as a map entry — a Feature: block
+// and the code it lives in, no scenarios — and gets no spec, plan or tasks,
+// ever. resources are the project-relative paths of that code; projectRoot,
+// when set, is where they must exist. An older pin has no `adopted` status,
+// so the command refuses there.
+func Adopt(root, projectRoot, id string, resources []string, out io.Writer) int {
+	if !RequirePin(root, 7, "adopted features", "`adopted` is not a feature status, and an adopted feature fails validation (F2)", out) {
+		return 1
+	}
+	if !idRe.MatchString(id) {
+		fmt.Fprintf(out, "error: feature id must be <group>/<slug>, lowercase [a-z0-9-]; got %q\n", id)
+		return 1
+	}
+	if reservedGroup(root, id, out) {
+		return 1
+	}
+	if len(resources) == 0 {
+		fmt.Fprintln(out, "error: --resource is required — name the code this capability lives in; with no tasks, it is the feature's only link to the code")
+		return 2
+	}
+	if projectRoot != "" {
+		for _, r := range resources {
+			if _, err := os.Stat(filepath.Join(projectRoot, filepath.FromSlash(r))); err != nil {
+				fmt.Fprintf(out, "error: --resource %s does not exist under %s — adoption documents code that exists\n", r, projectRoot)
+				return 1
+			}
+		}
+	}
+	group, slug, _ := strings.Cut(id, "/")
+	featurePath := filepath.Join(root, group, slug+".md")
+	if _, err := os.Stat(featurePath); err == nil {
+		fmt.Fprintf(out, "error: %s already exists\n", filepath.Join(group, slug+".md"))
+		return 1
+	}
+	if err := os.MkdirAll(filepath.Join(root, group), 0o755); err != nil {
+		fmt.Fprintln(out, "error:", err)
+		return 1
+	}
+	title := strings.ToUpper(slug[:1]) + strings.ReplaceAll(slug[1:], "-", " ")
+	feature := fmt.Sprintf(`---
+type: Feature
+title: %s
+description: TODO — one sentence on what this capability does today.
+status: adopted
+resource: [%s]
+timestamp: %s
+---
+
+# Feature
+
+`+"```gherkin"+`
+Feature: %s
+  As a <role>
+  I want <capability>
+  So that <value>
+`+"```"+`
+
+Built before this bundle existed and documented from the code as it stands.
+Scenarios are backfilled as work reaches it: each describes what the code
+already does, and its case in %s passes today.
+`, title, strings.Join(resources, ", "), time.Now().UTC().Format("2006-01-02T15:04:05Z"), title, "`"+slug+".test.md`")
+	if err := os.WriteFile(featurePath, []byte(feature), 0o644); err != nil {
+		fmt.Fprintln(out, "error:", err)
+		return 1
+	}
+	newGroup, code := appendGroupIndex(root, group, fmt.Sprintf("* [%s](/%s/%s.md) - TODO.\n", title, group, slug), out)
+	if code != 0 {
+		return code
+	}
+	fmt.Fprintf(out, "created %s (status: adopted — a map entry: a Feature: block and its code, no scenarios yet)\n", filepath.Join(group, slug+".md"))
+	fmt.Fprintf(out, "updated %s (now lists %q)\n", filepath.Join(group, "INDEX.md"), title)
+	if newGroup {
+		if code := ListGroup(root, "", group, out); code != 0 {
+			return code
+		}
+	}
+	fmt.Fprintln(out, "\nnext: fill the Feature: block — who uses this, and for what. Scenarios come later, one at a time,")
+	fmt.Fprintln(out, "      each with its case in "+slug+".test.md, passing against the code as it stands (the fdf-adopt skill).")
 	return 0
 }

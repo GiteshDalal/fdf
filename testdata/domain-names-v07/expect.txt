@@ -1,0 +1,6 @@
+exit: 0
+contains: warn: stores/: name uses banned "store" → "Venue" — rename it with `fdf mv` (F12)
+contains: warn: stores/item-sync.md: name uses banned "item" → "Product" — rename it with `fdf mv` (F12)
+contains: warn: stores/item-sync/01-shop-api.md: name uses banned "shop" → "Venue" — rename it with `fdf mv` (F12)
+not-contains: stores/item-sync.plan.md: name
+not-contains: stores/item-sync/: name

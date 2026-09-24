@@ -1,0 +1,2 @@
+exit: 1
+contains: changes/drop-hours.md: retires venues/opening-hours but its `# Rationale` is empty

@@ -3,15 +3,17 @@
 //
 //	v0.1 → case renames, vendored-spec removal, link rewrites, TEST stubs
 //	v0.2/v0.3 → lift nested trail to stem-qualified siblings, rewrite links
-//	v0.4/v0.5 → nothing structural: 0.4→0.5 and 0.5→0.6 add documents, not moves
-//	any → pin current, RefreshSpec, EnsureContextStubs, changes/ and
-//	      practices/ and debts/ INDEX.md, validate
+//	v0.4/v0.5/v0.6 → nothing structural: 0.4→0.5, 0.5→0.6 and 0.6→0.7 add
+//	      documents, not moves
+//	any → pin current, RefreshSpec, EnsureContextStubs, changes/, practices/,
+//	      debts/ and bugs/ INDEX.md, drop index status tags, log, validate
 //
 // Ends by validating the result with FreshStubsAdvisory so unfilled Context
 // stubs do not fail the migration (plain `fdf validate` will still enforce F9).
 package migrate
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -21,11 +23,16 @@ import (
 	"strings"
 
 	"github.com/GiteshDalal/fdf/cli/internal/bundle"
+	"github.com/GiteshDalal/fdf/cli/internal/fdfroot"
+	"github.com/GiteshDalal/fdf/cli/internal/logs"
+	"github.com/GiteshDalal/fdf/cli/internal/refactor"
 	"github.com/GiteshDalal/fdf/cli/internal/scaffold"
 )
 
 const specURL = "https://github.com/GiteshDalal/fdf/blob/main/SPEC.md"
-const currentVersion = "0.6"
+
+// currentVersion is the pin migrate writes: the one `fdf init` writes too.
+var currentVersion = scaffold.CurrentVersion()
 
 // Version is the CLI version, set by the command wrapper. A migrate that
 // finds the pin already current is indistinguishable from a migrate that has
@@ -65,8 +72,10 @@ var scenarioRe = regexp.MustCompile(`(?m)^\s*Scenario(?: Outline)?:\s*(\S[^\n]*)
 var timestampRe = regexp.MustCompile(`(?m)^timestamp:\s*(\S+)`)
 
 func Run(root, repoRoot string, out io.Writer) int {
-	if fi, err := os.Stat(root); err != nil || !fi.IsDir() {
-		fmt.Fprintf(out, "error: %s is not a directory\n", root)
+	// Nothing to migrate without a bundle: an INDEX.md, or the lowercase
+	// index.md of a v0.1 bundle, which the migration renames.
+	if !exists(filepath.Join(root, "INDEX.md")) && !exists(filepath.Join(root, "index.md")) {
+		fmt.Fprintln(out, "error:", fdfroot.NoBundle(root))
 		return 1
 	}
 	rootAbs, err := filepath.Abs(root)
@@ -98,16 +107,28 @@ func Run(root, repoRoot string, out io.Writer) int {
 		if code := scaffold.EnsureDebtsIndex(root, out); code != 0 {
 			return code
 		}
+		if code := scaffold.EnsureBugsIndex(root, out); code != 0 {
+			return code
+		}
 		fmt.Fprintln(out, "\nvalidating bundle:")
 		return bundle.Validate(root, bundle.Options{RepoRoot: repoRoot, Out: out, FreshStubsAdvisory: true})
 	}
 
+	// v0.7 reserves bugs/ for the bug register. A bundle that already uses it
+	// as a feature group has to move that group first; nothing else here can
+	// decide its new name. Refused before anything is touched.
+	if problem := bugsGroupConflict(root); problem != "" {
+		fmt.Fprintln(out, "cannot migrate — fix this first (bundle left unchanged):")
+		fmt.Fprintln(out, "  "+problem)
+		return 1
+	}
+
 	// A bundle already in the stem-qualified layout (v0.4 onward) needs no
-	// structural work: 0.4 → 0.5 only adds changes/, and 0.5 → 0.6 only adds
-	// practices/ and DOMAIN.md. Running the pre-0.4 chain over one would be
-	// actively wrong — pre-flight reads every `slug.spec.md` as an illegal
-	// dotted basename.
-	stem := pin == "0.4" || pin == "0.5"
+	// structural work: 0.4 → 0.5 only adds changes/, 0.5 → 0.6 only adds
+	// practices/, debts/ and DOMAIN.md, and 0.6 → 0.7 only adds bugs/.
+	// Running the pre-0.4 chain over one would be actively wrong — pre-flight
+	// reads every `slug.spec.md` as an illegal dotted basename.
+	stem := pin == "0.4" || pin == "0.5" || pin == "0.6"
 	var moves map[string]string
 	if !stem {
 
@@ -215,31 +236,234 @@ func Run(root, repoRoot string, out io.Writer) int {
 	if code := scaffold.EnsureDebtsIndex(root, out); code != 0 {
 		return code
 	}
+	if code := scaffold.EnsureBugsIndex(root, out); code != 0 {
+		return code
+	}
 
-	// 9. Report what actually changed, then validate. Without this the only
-	// evidence of a migration is a scroll of per-file lines, and a migration
-	// that moved nothing is indistinguishable from one that did.
+	// 9. Drop the status tag older tools put after an index listing
+	// (` (**draft**)`). Nothing kept it current, so it went stale as soon as
+	// the document moved on; a status lives only in its document.
+	tags := stripIndexStatusTags(root)
+
+	// 10. Log the migration in the bundle-root log, where every bundle-wide
+	// event goes.
 	from := pin
 	if from == "" {
 		from = "unpinned"
 	}
+	entry := fmt.Sprintf("**Migrated**: fdf_version %s → %s with `fdf migrate`.", from, currentVersion)
+	if tags > 0 {
+		entry += fmt.Sprintf(" Removed the status tag from %d index listing(s); a document's status lives only in its frontmatter.", tags)
+	}
+	logged := logMigration(root, entry)
+
+	// 11. Report what actually changed, then validate. Without this the only
+	// evidence of a migration is a scroll of per-file lines, and a migration
+	// that moved nothing is indistinguishable from one that did.
 	fmt.Fprintf(out, "\ndone: migrated bundle at %s\n", rootAbs)
 	fmt.Fprintf(out, "  fdf_version %s -> %s\n", from, currentVersion)
 	fmt.Fprintf(out, "  %d trail file(s) lifted to stem-qualified siblings\n", len(moves))
 	if len(moves) == 0 {
 		fmt.Fprintln(out, "  (no nested trail files were present — layout already matched)")
 	}
+	if tags > 0 {
+		fmt.Fprintf(out, "  %d status tag(s) removed from index listings\n", tags)
+	}
+	if logged {
+		fmt.Fprintln(out, "  logged in LOG.md")
+	}
 
 	// Freshly scaffolded Context stubs are advisory here — migration
 	// succeeded; filling them is the human's next step via fdf-init.
 	fmt.Fprintln(out, "\nvalidating migrated bundle:")
-	code := bundle.Validate(root, bundle.Options{RepoRoot: repoRoot, Out: out, FreshStubsAdvisory: true})
-	if code == 0 {
-		fmt.Fprintln(out, "\nnext: run the fdf-init skill to fill "+scaffold.ContextDocNames()+".")
-		fmt.Fprintln(out, "warning: the next plain `fdf validate` will fail F9 until those stubs are filled (migrate passes only because FreshStubsAdvisory treats freshly scaffolded stubs as warnings).")
+	var report bytes.Buffer
+	code := bundle.Validate(root, bundle.Options{RepoRoot: repoRoot, Out: io.MultiWriter(out, &report), FreshStubsAdvisory: true})
+	// Say so only when validation found a stub, and name the ones it found:
+	// F9 fails a plain validate only while one is unfilled and the bundle has
+	// a feature.
+	if stubs := stubsIn(report.String()); code == 0 && len(stubs) > 0 {
+		fmt.Fprintln(out, "\nnext: run the fdf-init skill to fill "+joinNames(stubs)+".")
+		if freshStubRe.MatchString(report.String()) {
+			fmt.Fprintln(out, "warning: the next plain `fdf validate` will fail F9 until those stubs are filled (migrate reports an unfilled stub as a warning, not an error).")
+		}
 	}
+	reportV07(root, report.String(), out)
 	return code
 }
+
+// stubRe matches the validator's messages for a Context document that is
+// still an unfilled stub (bundle's F9 check): "freshly scaffolded stub" while
+// the bundle has features — migrate's advisory form of F9 — and "still an
+// unfilled stub" while it has none. Only those lines mean the fdf-init
+// interview has work to do; a document that merely has "stub" in its name
+// (debts/stub-gateway.md) is not one of them.
+var stubRe = regexp.MustCompile(`(?m)^warn: ([A-Z]+\.md): (?:freshly scaffolded stub|still an unfilled stub) — run the fdf-init interview to populate it`)
+
+// freshStubRe is stubRe's advisory F9 form: a stub the next plain validate
+// fails, because the bundle has a feature.
+var freshStubRe = regexp.MustCompile(`(?m)^warn: [A-Z]+\.md: freshly scaffolded stub — .*\(F9\)$`)
+
+// stubsIn lists the Context documents a validation report calls unfilled
+// stubs, in the order it reports them.
+func stubsIn(report string) []string {
+	var names []string
+	for _, m := range stubRe.FindAllStringSubmatch(report, -1) {
+		names = append(names, m[1])
+	}
+	return names
+}
+
+// joinNames writes names as prose: "A", "A and B", "A, B, and C".
+func joinNames(names []string) string {
+	switch len(names) {
+	case 1:
+		return names[0]
+	case 2:
+		return names[0] + " and " + names[1]
+	}
+	return strings.Join(names[:len(names)-1], ", ") + ", and " + names[len(names)-1]
+}
+
+// reportV07 says what v0.7 changes about a bundle that has just reached it:
+// F12 now reads every document and name, and the debt register may hold
+// defects that belong in the new bug register. Neither is a migration step —
+// both are judgments — so the command names the tools and stops there.
+func reportV07(root, validation string, out io.Writer) {
+	if lex, _ := bundle.LoadLexicon(root); lex != nil {
+		if occ := bundle.ScanBundle(root, lex); len(occ) > 0 {
+			fmt.Fprintf(out, "\nv0.7: the domain language now reaches every document and name — %s.\n", refactor.BannedSummary(occ))
+			fmt.Fprintln(out, "      `fdf lexicon` lists them; triage the other senses into `except:`, then sweep one term at a time")
+			fmt.Fprintln(out, "      with `fdf lexicon --term <Term> --fix --dry-run` and `--fix`.")
+		}
+	}
+	if n := strings.Count(validation, "has no test case — a case is a `## "); n > 0 {
+		fmt.Fprintf(out, "\nv0.7: a test case is a `## <scenario name>` heading under `# Test Cases`, matched exactly —\n")
+		fmt.Fprintf(out, "      %d scenario(s) have none (F8). Rewrite those test documents' cases as headings, by hand:\n", n)
+		fmt.Fprintln(out, "      bullets and tables naming a scenario no longer count.")
+	}
+	if n := strings.Count(validation, "is neither a date (2026-02-14) nor an RFC 3339 time"); n > 0 {
+		fmt.Fprintf(out, "\nv0.7: %d timestamp(s) are neither a date nor an RFC 3339 time with Z or an offset (F1).\n", n)
+		fmt.Fprintln(out, "      Give each the Z or offset it was written in, or keep only its date.")
+	}
+	if n := strings.Count(validation, ".surface.md — write one"); n > 0 {
+		fmt.Fprintf(out, "\nv0.7: %d feature(s) have no slug.surface.md. Write one where the feature adds or changes an interface,\n", n)
+		fmt.Fprintln(out, "      or say `surface: none` in its frontmatter.")
+	}
+	if n := countRegisterEntries(filepath.Join(root, "debts")); n > 0 {
+		fmt.Fprintf(out, "\nv0.7: of the %d debt(s) on the register, any that describes the software doing something wrong\n", n)
+		fmt.Fprintln(out, "      is a bug — re-file it with `fdf mv debts/<id> bugs/<id>`, then give it the `# Expected` a bug states.")
+	}
+}
+
+// statusTagRe matches an index listing that ends in the status tag `fdf new`,
+// `fdf change`, `fdf fix` and `fdf adopt` wrote before v0.7, or one a person
+// kept up by hand: ` (**draft**)`. Only a status word counts, so other bold
+// text in parentheses stays.
+var statusTagRe = regexp.MustCompile(`^([ \t]*[-*+][ \t].*\]\(.*\).*?)[ \t]*\(\*\*(?:draft|specified|planned|implementing|done|retired|adopted|pending|in-progress|active|superseded|open|accepted|resolved|shipped)\*\*\)[ \t]*(\r?)$`)
+
+// stripIndexStatusTags removes the status tag from every listing in every
+// INDEX.md, outside code, and says how many it removed.
+func stripIndexStatusTags(root string) int {
+	n := 0
+	filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if p != root && strings.HasPrefix(d.Name(), ".") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.Name() != "INDEX.md" {
+			return nil
+		}
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			return nil
+		}
+		lines := strings.Split(string(raw), "\n")
+		fence, removed := "", 0
+		for i, line := range lines {
+			t := strings.TrimSpace(line)
+			if fence != "" {
+				if strings.HasPrefix(t, fence) {
+					fence = ""
+				}
+				continue
+			}
+			if strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~") {
+				fence = t[:3]
+				continue
+			}
+			if m := statusTagRe.FindStringSubmatch(line); m != nil {
+				lines[i] = m[1] + m[2]
+				removed++
+			}
+		}
+		if removed > 0 && os.WriteFile(p, []byte(strings.Join(lines, "\n")), 0o644) == nil {
+			n += removed
+		}
+		return nil
+	})
+	return n
+}
+
+// logMigration adds entry to the bundle-root LOG.md, creating it if missing,
+// and reports whether it was written.
+func logMigration(root, entry string) bool {
+	p := filepath.Join(root, "LOG.md")
+	body := "# Bundle Update Log\n"
+	if raw, err := os.ReadFile(p); err == nil {
+		body = string(raw)
+	}
+	return os.WriteFile(p, []byte(logs.Insert(body, logs.Entry(entry))), 0o644) == nil
+}
+
+// countRegisterEntries counts the documents in a register directory, groups
+// included, leaving out its index, its log and each entry's log sibling.
+func countRegisterEntries(dir string) int {
+	n := 0
+	filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".md") {
+			return nil
+		}
+		if base := filepath.Base(p); base != "INDEX.md" && base != "LOG.md" && !strings.HasSuffix(base, ".log.md") {
+			n++
+		}
+		return nil
+	})
+	return n
+}
+
+// bugsGroupConflict reports a bundle that uses bugs/ as a feature group, which
+// v0.7 reserves for the bug register. Bug documents already there are fine.
+func bugsGroupConflict(root string) string {
+	var offender string
+	filepath.WalkDir(filepath.Join(root, "bugs"), func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || offender != "" || !strings.HasSuffix(p, ".md") {
+			return nil
+		}
+		base := filepath.Base(p)
+		if base == "INDEX.md" || base == "LOG.md" || strings.HasSuffix(base, ".log.md") {
+			return nil
+		}
+		raw, rerr := os.ReadFile(p)
+		if rerr != nil {
+			return nil
+		}
+		if m := typeLineRe.FindSubmatch(raw); m == nil || strings.Trim(string(m[1]), `"'`) != "Bug" {
+			offender = rel(root, p)
+		}
+		return nil
+	})
+	if offender == "" {
+		return ""
+	}
+	return fmt.Sprintf("bugs/ is a feature group (%s), but v0.7 reserves bugs/ for the bug register — rename the group first with `fdf mv bugs <new-group>`, then re-run fdf migrate", filepath.ToSlash(offender))
+}
+
+var typeLineRe = regexp.MustCompile(`(?m)^type:\s*(\S+)`)
 
 // preflightV4 scans for content the v0.4 layout cannot represent and that
 // this migration cannot mechanically fix: dotted group-level filenames
@@ -406,9 +630,10 @@ func stubMissingTests(root string, out io.Writer) {
 		}
 		var cases []string
 		for _, sc := range scenarioRe.FindAllSubmatch(raw, -1) {
-			cases = append(cases, fmt.Sprintf("- Scenario: %s — TODO: specify the concrete verification.", strings.TrimSpace(string(sc[1]))))
+			// One `## <scenario name>` heading per case: the form F8 matches.
+			cases = append(cases, fmt.Sprintf("## %s\n\nTODO: specify the concrete verification.\n", strings.TrimSpace(string(sc[1]))))
 		}
-		body := fmt.Sprintf("---\ntype: Test\ntitle: %s acceptance\ndescription: How this feature is proven.\ntimestamp: %s\n---\n\n# Test Cases\n\n%s\n",
+		body := fmt.Sprintf("---\ntype: Test\ntitle: %s acceptance\ndescription: How this feature is proven.\ntimestamp: %s\n---\n\n# Test Cases\n\n%s",
 			strings.TrimSuffix(parts[1], ".md"), ts, strings.Join(cases, "\n"))
 		os.MkdirAll(dir, 0o755)
 		os.WriteFile(testPath, []byte(body), 0o644)

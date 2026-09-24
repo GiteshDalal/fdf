@@ -1,0 +1,4 @@
+exit: 0
+contains: warn: debts/gap-20.md: uses banned "store" → "Venue" (F12)
+not-contains: debts/gap-21.md: uses
+contains: warn: and 2 more document(s) or name(s) use banned words — `fdf lexicon` lists every occurrence (F12)

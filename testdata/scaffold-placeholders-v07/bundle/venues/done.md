@@ -1,0 +1,1 @@
+---\ntype: Feature\nstatus: adopted\ntitle: Done\ndescription: A filled map entry.\nresource: []\ntimestamp: 2026-09-23T00:00:00Z\n---\n\n# Feature\n\n```gherkin\nFeature: Done\n  As a Venue owner\n  I want it\n  So that it helps\n```\n\nQuotes the placeholder as an example: `TODO — like this`.\n

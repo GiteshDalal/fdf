@@ -41,11 +41,16 @@ Say which mode you are using, and why, in one line.
 In every mode **you own the bundle**: you flip every status, update every
 timestamp, and run every `fdf validate`; subagents never edit files under the
 bundle. One writer means no races and a serialized validate after each change.
+Every document you change in substance, a status flip included, gets its
+`timestamp` set to now, in UTC — the task, the feature and the surface
+document alike. A maintenance edit (a lexicon fix, a reference or path repair)
+leaves `timestamp` as it is: F10 orders documents by it.
 
 ## Per task
 
 1. Set `status: in-progress` in the task file; feature to `implementing` if
-   this is the first task. `fdf validate` after every frontmatter change.
+   this is the first task (each with a new `timestamp`). `fdf validate` after
+   every frontmatter change.
 2. **Check the practices that govern those paths** before writing anything:
    a practice whose `applies-to` covers a path this task touches — its
    `resource:`, or where its `# Steps` create files — is binding, and its
@@ -54,7 +59,7 @@ bundle. One writer means no races and a serialized validate after each change.
    it your way.
 3. Do the work per `# Steps`; touch only paths consistent with `resource:`
    and `# Steps`.
-4. Verify `# Acceptance`; set `status: done`; update `timestamp`. When
+4. Verify `# Acceptance`; set `status: done` and a new `timestamp`. When
    completing the FINAL task, flip the task and the feature status in the
    same edit before validating — a lone final-task flip fails F4
    ("implementing but every task is done").
@@ -111,7 +116,8 @@ Blockers).
   delete the task file, its `# Tasks` link and every sibling's `depends-on`
   entry for it (F6); remove any scenario only it would have proven, along
   with that scenario's `slug.test.md` case — the feature must not promise
-  what it will not do; log the decision in `slug.log.md`; and file a debt
+  what it will not do; log the decision
+  (`fdf log <group>/<slug> "**Decision**: …"`); and file a debt
   (`fdf debt [<group>/]<slug>`) naming what was left undone. Never mark a
   blocked task `done`.
 
@@ -123,9 +129,15 @@ Blockers).
 - All tasks done → feature `status: done`, `fdf validate` exit 0 (fdf-validate
   on failure). Never flip a feature to done with a failing or unrun
   `slug.test.md` case.
-- Log the completion in the feature's `slug.log.md` (stem sibling; not a
-  nested `LOG.md` inside the task directory) — major decisions and notable
-  user interactions. It is feature-scoped, so it stays out of the root
+- Bring `slug.surface.md` up to date. The build settles interface detail the
+  design left open (an error code, a flag, a label, an event field), and the
+  surface document describes the interfaces as they now are. A feature that
+  exposes an interface and has no surface document yet gets one now (see
+  fdf-brainstorm, *Surface document*); one with no interface says
+  `surface: none` in its frontmatter.
+- Log the completion: `fdf log <group>/<slug> "**Done**: …"`. Say what
+  shipped, and any decision the build took that the spec does not record, with
+  who agreed to it. The entry goes in the feature's own log, never the root
   `LOG.md` (see Rules).
 - The completion report shows evidence, not claims: per `slug.test.md` case,
   the command run and its actual output (screenshot for browser checks). A
@@ -182,7 +194,8 @@ do. `applies-to` lists the existing repo paths it governs (R1) and is how
 later work finds it — a feature never lists the practices it follows, so a
 practice with no `applies-to` is a document nothing routes to. No Gherkin, no
 spec, no plan, no tasks; the only sibling it may have is `<slug>.log.md`.
-Link it from `practices/INDEX.md`.
+`fdf practice` lists it in `practices/INDEX.md`; give the listing a real
+description.
 
 Write only what the code **already does**. If the feature revealed a better
 way nobody has adopted yet, that is a proposal for the user, not a practice
@@ -194,7 +207,9 @@ Work deferred to ship, a rule the new code follows that older code does not, a
 task that ended blocked on something outside the project. `fdf debt
 [<group>/]<slug>` files it: `# Gap` states it concretely (files and counts, not
 impressions — F13), `# Cost` says what carrying it risks, and `resource` names
-the paths, which is how later work finds it.
+the paths, which is how later work finds it. When the new code repeats a gap
+an open debt already names, amend that debt's `# Gap` and `resource` instead
+of filing a second one: the register says what the tree does.
 
 This is the question that keeps `done` honest. A feature that shipped without
 its batch import is genuinely done *and* has left a gap, and those are two
@@ -208,10 +223,18 @@ When it is paid, flip it to `resolved` with a `# Resolution` saying what closed
 it; `fdf debt --cleanup` clears resolved entries into `debts/LOG.md` so the
 register stays a list worth reading.
 
+A **defect** this work found outside its own scope — the software doing
+something wrong in code this feature does not own — is not a debt and not this
+feature's task: file it with `fdf bug`, carrying the reproduction under
+`# Symptom` and what should happen under `# Expected`, so the next person
+starts from your evidence. A defect inside this feature's scope is simply its
+next task.
+
 If something changed, **propose** the specific edit to the user and wait for
 explicit approval. Only on approval: make the edit (a Context document gets a
-new `timestamp`) and log what changed and why at its scope — the root
-`LOG.md` for a Context document, `practices/<slug>.log.md` for a practice. If
+new `timestamp`) and log what changed and why at its scope: the root
+`LOG.md` for a Context document (`fdf log "**Context**: …"`), the practice's
+own log for a practice (`fdf log practices/<slug> "…"`). If
 nothing changed, say so in one line. Never edit a Context document or a
 practice silently, and never edit one the user didn't approve. Remind the
 user, briefly, that keeping these accurate is what keeps the work grounded —
@@ -230,7 +253,8 @@ capability, and do not edit a delivered feature's Gherkin directly.
   in its `slug.log.md`, one about a group in that group's `LOG.md`, and only a
   bundle-wide decision in the root `LOG.md`. Logs are newest-first and never
   rewritten, so the only thing that keeps the root log readable is not writing
-  feature-scoped entries into it.
+  feature-scoped entries into it. `fdf log <id> "<entry>"` finds the right
+  log and creates it on first use; a task's entry goes in its feature's log.
 - Statuses reflect reality, not intent — flip in-progress before working.
 - A blocked task stays in-progress with the blocker noted in the task body —
   until it is unblocked or, on the user's decision, descoped (see Blockers).

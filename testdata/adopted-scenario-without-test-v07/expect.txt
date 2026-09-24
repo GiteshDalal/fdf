@@ -1,0 +1,3 @@
+exit: 1
+contains: venues/card-payments.md: status 'adopted' with scenarios requires venues/card-payments.test.md
+contains: (F8)

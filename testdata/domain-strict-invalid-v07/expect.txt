@@ -1,0 +1,2 @@
+exit: 1
+contains: DOMAIN.md: `strict` must be true or false, got "yes" (F12)

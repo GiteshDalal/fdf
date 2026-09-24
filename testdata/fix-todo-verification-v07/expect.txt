@@ -1,0 +1,3 @@
+exit: 1
+contains: changes/closed-hours-fix.md: regression case "Venue owner sets opening hours" gives no verification
+contains: warn: changes/closed-hours-fix.md: still holds a scaffold's placeholder text

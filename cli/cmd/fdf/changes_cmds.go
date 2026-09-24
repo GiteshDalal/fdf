@@ -23,19 +23,27 @@ func splitList(v string) []string {
 // differ only in the document type they scaffold and the body template that
 // follows from it.
 func runPostDelivery(cmd, docType string, args []string, stdout io.Writer) int {
-	fs := newFlagSet(cmd, stdout)
-	affects := fs.String("affects", "", "comma-separated feature ID(s) this touches (required)")
-	root, source, rest, ok := resolveRootSource(fs, args, stdout)
+	fs := newFlagSet(cmd)
+	affects := fs.String("affects", "", "comma-separated feature ID(s) this touches (required unless --from names a bug that has them)")
+	from := fs.String("from", "", "bugs/<id> this work repairs: copies its analysis and writes `resolves`")
+	root, source, rest, exit, ok := resolveRootSource(fs, args, stdout)
 	if !ok {
-		return 2
+		return exit
 	}
 	if len(rest) != 1 {
-		fmt.Fprintf(stdout, "usage: fdf %s [--root <dir>] --affects <group>/<slug>[,…] [<group>/]<slug>\n", cmd)
-		flagOrderHint(rest, stdout)
+		printUsage(stdout, cmd)
+		return 2
+	}
+	if len(splitList(*affects)) == 0 && *from == "" {
+		fmt.Fprintf(stdout, "error: --affects is required — name the delivered feature(s) this %s touches, or start from a filed bug with --from bugs/<id>\n", docType)
+		printUsage(stdout, cmd)
 		return 2
 	}
 	announce(cmd, root, source, stdout)
-	return changes.New(root, rest[0], docType, splitList(*affects), stdout)
+	if !requireBundle(root, stdout) {
+		return 1
+	}
+	return changes.NewFrom(root, rest[0], docType, splitList(*affects), *from, stdout)
 }
 
 func runChange(args []string, stdout io.Writer) int {
@@ -49,16 +57,18 @@ func runFix(args []string, stdout io.Writer) int {
 // runHistory lists a feature's post-delivery trail, computed from `affects`
 // rather than from back-links the feature would have to maintain by hand.
 func runHistory(args []string, stdout io.Writer) int {
-	fs := newFlagSet("history", stdout)
-	root, source, rest, ok := resolveRootSource(fs, args, stdout)
+	fs := newFlagSet("history")
+	root, source, rest, exit, ok := resolveRootSource(fs, args, stdout)
 	if !ok {
-		return 2
+		return exit
 	}
 	if len(rest) != 1 {
-		fmt.Fprintln(stdout, "usage: fdf history [--root <dir>] <group>/<slug>")
-		flagOrderHint(rest, stdout)
+		printUsage(stdout, "history")
 		return 2
 	}
 	announce("history", root, source, stdout)
+	if !requireBundle(root, stdout) {
+		return 1
+	}
 	return changes.History(root, rest[0], stdout)
 }

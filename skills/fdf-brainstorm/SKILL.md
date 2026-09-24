@@ -12,9 +12,12 @@ at `docs/features/SPEC.md`) and `fdf help` for the CLI. The fdf-help skill
 explains how the fdf skills fit together.
 
 **This skill is for capabilities that do not exist yet.** If the capability is
-already delivered (`done` or `retired`) and needs to change or be fixed, stop
-and use fdf-change — a second feature document for one capability is the drift
-FDF exists to prevent. The one exception: a `retired` capability that is
+already delivered (`done`, `adopted` or `retired`) and needs to change or be
+fixed, stop and use fdf-change — a second feature document for one capability
+is the drift FDF exists to prevent. If it already exists **in the code** but no
+feature documents it, it is not new either: map it with fdf-adopt, then change
+it through fdf-change — brainstorming existing behavior as if it were new
+invents a design history it never had. The one exception: a `retired` capability that is
 coming back returns as a new feature, brainstormed here, which may name the
 retired one in `depends-on`. The retired document is never flipped back.
 
@@ -29,8 +32,9 @@ unfilled stubs, stop and run fdf-init first.
 
 **Write the Gherkin in the project's words.** `DOMAIN.md` gives one canonical
 name per concept and lists the words banned in its place; use the canonical
-ones in every scenario, and in the names you propose for anything new. F12
-reports a banned word in a feature's Gherkin, but the point is upstream of the
+ones in every scenario, in the spec, and in the names you propose for anything
+new — the feature's own slug included. F12 reports a banned word in any
+document the bundle writes and in its names, but the point is upstream of the
 warning: a scenario that calls a Venue a "store" has already started the drift.
 If the capability needs a concept the lexicon does not have, say so — a new
 term is a DOMAIN.md change and needs the user's approval like any other
@@ -61,14 +65,16 @@ propose — designing in ignorance of one is not.
 1. **Locate the bundle**: `fdf validate` (respects `--root`/`FDF_ROOT_DIR`).
    If no bundle exists, ask before running `fdf init`.
 2. **Scaffold**: `fdf new <group>/<slug>` (lowercase). Read the generated file
-   (`<group>/<slug>.md`). A `draft` feature has no trail siblings and no task
-   directory yet.
+   (`<group>/<slug>.md`). A `draft` feature has no trail siblings (at most a
+   log) and no task directory yet.
 3. **Understand the feature** through questions, ONE at a time: who is the
    user, what capability, what value, what are the edge cases? Prefer
    multiple-choice questions. **Chase ambiguous words**: when the user says
    "newest", "duplicate", "fast", ask which meaning they intend (newest =
-   later in the file, or by a timestamp column?). Every ambiguous term you
-   resolve silently is a design decision nobody approved.
+   later in the file, or by a timestamp column?). Chase precedence the same
+   way: when two rules can reject the same request (not the owner, and the
+   date has passed), which answer does the caller get? Every ambiguous term
+   or order you resolve silently is a design decision nobody approved.
 4. **Write the Gherkin**: one `Feature:` fence (As-a / I-want / So-that), one
    fence per `Scenario:`, prose context between fences, link related docs.
    - **Coverage**: one happy path, one scenario per edge case the dialogue
@@ -81,9 +87,10 @@ propose — designing in ignorance of one is not.
    - **Names**: short, distinct, stable — `slug.test.md` will reference them
      verbatim later.
    - **Surface details stay out of Gherkin** when they are not user-
-     observable outcomes (layout choreography, API envelope rationale, CLI
-     flag set). Put those in the spec, optional `slug.surface.md`, or
-     SURFACES.md — not in scenario steps.
+     observable outcomes (layout choreography, API envelope, CLI flag set).
+     Put them in `slug.surface.md` (step 7), or in SURFACES.md when they hold
+     for every surface, and the reasons for them in the spec. Never in
+     scenario steps.
 5. **Present the design** section by section — approach, then alternatives
    with trade-offs (lead with your recommendation), then accepted
    trade-offs. Every decision you made yourself while writing the Gherkin
@@ -96,23 +103,37 @@ propose — designing in ignorance of one is not.
    resolved ambiguity), `## Alternatives rejected` (each with its reason).
    Path is a **stem sibling** of the feature file — not nested under
    `<group>/<slug>/`. In the same edit, flip the feature's `status` to
-   `specified`: a `draft` may carry no trail siblings (F4), so the spec and
-   the flip land together.
-7. **Optional surface doc.** When the feature exposes non-trivial interface
-   decisions that Gherkin cannot hold (API envelope for this feature, CLI
-   flag set, UI choreography, event shapes, copy/a11y for this flow), after
-   SPEC approval write `<group>/<slug>.surface.md` (`type: Surface`) with
-   that rationale. A **surface** is any interface (UI, API, CLI, events) —
-   not visual design only. Skip when SURFACES.md already covers it and the
-   feature adds nothing feature-specific. Validation never requires
-   `.surface.md` for a status.
+   `specified`: a `draft` may not carry a spec (F4), so the spec and the flip
+   land together.
+7. **Surface document.** Ask one question: does this feature add or change
+   anything a person or another system uses directly? That is a screen,
+   dialog or flow; an endpoint, RPC or webhook; a command or flag; an event,
+   message, email or notification; a file format or export. If yes, write
+   `<group>/<slug>.surface.md` (`type: Surface`) beside the spec, with one
+   `#` heading per interface:
+   - an API: request and response shapes, status and error codes, following
+     SURFACES.md's conventions;
+   - a UI: layout, states (empty, loading, error), copy, accessibility;
+   - a command: arguments, flags, output, exit codes;
+   - an event or message: its fields, and when it is sent.
+
+   It describes the interfaces the approved design gives the feature, and it
+   is living: every later Change that alters them amends it. It never adds an
+   outcome the Gherkin does not name, since a new outcome is a scenario
+   first. The *why* goes in the spec; the *what* goes here. A feature with
+   none of these interfaces (a background job whose output nobody reads
+   directly, a change to how data is stored) says so instead: add
+   `surface: none` to its frontmatter, in the same edit. From `specified` on,
+   `fdf validate` warns about a feature that has neither.
 8. **Self-review** before validating: re-read the feature doc against the
    conversation. Any user decision that no scenario or SPEC line records?
    Any two scenarios whose names could be confused? Fix silently; don't
    re-ask.
-9. **Log and gate.** Update the feature's `timestamp`; log the approval in
-   the feature's `slug.log.md` (create it on first use: `type: Log`, a
-   `## YYYY-MM-DD` heading, one line). Feature-scoped entries stay out of the
+9. **Log and gate.** Set the feature's `timestamp` to now (in UTC, like every
+   date and time in the bundle), then log the approval in the feature's own
+   log:
+   `fdf log <group>/<slug> "**Specified**: design approved by <who>; <the approach in one line>."`
+   It creates the log on first use. Feature-scoped entries stay out of the
    root `LOG.md`, which is for bundle-wide events. **Gate**: `fdf validate`
    exit 0 — use fdf-validate if it fails.
 
@@ -125,9 +146,10 @@ Next: the feature is `specified` — fdf-plan is the next skill.
   the design is approved — however simple the feature seems.
 - One feature per brainstorm. If the idea spans independent subsystems,
   decompose it into features first, then brainstorm one.
-- A feature that builds on a delivered one may record that with `depends-on`
-  (feature IDs, must exist, acyclic). Use it for lineage — not as a substitute
-  for a Change when you are really altering the existing capability.
-- Write `slug.spec.md` (and optional `slug.surface.md`) as stem siblings —
+- A feature that builds on a delivered one — adds to its page, endpoint or
+  table — names it in `depends-on` (feature IDs, must exist, acyclic). That is
+  lineage, not a substitute for a Change: when a scenario of the delivered
+  feature would stop being true, you are altering it, and that is a Change.
+- Write `slug.spec.md` (and `slug.surface.md`) as stem siblings —
   never `slug/SPEC.md` or other nested trail paths (those are the v0.3
   layout; the task directory holds only tasks).

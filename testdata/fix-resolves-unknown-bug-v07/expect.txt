@@ -1,0 +1,2 @@
+exit: 1
+contains: changes/hours-fix.md: `resolves` names "bugs/never-filed", which is not a bug under bugs/ nor one recorded in bugs/LOG.md (F10)

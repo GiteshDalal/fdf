@@ -1,0 +1,4 @@
+exit: 1
+contains: changes/hours-wording.md: `## venues/opening-hours` entry "add: Venue owner closes for a holiday" is not `- add: <scenario>`
+contains: changes/hours-wording.md: `## venues/opening-hours` entry "remove: Venue owner sets opening hours" is not `- add: <scenario>`
+contains: changes/hours-wording.md: `# Scenario changes` has 2 `## venues/opening-hours` headings — one per affected feature (F10)

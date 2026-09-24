@@ -10,25 +10,21 @@ import (
 	"github.com/GiteshDalal/fdf/cli/internal/install"
 )
 
-const installUsage = `usage: fdf install [--project] [--root <dir>] <claude-code|codex|opencode>
-
-Installs (or auto-upgrades) the FDF skills and instruction-file primer for
-the given AI harness. Default is user-level (home directory). --project
-installs into the current git project instead (skills under the harness's
-project config dir; primer in the repo-root instruction file). --root (or
-FDF_ROOT_DIR) rewrites the bundle-root path referenced by the installed
-skills; keep it project-relative.`
-
 func runInstall(args []string, stdout io.Writer) int {
-	fs := newFlagSet("install", stdout)
+	fs := newFlagSet("install")
 	rootFlag := fs.String("root", "", "bundle root to bake into the installed skills (default docs/features; FDF_ROOT_DIR is honored)")
 	project := fs.Bool("project", false, "install into the current git project instead of the user home directory")
-	if err := fs.Parse(args); err != nil {
+	rest, exit, ok := parseArgs(fs, args, stdout)
+	if !ok {
+		return exit
+	}
+	if len(rest) != 1 {
+		printUsage(stdout, "install")
 		return 2
 	}
-	rest := fs.Args()
-	if len(rest) != 1 {
-		fmt.Fprintln(stdout, installUsage)
+	if !install.IsHarness(rest[0]) {
+		fmt.Fprintf(stdout, "error: unknown harness %q — fdf installs for claude-code, codex or opencode\n", rest[0])
+		printUsage(stdout, "install")
 		return 2
 	}
 	root := *rootFlag
@@ -61,15 +57,15 @@ func runInstall(args []string, stdout io.Writer) int {
 }
 
 func runServe(args []string, stdout io.Writer) int {
-	fs := newFlagSet("serve", stdout)
-	root, source, rest, ok := resolveRootSource(fs, args, stdout)
+	fs := newFlagSet("serve")
+	root, source, _, exit, ok := resolveRootSource(fs, args, stdout)
 	if !ok {
-		return 2
-	}
-	if !rejectPositionals("serve", "--root", rest, stdout) {
-		return 2
+		return exit
 	}
 	announce("serve", root, source, stdout)
+	if !requireBundle(root, stdout) {
+		return 1
+	}
 	if _, err := exec.LookPath("bun"); err != nil {
 		fmt.Fprintf(stdout, "fdf serve wraps `bun x mdts`. bun is not installed — install it (https://bun.sh) or run your own markdown server over %s\n", root)
 		return 1

@@ -75,22 +75,28 @@ Spec/Architecture territory.
    moment they're written — so the user must genuinely agree now.
 5. **Write the five files.** Replace the entire stub (remove the
    `<!-- fdf:stub -->` sentinel and the ⚠️ banner — their presence is what
-   F9 treats as "unfilled"). Keep `type: Context` and the frontmatter; update
-   `timestamp`.
+   F9 treats as "unfilled"). Keep `type: Context` and the frontmatter; set
+   `timestamp` to now, in UTC.
 6. **Surface the practices the project already follows.** On an existing
    codebase this is the highest-value part of the whole interview — see
    *Practices in an existing project* below. On a greenfield project there is
    nothing to surface yet; say so and move on.
-7. **Point the instruction files at the new documents.** Where `CLAUDE.md` or
+7. **Offer to map what the code already does.** An existing codebase's
+   capabilities have no feature documents yet. Mapping them — one adopted
+   *map entry* per capability, breadth first — is its own phased job, run by
+   the **fdf-adopt** skill once the five documents are filled. Offer it; do
+   not start it inside this interview.
+8. **Point the instruction files at the new documents.** Where `CLAUDE.md` or
    `AGENTS.md` restates what the five documents now hold — a stack list,
    build commands, conventions — propose replacing each with a one-line
    pointer, so every fact has one home from day one. fdf-checkpoint's
    *Agent instruction files* section is the full check.
-8. **Log and gate.** Add a root `LOG.md` entry noting the interview and key
-   decisions — the interview is bundle-wide, so it is logged at the root.
+9. **Log and gate.** Log the interview and its key decisions in the root
+   `LOG.md` — it is bundle-wide:
+   `fdf log "**Context**: the five Context documents filled by the fdf-init interview; <key decisions>."`
    Run `fdf validate` — exit 0 (F9 now satisfied) before you're done. If it
    fails on anything else, use fdf-validate.
-9. **Hand off the responsibility.** Tell the user plainly (see Closing).
+10. **Hand off the responsibility.** Tell the user plainly (see Closing).
 
 ## What to ask
 
@@ -178,9 +184,27 @@ A physical location where a merchant sells. Owns its own inventory and staff.
 One `## <Term>` per canonical term; the first line under it is the definition;
 `instead-of` lists the banned words. F12 rejects a duplicate term, a term with
 no definition, a banned word that is itself a term, and a word claimed by two
-terms. Banned words found in a feature's Gherkin or a declared scenario name
-are reported as warnings — `fdf validate --strict-domain` makes them errors,
-worth turning on in CI once the lexicon has settled.
+terms. A banned word is reported wherever the bundle chooses its words — every
+document except `SPEC.md`, `DOMAIN.md`, `slug.test.md` and `slug.surface.md`,
+and every group, slug and task name — as a warning; `strict: true` in
+`DOMAIN.md`'s frontmatter makes them errors in every validation, worth
+proposing once the bundle is clean.
+
+When a banned word has an ordinary second sense in this project — *store* in
+"data store", *branch* in "git branch" — list the qualified phrase under
+`- except:` so it is never reported:
+
+```markdown
+## Venue
+A physical location where a merchant sells.
+- instead-of: store, shop, branch
+- except: data store, git branch
+```
+
+An `except:` entry is always a phrase, never the banned word alone (F12 rejects
+that: it would un-ban the word). Before banning a word, ask how often the
+project uses it in another sense; `fdf lexicon` shows every occurrence once the
+term is in place.
 
 A bundle that already uses a word you ban — any bundle migrated from an
 earlier version — gets swept in the same approved edit: a **lexicon fix** in
@@ -273,6 +297,11 @@ Each is a place a permission rule can be changed in one spot and missed in
 another.
 ```
 
+What you find while reading the code that is not a gap but a **defect** —
+the software doing something wrong that someone could observe — is a bug, not
+a debt: `fdf bug`, with the evidence under `# Symptom` and what should happen
+under `# Expected`. Do not fix it inside this interview.
+
 `fdf debt [<group>/]<slug>` scaffolds it. `# Gap` is required and must be
 concrete enough for someone else to confirm — name files and counts, not
 impressions (F13). `resource` names the paths carrying the gap and is the whole
@@ -332,8 +361,8 @@ do; everything else explains it. `applies-to` lists the repo paths it governs
 and those paths must exist (R1); it is how later work is routed to the
 practice, since a feature never lists the practices it follows. A practice
 carries no Gherkin, no spec, no plan, no tasks. Get each one approved before
-writing it, exactly like a Context document, and link it from
-`practices/INDEX.md`.
+writing it, exactly like a Context document. `fdf practice` lists it in
+`practices/INDEX.md`; give the listing a real description.
 
 ## Closing (say this explicitly)
 
@@ -349,7 +378,9 @@ Tell the user, in your own words:
 > fdf-checkpoint skill now and then, and before each release: it re-checks
 > them, `SPEC.md` and CLAUDE.md/AGENTS.md against the code and each other.
 > The practices under `practices/` are the same: binding on all code that
-> matches their `applies-to`, and mine to propose but yours to approve.
+> matches their `applies-to`, and mine to propose but yours to approve. The
+> code that already exists has no feature documents yet; the fdf-adopt skill
+> maps it — capability by capability, breadth first — whenever you are ready.
 > Keeping all of this accurate is what makes this agentic engineering rather
 > than vibe coding — stale context produces confidently wrong work. They're
 > yours to own; I'll help maintain them.

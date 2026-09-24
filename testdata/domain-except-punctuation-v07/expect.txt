@@ -1,0 +1,2 @@
+exit: 1
+contains: DOMAIN.md: `except: store-` under "Venue" is a banned word alone

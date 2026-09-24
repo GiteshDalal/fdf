@@ -7,7 +7,8 @@ always self-describing.
 
 | Version | Document | Status |
 |---------|----------|--------|
-| **0.6** | [spec/0.6.md](spec/0.6.md) | **Current** |
+| **0.7** | [spec/0.7.md](spec/0.7.md) | **Current** |
+| 0.6     | [spec/0.6.md](spec/0.6.md) | Superseded (validated for back-compat; migrate with `fdf migrate`) |
 | 0.5     | [spec/0.5.md](spec/0.5.md) | Superseded (validated for back-compat; migrate with `fdf migrate`) |
 | 0.4     | [spec/0.4.md](spec/0.4.md) | Superseded (validated for back-compat; migrate with `fdf migrate`) |
 | 0.3     | [spec/0.3.md](spec/0.3.md) | Superseded (validated for back-compat; migrate with `fdf migrate`) |

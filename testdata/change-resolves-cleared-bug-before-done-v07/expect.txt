@@ -1,0 +1,3 @@
+exit: 1
+contains: changes/hours-fix.md: `resolves` names bugs/old-crash, which was already cleared from the register
+contains: (F10)

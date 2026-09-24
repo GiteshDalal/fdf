@@ -3,13 +3,33 @@
 package fdfroot
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
+
+// NoBundle is what every command says when the bundle root holds no bundle,
+// so a wrong --root reads the same whichever command met it first.
+func NoBundle(root string) error {
+	return fmt.Errorf("no bundle at %s (no INDEX.md) — run `fdf init` first, or point --root at the bundle", root)
+}
+
+// CheckBundle returns NoBundle unless root holds a bundle: an INDEX.md at its
+// top.
+func CheckBundle(root string) error {
+	if _, err := os.Stat(filepath.Join(root, "INDEX.md")); err != nil {
+		return NoBundle(root)
+	}
+	return nil
+}
 
 // ProjectRoot walks up from start to the topmost enclosing git working tree.
 // A .git directory marks a working tree; a .git FILE marks a submodule
-// boundary — the walk records it and continues to the superproject.
+// boundary — the walk records it and continues to the superproject. A .git
+// file that belongs to a linked worktree (`git worktree add`) ends the walk:
+// the worktree is a checkout of its own, even when it sits inside the main
+// repository's directory, and its paths are the ones to check.
 // standalone is true only when no .git (file or dir) exists anywhere above.
 func ProjectRoot(start string) (string, bool) {
 	cur, _ := filepath.Abs(start)
@@ -17,10 +37,10 @@ func ProjectRoot(start string) (string, bool) {
 	for {
 		if fi, err := os.Stat(filepath.Join(cur, ".git")); err == nil {
 			lastGit = cur
-			if fi.IsDir() {
-				// a real repo; keep walking only if it is itself nested —
-				// the topmost .git DIRECTORY wins, so remember and continue.
+			if !fi.IsDir() && linkedWorktree(cur) {
+				return cur, false
 			}
+			// Otherwise the topmost .git wins: remember it and keep walking.
 		}
 		parent := filepath.Dir(cur)
 		if parent == cur {
@@ -33,6 +53,27 @@ func ProjectRoot(start string) (string, bool) {
 	}
 	abs, _ := filepath.Abs(start)
 	return abs, true
+}
+
+// linkedWorktree reports whether dir's .git file points at a linked
+// worktree's administrative directory, which holds a `commondir` file. A
+// submodule's .git file points at a directory under the superproject's
+// .git/modules, which does not.
+func linkedWorktree(dir string) bool {
+	raw, err := os.ReadFile(filepath.Join(dir, ".git"))
+	if err != nil {
+		return false
+	}
+	line := strings.TrimSpace(strings.SplitN(string(raw), "\n", 2)[0])
+	if !strings.HasPrefix(line, "gitdir:") {
+		return false
+	}
+	gitdir := strings.TrimSpace(strings.TrimPrefix(line, "gitdir:"))
+	if !filepath.IsAbs(gitdir) {
+		gitdir = filepath.Join(dir, gitdir)
+	}
+	_, err = os.Stat(filepath.Join(gitdir, "commondir"))
+	return err == nil
 }
 
 // NearestProjectRoot walks up from start to the NEAREST enclosing git working

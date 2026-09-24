@@ -39,6 +39,34 @@ func TestProjectRootSubmoduleWalksToSuperproject(t *testing.T) {
 	}
 }
 
+// A linked worktree (`git worktree add`) often sits inside the main
+// repository's directory. Its .git file points at an admin directory holding
+// `commondir`; the worktree is a checkout of its own, so the walk stops there
+// instead of reaching the main checkout, whose files belong to another branch.
+func TestProjectRootLinkedWorktreeStopsAtItsRoot(t *testing.T) {
+	tmp := t.TempDir()
+	main := mk(t, tmp, "repo")
+	admin := mk(t, main, ".git", "worktrees", "wt")
+	if err := os.WriteFile(filepath.Join(admin, "commondir"), []byte("../..\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, gitdir := range []string{admin, filepath.Join("..", "..", "..", ".git", "worktrees", "wt")} {
+		wt := mk(t, main, ".claude", "worktrees", "wt")
+		if err := os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: "+gitdir+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		deep := mk(t, wt, "docs", "features")
+		root, standalone := ProjectRoot(deep)
+		if root != wt || standalone {
+			t.Fatalf("gitdir %q: want the worktree %q, got %q standalone=%v", gitdir, wt, root, standalone)
+		}
+		bundle, err := BundleRoot("docs/features", wt)
+		if err != nil || bundle != filepath.Join(wt, "docs", "features") {
+			t.Fatalf("gitdir %q: relative --root should resolve inside the worktree, got %q (%v)", gitdir, bundle, err)
+		}
+	}
+}
+
 func TestProjectRootStandaloneBundleRepo(t *testing.T) {
 	tmp := t.TempDir()
 	// a bundle repo checked out alone: .git file with no enclosing repo
@@ -136,5 +164,19 @@ func TestBundleRootWithSourceNamesTheChooser(t *testing.T) {
 		if source != tc.want {
 			t.Errorf("flag=%q env=%q: source %q, want %q", tc.flag, tc.env, source, tc.want)
 		}
+	}
+}
+
+func TestCheckBundleWantsAnIndex(t *testing.T) {
+	tmp := t.TempDir()
+	err := CheckBundle(filepath.Join(tmp, "nope"))
+	if err == nil || err.Error() != "no bundle at "+filepath.Join(tmp, "nope")+" (no INDEX.md) — run `fdf init` first, or point --root at the bundle" {
+		t.Fatalf("a missing bundle: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "INDEX.md"), []byte("---\nfdf_version: \"0.7\"\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckBundle(tmp); err != nil {
+		t.Fatalf("a bundle with its INDEX.md: %v", err)
 	}
 }

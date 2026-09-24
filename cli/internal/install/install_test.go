@@ -44,6 +44,12 @@ func TestInstallClaudeCodePlacesSkillsPrimerAndUpgrades(t *testing.T) {
 	if !strings.Contains(string(claudeMd), "practices/") || !strings.Contains(string(claudeMd), "type: Practice") {
 		t.Fatalf("primer should teach practice documents:\n%s", claudeMd)
 	}
+	if !strings.Contains(string(claudeMd), "set its `timestamp` to\n  now, in UTC") || !strings.Contains(string(claudeMd), "leaves `timestamp` as it is") {
+		t.Fatalf("primer should say a changed document's timestamp is now, in UTC, and a maintenance edit's is kept:\n%s", claudeMd)
+	}
+	if strings.Contains(string(claudeMd), "resolved in place") {
+		t.Fatalf("a bug is never *repaired* in place; one that needs no repair is resolved:\n%s", claudeMd)
+	}
 	out.Reset()
 	if code := Run("claude-code", home, "", false, &out); code != 0 || !strings.Contains(out.String(), "up to date") {
 		t.Fatalf("re-install should be up to date: %d %q", code, out.String())
@@ -54,6 +60,67 @@ func TestInstallClaudeCodePlacesSkillsPrimerAndUpgrades(t *testing.T) {
 	out.Reset()
 	if code := Run("claude-code", home, "", false, &out); code != 0 || !strings.Contains(out.String(), "upgraded") {
 		t.Fatalf("should auto-upgrade: %d %q", code, out.String())
+	}
+}
+
+// Two builds of one version can ship different skills and primers — a
+// development build and its release. The marker records what this build
+// installs, so the later build upgrades the skills, and the earlier build's
+// primer, untouched, is recognized as fdf's own and refreshed.
+func TestInstallUpgradesAnEarlierBuildOfTheSameVersion(t *testing.T) {
+	home := t.TempDir()
+	var out bytes.Buffer
+	if code := Run("claude-code", home, "", false, &out); code != 0 {
+		t.Fatalf("install: %d\n%s", code, out.String())
+	}
+	skills := filepath.Join(home, ".claude", "skills")
+	marker := string(mustRead(t, filepath.Join(skills, "fdf-help", ".fdf-version")))
+	if !strings.HasPrefix(marker, Version+" skills=") || !strings.HasSuffix(marker, " root=docs/features") || recordedPrimer(marker) == "" {
+		t.Fatalf("the marker keeps the version and records the build: %q", marker)
+	}
+
+	// An earlier build of this version: other skill text, another primer.
+	variant := func(line string) string {
+		return strings.Replace(primer("docs/features"), primerHeading+"\n", primerHeading+"\n\n"+line+"\n", 1)
+	}
+	earlier := variant("An earlier build said this.")
+	earlierMarker := versionMarker("docs/features", "0123456789ab", digest(strings.TrimRight(earlier, "\n")))
+	for _, name := range skillNames {
+		os.WriteFile(filepath.Join(skills, name, "SKILL.md"), []byte("an earlier build's skill\n"), 0o644)
+		os.WriteFile(filepath.Join(skills, name, ".fdf-version"), []byte(earlierMarker), 0o644)
+	}
+	claudeMd := filepath.Join(home, ".claude", "CLAUDE.md")
+	os.WriteFile(claudeMd, []byte("# Mine\n\n"+earlier), 0o644)
+
+	out.Reset()
+	if code := Run("claude-code", home, "", false, &out); code != 0 {
+		t.Fatalf("reinstall: %d\n%s", code, out.String())
+	}
+	if !strings.Contains(out.String(), "upgraded fdf skills") || strings.Contains(out.String(), "up to date") {
+		t.Errorf("an earlier build of the same version is upgraded:\n%s", out.String())
+	}
+	if s := string(mustRead(t, filepath.Join(skills, "fdf-help", "SKILL.md"))); strings.Contains(s, "an earlier build") {
+		t.Errorf("the skills are this build's:\n%s", s)
+	}
+	if strings.Contains(out.String(), "differs from the shipped primer") {
+		t.Errorf("the earlier build's primer is fdf's own, not an edit:\n%s", out.String())
+	}
+	if s := string(mustRead(t, claudeMd)); !strings.Contains(s, "# Mine\n\n"+strings.TrimRight(primer("docs/features"), "\n")) {
+		t.Errorf("the primer is this build's, the rest kept:\n%s", s)
+	}
+
+	// A primer edited after that build is still an edit.
+	edited := variant("I wrote this line myself.")
+	for _, name := range skillNames {
+		os.WriteFile(filepath.Join(skills, name, ".fdf-version"), []byte(earlierMarker), 0o644)
+	}
+	os.WriteFile(claudeMd, []byte(edited), 0o644)
+	out.Reset()
+	if code := Run("claude-code", home, "", false, &out); code != 0 {
+		t.Fatalf("reinstall: %d\n%s", code, out.String())
+	}
+	if !strings.Contains(out.String(), "differs from the shipped primer") || string(mustRead(t, claudeMd)) != edited {
+		t.Errorf("an edited primer is left as it is, with a note:\n%s", out.String())
 	}
 }
 
@@ -104,6 +171,12 @@ func TestInstallCustomRootRewritesSkillsAndPrimer(t *testing.T) {
 	skill, _ = os.ReadFile(filepath.Join(home, ".codex", "skills", "fdf-help", "SKILL.md"))
 	if !strings.Contains(string(skill), "docs/features") {
 		t.Fatalf("reinstall with default root should restore default path:\n%s", skill)
+	}
+	// The primer the last install recorded is fdf's own under any root, so
+	// it follows the root too, rather than reading as an edit.
+	agents, _ = os.ReadFile(filepath.Join(home, ".codex", "AGENTS.md"))
+	if !strings.Contains(string(agents), "docs/features/SPEC.md") || strings.Contains(string(agents), "wiki/fdf") || strings.Contains(out.String(), "differs from the shipped primer") {
+		t.Fatalf("the primer follows the root change:\n%s\n%s", agents, out.String())
 	}
 }
 
@@ -375,7 +448,7 @@ func TestUpgradeRefreshesShippedV062Primer(t *testing.T) {
 		t.Fatalf("install: %d\n%s", code, out.String())
 	}
 	got := string(mustRead(t, path))
-	if !strings.Contains(got, "**lexicon fix**") {
+	if !strings.Contains(got, "a lexicon fix (a banned word replaced by its term)") {
 		t.Fatalf("refreshed primer must allow the lexicon fix on every document:\n%s", got)
 	}
 	if strings.Count(got, primerHeading) != 1 {
@@ -383,6 +456,32 @@ func TestUpgradeRefreshesShippedV062Primer(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "updated") {
 		t.Fatalf("report should say the primer was updated:\n%s", out.String())
+	}
+}
+
+func TestUpgradeRefreshesShippedV063Primer(t *testing.T) {
+	home := t.TempDir()
+	// Seed the exact primer the v0.6.3 release wrote (untouched managed
+	// content): no bug register, no adoption, the lexicon fix alone.
+	path := filepath.Join(home, ".claude", "CLAUDE.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(primerV063("docs/features")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if code := Run("claude-code", home, "", false, &out); code != 0 {
+		t.Fatalf("install: %d\n%s", code, out.String())
+	}
+	got := string(mustRead(t, path))
+	for _, want := range []string{"**Bug documents**", "fdf-adopt", "**maintenance edits**", "`fdf mv`", "fdf lexicon"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("refreshed primer must teach v0.7 (%q):\n%s", want, got)
+		}
+	}
+	if strings.Count(got, primerHeading) != 1 {
+		t.Fatalf("refresh must replace the section, not append a second one:\n%s", got)
 	}
 }
 
