@@ -693,18 +693,30 @@ func moveListings(rootAbs string, p *plan, edits map[string]*edit) []string {
 			return "](" + filepath.ToSlash(r) + sm[2] + ")"
 		})
 	}
+	notes := []string{fmt.Sprintf("listing moved from %s to %s", oldIdx, newIdx)}
 	dst, ok := textOf(newIdx)
 	if !ok {
-		name := path.Base(newDir)
-		heading := strings.ToUpper(name[:1]) + name[1:]
-		if !strings.Contains(newDir, "/") && p.reg[newDir] == "" {
-			heading += " features" // a feature group; a register or its group is named plainly
+		// A new group is headed, and listed beside its siblings, the way
+		// `fdf new` and the registers' commands head and list one: a feature
+		// group in the root INDEX.md, a register's group in the register's.
+		parent, group := path.Split(newDir)
+		parent = strings.TrimSuffix(parent, "/")
+		heading := strings.ToUpper(group[:1]) + group[1:] // a register itself, named plainly
+		if isGroup := parent == "" && p.reg[group] == "" || p.reg[parent] != ""; isGroup {
+			heading = scaffold.GroupTitle(parent, group)
+			parentIdx := path.Join(parent, "INDEX.md")
+			if text, ok := textOf(parentIdx); ok {
+				if listed, added := scaffold.WithGroupListing(text, parent, group); added {
+					setText(parentIdx, listed, 0)
+					notes = append(notes, fmt.Sprintf("group %s/ listed in %s", newDir, parentIdx))
+				}
+			}
 		}
 		dst = "# " + heading + "\n\n"
 	}
 	dst = strings.TrimRight(dst, "\n") + "\n" + strings.Join(movedLines, "\n") + "\n"
 	setText(newIdx, dst, len(movedLines))
-	return []string{fmt.Sprintf("listing moved from %s to %s", oldIdx, newIdx)}
+	return notes
 }
 
 // apply performs the move: renames first, then every rewritten text written

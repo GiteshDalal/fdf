@@ -1,8 +1,10 @@
 package scaffold
 
-// Index listings for the reserved directories. The spec asks each INDEX.md to
-// list the documents beside it. `fdf new` and `fdf change` have always added
-// theirs; these do the same for a practice, a debt and a bug, and take a
+// Index listings. The spec asks each INDEX.md to list the documents beside
+// it, and the root INDEX.md to list the groups. `fdf new` and `fdf change`
+// have always added theirs; these do the same for a practice, a debt and a
+// bug, list a new group in its parent's index — a feature group in the root
+// INDEX.md, a reserved directory's group in that directory's — and take a
 // cleared entry's listing away with its file.
 
 import (
@@ -27,20 +29,139 @@ func ListEntry(root, dir, id, title, what string, out io.Writer) int {
 	if group, _, grouped := strings.Cut(id, "/"); grouped {
 		idxRel = dir + "/" + group + "/INDEX.md"
 		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(idxRel))); err != nil {
-			heading := strings.ToUpper(group[:1]) + strings.ReplaceAll(group[1:], "-", " ")
-			if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(idxRel)), []byte("# "+heading+"\n"), 0o644); err != nil {
+			if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(idxRel)), []byte("# "+GroupTitle(dir, group)+"\n"), 0o644); err != nil {
 				fmt.Fprintln(out, "error:", err)
 				return 1
 			}
 			fmt.Fprintf(out, "wrote %s\n", idxRel)
-			line := fmt.Sprintf("* [%s](/%s) - %ss in %s.\n", heading, idxRel, what, group)
-			if code := addListing(root, dir+"/INDEX.md", idxRel, heading, line, out); code != 0 {
+			if code := ListGroup(root, dir, group, out); code != 0 {
 				return code
 			}
 		}
 	}
 	target := dir + "/" + id + ".md"
 	return addListing(root, idxRel, target, title, fmt.Sprintf("* [%s](/%s) - %s.\n", title, target, what), out)
+}
+
+// groupNouns say what a group of each reserved directory holds, for the
+// listing the directory's INDEX.md gives it: a changes/ group holds both
+// kinds of post-delivery work.
+var groupNouns = map[string]string{"changes": "changes and fixes", "practices": "practices", "debts": "debts", "bugs": "bugs"}
+
+// GroupTitle is how a new group's own INDEX.md is headed: a feature group
+// (dir "") as "<Group> features", a reserved directory's group by its name.
+func GroupTitle(dir, group string) string {
+	title, _ := groupListing(dir, group)
+	if dir == "" {
+		return title + " features"
+	}
+	return title
+}
+
+// groupListing is a group's title and the line its parent index lists it
+// with: a feature group (dir "") in the bundle-root INDEX.md, a reserved
+// directory's group in that directory's.
+func groupListing(dir, group string) (title, line string) {
+	if dir == "" {
+		title = strings.ToUpper(group[:1]) + group[1:]
+		return title, fmt.Sprintf("* [%s](/%s/INDEX.md) - %s features.", title, group, group)
+	}
+	title = strings.ToUpper(group[:1]) + strings.ReplaceAll(group[1:], "-", " ")
+	return title, fmt.Sprintf("* [%s](/%s/%s/INDEX.md) - %s in %s.", title, dir, group, groupNouns[dir], group)
+}
+
+// ListGroup lists a group in its parent index — a feature group (dir "") in
+// the bundle-root INDEX.md, which the spec says lists the groups; a reserved
+// directory's group in that directory's INDEX.md — unless it is listed there
+// already, and says so the way ListEntry does. A parent with no index is left
+// without one.
+func ListGroup(root, dir, group string, out io.Writer) int {
+	idxRel := "INDEX.md"
+	if dir != "" {
+		idxRel = dir + "/INDEX.md"
+	}
+	p := filepath.Join(root, filepath.FromSlash(idxRel))
+	raw, err := os.ReadFile(p)
+	if err != nil {
+		return 0
+	}
+	text, added := WithGroupListing(string(raw), dir, group)
+	if !added {
+		return 0
+	}
+	if err := os.WriteFile(p, []byte(text), 0o644); err != nil {
+		fmt.Fprintln(out, "error:", err)
+		return 1
+	}
+	title, _ := groupListing(dir, group)
+	fmt.Fprintf(out, "updated %s (now lists %q)\n", idxRel, title)
+	return 0
+}
+
+var overviewRe = regexp.MustCompile(`(?i)^#\s+overview\s*$`)
+var headingLineRe = regexp.MustCompile(`^#{1,6}\s`)
+
+// WithGroupListing returns the text of a group's parent index (see ListGroup)
+// with the group's listing added, and whether it added it: an index that
+// already lists the group — its INDEX.md, or the directory — is returned as it
+// is. The line goes after the last group the index lists, so the groups stay
+// together; failing that, at the end of the `# Overview` list `fdf init`
+// writes in the root index; failing that, at the end.
+func WithGroupListing(text, dir, group string) (string, bool) {
+	idxDir, groupRel := ".", group
+	if dir != "" {
+		idxDir, groupRel = dir, dir+"/"+group
+	}
+	_, line := groupListing(dir, group)
+	lines := strings.Split(text, "\n")
+	after := -1 // the line the listing goes after
+	for i, l := range lines {
+		t := listingTarget(l, idxDir)
+		if t == groupRel+"/INDEX.md" || t == groupRel {
+			return text, false
+		}
+		if strings.HasSuffix(t, "/INDEX.md") && path.Dir(path.Dir(t)) == path.Clean(idxDir) {
+			after = i
+		}
+	}
+	if after < 0 {
+		// The end of the `# Overview` section: its last listing, or else its
+		// last line of text, or else the heading itself.
+		for i := 0; i < len(lines); i++ {
+			if !overviewRe.MatchString(strings.TrimSpace(lines[i])) {
+				continue
+			}
+			after = i
+			listed := false
+			for j := i + 1; j < len(lines) && !headingLineRe.MatchString(lines[j]); j++ {
+				if listingLinkRe.MatchString(lines[j]) {
+					after, listed = j, true
+				} else if strings.TrimSpace(lines[j]) != "" && !listed {
+					after = j
+				}
+			}
+			break
+		}
+	}
+	if after < 0 {
+		// Nowhere better: at the end, as addListing adds a document.
+		text = strings.TrimRight(text, "\n")
+		sep := "\n"
+		if !listingLinkRe.MatchString(text[strings.LastIndex(text, "\n")+1:]) {
+			sep = "\n\n" // a list starts after a blank line
+		}
+		return text + sep + line + "\n", true
+	}
+	add := []string{line}
+	if !listingLinkRe.MatchString(lines[after]) {
+		// After a heading or prose: a new list is set off by blank lines.
+		add = []string{"", line}
+		if after+1 < len(lines) && strings.TrimSpace(lines[after+1]) != "" {
+			add = append(add, "")
+		}
+	}
+	lines = append(lines[:after+1], append(add, lines[after+1:]...)...)
+	return strings.Join(lines, "\n"), true
 }
 
 // addListing appends line to the index at idxRel unless the index already

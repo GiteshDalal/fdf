@@ -121,6 +121,74 @@ func TestNewScaffoldsDraftFeature(t *testing.T) {
 	}
 }
 
+// The root INDEX.md lists the groups (spec, *Reserved files*): a feature or
+// adoption that starts a group lists it there, once, with the other groups —
+// under `# Overview` in the index `fdf init` writes.
+func TestNewGroupsAreListedInTheRootIndex(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "docs", "features")
+	var out bytes.Buffer
+	Init(root, &out)
+	fillContext(t, root)
+	out.Reset()
+	for _, id := range []string{"payments/instant-refunds", "payments/refund-status", "venue-admin/opening-hours"} {
+		if code := New(root, id, &out); code != 0 {
+			t.Fatalf("fdf new %s: exit %d\n%s", id, code, out.String())
+		}
+	}
+	if code := Adopt(root, "", "card/payments", []string{"main.go"}, &out); code != 0 {
+		t.Fatalf("fdf adopt: exit %d\n%s", code, out.String())
+	}
+	idx, _ := os.ReadFile(filepath.Join(root, "INDEX.md"))
+	want := "# Overview\n\n* [FDF spec](/SPEC.md) - the format this bundle pins ([upstream](" + specURL + ")).\n" +
+		"* [Payments](/payments/INDEX.md) - payments features.\n" +
+		"* [Venue-admin](/venue-admin/INDEX.md) - venue-admin features.\n" +
+		"* [Card](/card/INDEX.md) - card features.\n\n# Conventions\n"
+	if !strings.Contains(string(idx), want) {
+		t.Errorf("INDEX.md should list each new group once, under # Overview:\n%s\nwant:\n%s", idx, want)
+	}
+	if n := strings.Count(out.String(), `updated INDEX.md (now lists "Payments")`); n != 1 {
+		t.Errorf("the root listing is reported once, got %d:\n%s", n, out.String())
+	}
+	if gidx, _ := os.ReadFile(filepath.Join(root, "venue-admin", "INDEX.md")); !strings.HasPrefix(string(gidx), "# Venue-admin features\n") {
+		t.Errorf("a group index is headed as before:\n%s", gidx)
+	}
+	var vout bytes.Buffer
+	if exit := bundle.Validate(root, bundle.Options{Out: &vout}); exit != 0 {
+		t.Fatalf("bundle not conformant:\n%s", vout.String())
+	}
+}
+
+// A group goes with the groups an index already lists, whatever the index
+// looks like; an index that lists it already is left as it is.
+func TestWithGroupListingPlacesTheGroup(t *testing.T) {
+	for _, tc := range []struct{ name, text, want string }{
+		{"after the last group",
+			"# Bundle\n\n* [Payments](/payments/INDEX.md) - payments.\n* [Format reference](/SPEC.md) - the spec.\n",
+			"# Bundle\n\n* [Payments](/payments/INDEX.md) - payments.\n* [Venues](/venues/INDEX.md) - venues features.\n* [Format reference](/SPEC.md) - the spec.\n"},
+		{"a # Overview with no list",
+			"# Bundle\n\n# Overview\nIntro.\n\n# Conventions\n",
+			"# Bundle\n\n# Overview\nIntro.\n\n* [Venues](/venues/INDEX.md) - venues features.\n\n# Conventions\n"},
+		{"an empty # Overview",
+			"# Bundle\n\n# Overview\n# Conventions\n",
+			"# Bundle\n\n# Overview\n\n* [Venues](/venues/INDEX.md) - venues features.\n\n# Conventions\n"},
+		{"at the end",
+			"# Bundle\n\nNo list yet.\n",
+			"# Bundle\n\nNo list yet.\n\n* [Venues](/venues/INDEX.md) - venues features.\n"},
+		{"listed by its directory",
+			"# Bundle\n\n* [Venues](venues/) - venues.\n",
+			"# Bundle\n\n* [Venues](venues/) - venues.\n"},
+	} {
+		got, _ := WithGroupListing(tc.text, "", "venues")
+		if got != tc.want {
+			t.Errorf("%s:\n got: %q\nwant: %q", tc.name, got, tc.want)
+		}
+	}
+	got, added := WithGroupListing("# Debt\n\n* [Format reference](/SPEC.md) - how debts are structured.\n* [Platform](/debts/platform/INDEX.md) - debts in platform.\n* [Gap](/debts/gap.md) - debt.\n", "debts", "venues")
+	if want := "* [Platform](/debts/platform/INDEX.md) - debts in platform.\n* [Venues](/debts/venues/INDEX.md) - debts in venues.\n* [Gap]"; !added || !strings.Contains(got, want) {
+		t.Errorf("a register's group goes with its groups:\n%s", got)
+	}
+}
+
 // A new practice is listed in practices/INDEX.md, or in its group's index,
 // which is created and listed on first use.
 func TestPracticeIsListed(t *testing.T) {

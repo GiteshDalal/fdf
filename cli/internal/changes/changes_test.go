@@ -92,6 +92,37 @@ func TestNewChangeIsGroupedAndCarriesScenarioChanges(t *testing.T) {
 	}
 }
 
+// A changes/ group is listed like every reserved directory's groups: its index
+// is titled after the group and listed once in changes/INDEX.md.
+func TestNewChangeGroupIsTitledAndListed(t *testing.T) {
+	root := bundle(t)
+	var out bytes.Buffer
+	if code := New(root, "payments/refund-window", "Change", []string{"payments/instant-refunds"}, &out); code != 0 {
+		t.Fatalf("exit %d\n%s", code, out.String())
+	}
+	if code := New(root, "payments/refund-rounding", "Fix", []string{"payments/instant-refunds"}, &out); code != 0 {
+		t.Fatalf("exit %d\n%s", code, out.String())
+	}
+	group, _ := os.ReadFile(filepath.Join(root, "changes", "payments", "INDEX.md"))
+	if want := "# Payments\n\n* [Refund window](/changes/payments/refund-window.md) - change.\n* [Refund rounding](/changes/payments/refund-rounding.md) - fix.\n"; string(group) != want {
+		t.Errorf("changes/payments/INDEX.md:\n%s\nwant:\n%s", group, want)
+	}
+	top, _ := os.ReadFile(filepath.Join(root, "changes", "INDEX.md"))
+	if n := strings.Count(string(top), "* [Payments](/changes/payments/INDEX.md) - changes and fixes in payments.\n"); n != 1 {
+		t.Errorf("changes/INDEX.md should list the group once, got %d:\n%s", n, top)
+	}
+	for _, want := range []string{
+		"wrote changes/INDEX.md",
+		"wrote changes/payments/INDEX.md\n",
+		`updated changes/INDEX.md (now lists "Payments")`,
+		`updated changes/payments/INDEX.md (now lists "Refund window")`,
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output should say %q:\n%s", want, out.String())
+		}
+	}
+}
+
 // affects is the whole link between a change and the features it touches, so
 // a typo there would silently produce an orphan document.
 func TestNewRejectsUnknownOrMissingAffects(t *testing.T) {

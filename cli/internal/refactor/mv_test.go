@@ -123,12 +123,30 @@ func TestMoveRenamesAFeatureWithItsTrailAndRepairsEveryReference(t *testing.T) {
 
 func TestMoveToANewGroupMovesTheListing(t *testing.T) {
 	root := fixture(t, "valid-bugs-v07")
-	move(t, root, "venues/opening-hours", "sites/opening-hours")
+	out := move(t, root, "venues/opening-hours", "sites/opening-hours")
 	if s := read(t, root, "venues/INDEX.md"); strings.Contains(s, "opening-hours") {
 		t.Fatalf("the old group index no longer lists the feature:\n%s", s)
 	}
-	if s := read(t, root, "sites/INDEX.md"); !strings.Contains(s, "(opening-hours.md)") {
+	if s := read(t, root, "sites/INDEX.md"); !strings.HasPrefix(s, "# Sites features\n") || !strings.Contains(s, "(opening-hours.md)") {
 		t.Fatalf("the new group index lists it:\n%s", s)
+	}
+	// The new group is listed beside the others, as `fdf new` lists one.
+	if s := read(t, root, "INDEX.md"); !strings.Contains(s, "* [Venues](/venues/INDEX.md) - venues.\n* [Sites](/sites/INDEX.md) - sites features.\n") {
+		t.Fatalf("the root index lists the new group:\n%s", s)
+	}
+	if !strings.Contains(out, "group sites/ listed in INDEX.md") {
+		t.Fatalf("the report says the group was listed:\n%s", out)
+	}
+	validates(t, root)
+
+	// A register's new group is listed in the register's index.
+	write(t, root, "bugs/INDEX.md", read(t, root, "bugs/INDEX.md")+"* [Hours off by one](/bugs/hours-off-by-one.md) - bug.\n")
+	move(t, root, "bugs/hours-off-by-one", "bugs/backend/hours-off-by-one")
+	if s := read(t, root, "bugs/backend/INDEX.md"); !strings.HasPrefix(s, "# Backend\n") || !strings.Contains(s, "(/bugs/backend/hours-off-by-one.md)") {
+		t.Fatalf("the register group's index lists the bug:\n%s", s)
+	}
+	if s := read(t, root, "bugs/INDEX.md"); !strings.Contains(s, "* [Backend](/bugs/backend/INDEX.md) - bugs in backend.\n") || strings.Contains(s, "(/bugs/hours-off-by-one.md)") {
+		t.Fatalf("bugs/INDEX.md lists the group, not the moved bug:\n%s", s)
 	}
 	validates(t, root)
 }

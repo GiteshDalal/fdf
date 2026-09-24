@@ -273,28 +273,15 @@ func listField(text, key string) []string {
 	return nil
 }
 
-// ensureIndex appends the new document to changes/INDEX.md (and a group index
-// when one is in play), creating either if absent.
+// ensureIndex lists the new document in changes/INDEX.md, or in its group's
+// index, as every reserved directory lists its documents: a group's index is
+// created on first use, titled after the group, and listed in
+// changes/INDEX.md so the group can be found.
 func ensureIndex(root, id, title, docType string, out io.Writer) int {
-	rel := "/changes/" + id + ".md"
-	idxDir := filepath.Join(root, "changes")
-	listedIn := "changes/INDEX.md"
-	if m := groupedRe.FindStringSubmatch(id); m != nil {
-		idxDir = filepath.Join(idxDir, m[1])
-		listedIn = "changes/" + m[1] + "/INDEX.md"
+	if code := scaffold.EnsureChangesIndex(root, out); code != 0 {
+		return code
 	}
-	idx := filepath.Join(idxDir, "INDEX.md")
-	entry := fmt.Sprintf("* [%s](%s) - %s.\n", title, rel, strings.ToLower(docType))
-	raw, err := os.ReadFile(idx)
-	if err != nil {
-		raw = []byte("# Changes\n\nPost-delivery changes and fixes for delivered features.\n\n")
-	}
-	if err := os.WriteFile(idx, append(raw, []byte(entry)...), 0o644); err != nil {
-		fmt.Fprintln(out, "error:", err)
-		return 1
-	}
-	fmt.Fprintf(out, "updated %s (now lists %q)\n", listedIn, title)
-	return 0
+	return scaffold.ListEntry(root, "changes", id, title, strings.ToLower(docType), out)
 }
 
 type entry struct {

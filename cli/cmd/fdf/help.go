@@ -163,12 +163,12 @@ var helpTopics = []helpTopic{
 		summary: "Start a feature to build: fdf new <group>/<slug>",
 		usage:   "fdf new [--root <dir>] <group>/<slug>",
 		body: "Scaffold a draft feature at <group>/<slug>.md with frontmatter and\n" +
-			"placeholder Gherkin, creating the group directory and its INDEX.md if\n" +
-			"needed. Group and slug are lowercase [a-z0-9-], and the group is not a\n" +
-			"directory the bundle's pin reserves: releases, and changes (from v0.5),\n" +
-			"practices and debts (v0.6) and bugs (v0.7). A draft may have a log\n" +
-			"(v0.7) but no other sibling and no task directory; the rest arrive as\n" +
-			"the feature advances.",
+			"placeholder Gherkin, listed in its group's INDEX.md. A new group gets its\n" +
+			"directory and INDEX.md, and is listed in the root INDEX.md. Group and\n" +
+			"slug are lowercase [a-z0-9-], and the group is not a directory the\n" +
+			"bundle's pin reserves: releases, and changes (from v0.5), practices and\n" +
+			"debts (v0.6) and bugs (v0.7). A draft may have a log (v0.7) but no other\n" +
+			"sibling and no task directory; the rest arrive as the feature advances.",
 		flags: []flagDoc{rootFlagDoc},
 		examples: []string{
 			"fdf new payments/instant-refunds",

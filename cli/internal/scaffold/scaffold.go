@@ -515,36 +515,43 @@ Scenario: Replace me
 		fmt.Fprintln(out, "error:", err)
 		return 1
 	}
-	if code := appendGroupIndex(root, group, fmt.Sprintf("* [%s](/%s/%s.md) - TODO.\n", title, group, slug), out); code != 0 {
+	newGroup, code := appendGroupIndex(root, group, fmt.Sprintf("* [%s](/%s/%s.md) - TODO.\n", title, group, slug), out)
+	if code != 0 {
 		return code
 	}
 	fmt.Fprintf(out, "created %s (status: draft)\n", filepath.Join(group, slug+".md"))
 	fmt.Fprintf(out, "updated %s (now lists %q)\n", filepath.Join(group, "INDEX.md"), title)
+	if newGroup {
+		if code := ListGroup(root, "", group, out); code != 0 {
+			return code
+		}
+	}
 	fmt.Fprintf(out, "\ndone: feature %s is a draft — one Feature: fence, one Scenario: fence, no trail siblings yet\n", id)
 	fmt.Fprintln(out, "next: write the Gherkin, then add "+slug+".spec.md to reach `specified` (the fdf-brainstorm skill drives this).")
 	return 0
 }
 
 // appendGroupIndex adds one listing line to a group's INDEX.md, creating the
-// index when the group is new.
-func appendGroupIndex(root, group, entry string, out io.Writer) int {
+// index when the group is new — which it reports, so the caller can list the
+// new group in the root INDEX.md (ListGroup).
+func appendGroupIndex(root, group, entry string, out io.Writer) (created bool, code int) {
 	gidx := filepath.Join(root, group, "INDEX.md")
 	if raw, err := os.ReadFile(gidx); err == nil {
 		if err := os.WriteFile(gidx, append(raw, []byte(entry)...), 0o644); err != nil {
 			fmt.Fprintln(out, "error:", err)
-			return 1
+			return false, 1
 		}
 	} else if errors.Is(err, fs.ErrNotExist) {
-		heading := strings.ToUpper(group[:1]) + group[1:]
-		if err := os.WriteFile(gidx, fmt.Appendf(nil, "# %s features\n\n%s", heading, entry), 0o644); err != nil {
+		if err := os.WriteFile(gidx, fmt.Appendf(nil, "# %s\n\n%s", GroupTitle("", group), entry), 0o644); err != nil {
 			fmt.Fprintln(out, "error:", err)
-			return 1
+			return false, 1
 		}
+		return true, 0
 	} else {
 		fmt.Fprintln(out, "error:", err)
-		return 1
+		return false, 1
 	}
-	return 0
+	return false, 0
 }
 
 // Adopt scaffolds an adopted feature (v0.7) at <group>/<slug>.md: a
@@ -614,11 +621,17 @@ already does, and its case in %s passes today.
 		fmt.Fprintln(out, "error:", err)
 		return 1
 	}
-	if code := appendGroupIndex(root, group, fmt.Sprintf("* [%s](/%s/%s.md) - TODO.\n", title, group, slug), out); code != 0 {
+	newGroup, code := appendGroupIndex(root, group, fmt.Sprintf("* [%s](/%s/%s.md) - TODO.\n", title, group, slug), out)
+	if code != 0 {
 		return code
 	}
 	fmt.Fprintf(out, "created %s (status: adopted — a map entry: a Feature: block and its code, no scenarios yet)\n", filepath.Join(group, slug+".md"))
 	fmt.Fprintf(out, "updated %s (now lists %q)\n", filepath.Join(group, "INDEX.md"), title)
+	if newGroup {
+		if code := ListGroup(root, "", group, out); code != 0 {
+			return code
+		}
+	}
 	fmt.Fprintln(out, "\nnext: fill the Feature: block — who uses this, and for what. Scenarios come later, one at a time,")
 	fmt.Fprintln(out, "      each with its case in "+slug+".test.md, passing against the code as it stands (the fdf-adopt skill).")
 	return 0
