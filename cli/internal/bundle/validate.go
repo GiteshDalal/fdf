@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/GiteshDalal/fdf/cli/internal/fdfroot"
+	"github.com/GiteshDalal/fdf/cli/internal/specver"
 )
 
 type Options struct {
@@ -112,11 +113,8 @@ func pinAtLeast(pin string, minor int) bool {
 	if !supportedVersions[pin] {
 		return false
 	}
-	var n int
-	if _, err := fmt.Sscanf(pin, "0.%d", &n); err != nil {
-		return false
-	}
-	return n >= minor
+	v, ok := specver.Parse(pin)
+	return ok && v.AtLeast(specver.Version{Major: 0, Minor: minor})
 }
 
 // supportedList renders supportedVersions for error messages, so adding a
@@ -126,7 +124,7 @@ func supportedList() string {
 	for v := range supportedVersions {
 		vs = append(vs, v)
 	}
-	sort.Strings(vs)
+	specver.Sort(vs)
 	return strings.Join(vs, ", ")
 }
 
