@@ -10,64 +10,63 @@ import (
 	"github.com/GiteshDalal/fdf/cli/internal/scaffold"
 )
 
-func resolveRoot(fs *flag.FlagSet, args []string, stdout io.Writer) (string, []string, bool) {
-	r, _, rest, ok := resolveRootSource(fs, args, stdout)
-	return r, rest, ok
-}
-
-// resolveRootSource additionally reports which input chose the root, so a
-// command can print it (see announce).
-func resolveRootSource(fs *flag.FlagSet, args []string, stdout io.Writer) (string, string, []string, bool) {
-	root := rootFlag(fs)
-	if err := fs.Parse(args); err != nil {
-		return "", "", nil, false
+// resolveRootSource adds --root to fs, parses args (see parseArgs), and
+// resolves the bundle root, reporting which input chose it so a command can
+// print it (see announce). When ok is false the command stops with exit.
+func resolveRootSource(fs *flag.FlagSet, args []string, stdout io.Writer) (root, source string, rest []string, exit int, ok bool) {
+	rootF := rootFlag(fs)
+	if rest, exit, ok = parseArgs(fs, args, stdout); !ok {
+		return "", "", nil, exit, false
 	}
 	cwd, _ := os.Getwd()
-	r, source, err := fdfroot.BundleRootWithSource(*root, cwd)
+	root, source, err := fdfroot.BundleRootWithSource(*rootF, cwd)
 	if err != nil {
 		fmt.Fprintln(stdout, "error:", err)
-		return "", "", nil, false
+		return "", "", nil, 2, false
 	}
-	return r, source, fs.Args(), true
+	return root, source, rest, 0, true
 }
 
 func runInit(args []string, stdout io.Writer) int {
-	fs := newFlagSet("init", stdout)
-	root, source, rest, ok := resolveRootSource(fs, args, stdout)
+	fs := newFlagSet("init")
+	root, source, _, exit, ok := resolveRootSource(fs, args, stdout)
 	if !ok {
-		return 2
-	}
-	if !rejectPositionals("init", "--root", rest, stdout) {
-		return 2
+		return exit
 	}
 	announce("init", root, source, stdout)
 	return scaffold.Init(root, stdout)
 }
 
 func runNew(args []string, stdout io.Writer) int {
-	fs := newFlagSet("new", stdout)
-	root, source, rest, ok := resolveRootSource(fs, args, stdout)
+	fs := newFlagSet("new")
+	root, source, rest, exit, ok := resolveRootSource(fs, args, stdout)
 	if !ok {
-		return 2
+		return exit
 	}
 	if len(rest) != 1 {
-		fmt.Fprintln(stdout, "usage: fdf new <group>/<slug>")
+		printUsage(stdout, "new")
 		return 2
 	}
 	announce("new", root, source, stdout)
+	if !requireBundle(root, stdout) {
+		return 1
+	}
 	return scaffold.New(root, rest[0], stdout)
 }
 
 func runPractice(args []string, stdout io.Writer) int {
-	fs := newFlagSet("practice", stdout)
-	root, source, rest, ok := resolveRootSource(fs, args, stdout)
+	fs := newFlagSet("practice")
+	root, source, rest, exit, ok := resolveRootSource(fs, args, stdout)
 	if !ok {
-		return 2
+		return exit
 	}
 	if len(rest) != 1 {
-		fmt.Fprintln(stdout, "usage: fdf practice [<group>/]<slug>")
+		printUsage(stdout, "practice")
 		return 2
 	}
 	announce("practice", root, source, stdout)
+	if !requireBundle(root, stdout) {
+		return 1
+	}
 	return scaffold.Practice(root, rest[0], stdout)
 }

@@ -13,23 +13,27 @@ import (
 // --fix — replaces them with their terms (v0.7's lexicon fix). A real fix is
 // validated at once: F8 and F10 are what prove the scenario-name joins held.
 func runLexicon(args []string, stdout io.Writer) int {
-	fs := newFlagSet("lexicon", stdout)
+	fs := newFlagSet("lexicon")
 	term := fs.String("term", "", "only this term's banned words")
 	all := fs.Bool("all", false, "report every occurrence, not the first few per word")
 	fix := fs.Bool("fix", false, "replace each banned word with its term (a lexicon fix), logged in LOG.md")
 	dryRun := fs.Bool("dry-run", false, "with --fix: print the diff and change nothing")
-	root, source, rest, ok := resolveRootSource(fs, args, stdout)
+	root, source, _, exit, ok := resolveRootSource(fs, args, stdout)
 	if !ok {
-		return 2
-	}
-	if !rejectPositionals("lexicon", "--term", rest, stdout) {
-		return 2
+		return exit
 	}
 	if *dryRun && !*fix {
-		fmt.Fprintln(stdout, "usage: --dry-run applies to `fdf lexicon --fix`")
+		t := "<Term>"
+		if *term != "" {
+			t = shellQuote(*term)
+		}
+		fmt.Fprintf(stdout, "usage: --dry-run goes with --fix: fdf lexicon --term %s --fix --dry-run\n", t)
 		return 2
 	}
 	announce("lexicon", root, source, stdout)
+	if !requireBundle(root, stdout) {
+		return 1
+	}
 	code := refactor.Lexicon(root, refactor.LexiconOptions{Term: *term, All: *all, Fix: *fix, DryRun: *dryRun}, stdout)
 	if code != 0 || !*fix || *dryRun {
 		return code

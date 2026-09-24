@@ -198,8 +198,8 @@ func TestBannersNameCurrentSpecVersion(t *testing.T) {
 	if !strings.Contains(out.String(), want) {
 		t.Errorf("fdf help banner does not name %s:\n%s", want, firstLine(out.String()))
 	}
-	if !strings.Contains(usage, want) {
-		t.Errorf("short usage banner does not name %s:\n%s", want, firstLine(usage))
+	if !strings.Contains(overview(), want) {
+		t.Errorf("overview banner does not name %s:\n%s", want, firstLine(overview()))
 	}
 }
 

@@ -17,15 +17,12 @@ func rootFlag(fs *flag.FlagSet) *string {
 }
 
 func runValidate(args []string, stdout io.Writer) int {
-	fs := newFlagSet("validate", stdout)
+	fs := newFlagSet("validate")
 	root := rootFlag(fs)
 	repoRoot := fs.String("repo-root", "", "project root for R1 resource checks (default: auto-detect)")
 	strictDomain := fs.Bool("strict-domain", false, "promote F12 banned-word warnings to errors (DOMAIN.md's `strict: true` does it for every run)")
-	if err := fs.Parse(args); err != nil {
-		return 2
-	}
-	if !rejectPositionals("validate", "--root", fs.Args(), stdout) {
-		return 2
+	if _, exit, ok := parseArgs(fs, args, stdout); !ok {
+		return exit
 	}
 	cwd, _ := os.Getwd()
 	bundleRoot, source, err := fdfroot.BundleRootWithSource(*root, cwd)

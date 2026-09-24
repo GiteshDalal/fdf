@@ -13,14 +13,11 @@ import (
 // `fdf spec -v 0.3` to read what a bundle pinning an older version must
 // still satisfy.
 func runSpec(args []string, stdout io.Writer) int {
-	fs := newFlagSet("spec", stdout)
+	fs := newFlagSet("spec")
 	version := fs.String("v", "", "spec version to print (default: the current version)")
 	list := fs.Bool("list", false, "list the spec versions embedded in this binary")
-	if err := fs.Parse(args); err != nil {
-		return 2
-	}
-	if !rejectPositionals("spec", "-v", fs.Args(), stdout) {
-		return 2
+	if _, exit, ok := parseArgs(fs, args, stdout); !ok {
+		return exit
 	}
 	if *list {
 		for _, v := range scaffold.SpecVersions() {

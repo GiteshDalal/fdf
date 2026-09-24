@@ -2,8 +2,9 @@
 // Claude Code, Codex, and opencode all support agent skills as directories of
 // SKILL.md files, so every harness gets real skills — loaded on demand, not
 // inlined into instruction files. The instruction file (CLAUDE.md/AGENTS.md)
-// only gets a short "## Feature Document Format" primer, and only when that
-// heading is absent, so user edits to it are never clobbered.
+// only gets a short "## Feature Document Format" primer: added when absent,
+// upgraded in place while it is a primer some fdf version shipped, and left
+// alone, with a note, once someone has edited it.
 //
 // Installs are idempotent: an existing install at the current version and
 // bundle root is reported "up to date"; anything else is upgraded in place.
@@ -32,6 +33,13 @@ var Version = "0.7.0"
 const defaultRoot = "docs/features"
 
 var skillNames = []string{"fdf-help", "fdf-init", "fdf-adopt", "fdf-brainstorm", "fdf-plan", "fdf-execute", "fdf-change", "fdf-debug", "fdf-checkpoint", "fdf-validate"}
+
+// SkillNames lists the skills an install places, so the CLI's help can name
+// and count them without a second list to keep in step.
+func SkillNames() []string { return append([]string(nil), skillNames...) }
+
+// IsHarness reports whether fdf can install for the named harness.
+func IsHarness(name string) bool { _, ok := harnesses[name]; return ok }
 
 // legacyCommands are the Claude Code slash commands shipped before the
 // surface became skills-only. They wrapped skills the model can now reach
@@ -95,7 +103,7 @@ func Run(harnessName, base, root string, project bool, out io.Writer) int {
 	}
 	h, ok := harnesses[harnessName]
 	if !ok {
-		fmt.Fprintf(out, "unknown harness %q\n\nusage: fdf install [--project] [--root <dir>] <claude-code|codex|opencode>\n", harnessName)
+		fmt.Fprintf(out, "error: unknown harness %q — fdf installs for claude-code, codex or opencode\n", harnessName)
 		return 2
 	}
 

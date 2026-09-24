@@ -13,15 +13,14 @@ import (
 // and repairs every reference to it (v0.7's reference repair). It validates
 // afterwards, so a move that left anything behind says so at once.
 func runMv(args []string, stdout io.Writer) int {
-	fs := newFlagSet("mv", stdout)
+	fs := newFlagSet("mv")
 	dryRun := fs.Bool("dry-run", false, "print what would move and what would be repaired, and change nothing")
-	root, source, rest, ok := resolveRootSource(fs, args, stdout)
+	root, source, rest, exit, ok := resolveRootSource(fs, args, stdout)
 	if !ok {
-		return 2
+		return exit
 	}
 	if len(rest) != 2 {
-		fmt.Fprintln(stdout, "usage: fdf mv [--root <dir>] [--dry-run] <from-id> <to-id>")
-		flagOrderHint(rest, stdout)
+		printUsage(stdout, "mv")
 		return 2
 	}
 	projectRoot := ""
@@ -29,6 +28,9 @@ func runMv(args []string, stdout io.Writer) int {
 		projectRoot = pr
 	}
 	announce("mv", root, source, stdout)
+	if !requireBundle(root, stdout) {
+		return 1
+	}
 	if code := refactor.Move(root, projectRoot, rest[0], rest[1], *dryRun, stdout); code != 0 || *dryRun {
 		return code
 	}

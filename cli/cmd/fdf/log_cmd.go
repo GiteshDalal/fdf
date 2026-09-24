@@ -3,20 +3,21 @@ package main
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/GiteshDalal/fdf/cli/internal/logs"
 )
 
 // runLog writes one entry to the log it belongs in: the <slug>.log.md beside
-// the feature, change, fix, practice, debt or bug it is about, a group's
+// the feature, Change, Fix, practice, debt or bug it is about, a group's
 // LOG.md, or the bundle-root LOG.md when no ID is given. It creates that log
 // on first use and keeps it newest first, so logging is one command rather
 // than a file an agent has to remember how to start.
 func runLog(args []string, stdout io.Writer) int {
-	fs := newFlagSet("log", stdout)
-	root, source, rest, ok := resolveRootSource(fs, args, stdout)
+	fs := newFlagSet("log")
+	root, source, rest, exit, ok := resolveRootSource(fs, args, stdout)
 	if !ok {
-		return 2
+		return exit
 	}
 	var id, entry string
 	switch len(rest) {
@@ -29,8 +30,12 @@ func runLog(args []string, stdout io.Writer) int {
 	case 2:
 		id, entry = rest[0], rest[1]
 	default:
-		fmt.Fprintln(stdout, "usage: fdf log [--root <dir>] [<id>] \"<entry>\"")
-		flagOrderHint(rest, stdout)
+		printUsage(stdout, "log")
+		return 2
+	}
+	if strings.TrimSpace(entry) == "" {
+		fmt.Fprintln(stdout, "error: the entry is empty")
+		printUsage(stdout, "log")
 		return 2
 	}
 	announce("log", root, source, stdout)

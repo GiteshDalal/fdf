@@ -4,26 +4,52 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"unicode/utf8"
+
+	"github.com/GiteshDalal/fdf/cli/internal/install"
 )
 
-// helpTopic is one command's long-form entry. Keeping them as data (rather
-// than one prose blob) lets `fdf help <command>` print a single entry.
+// helpTopic is one command's entry. The topics are the one source of what fdf
+// says about its commands: the overview `fdf` prints on its own, `fdf help`,
+// `fdf <command> --help`, and the usage line of every usage error.
 type helpTopic struct {
 	name     string
+	group    string // the overview section it is listed under
+	summary  string // its line in the overview
 	usage    string
-	body     string
-	flags    []string
+	body     string // wrapped at 74 columns
+	flags    []flagDoc
 	examples []string
 }
 
+// flagDoc is one row of a topic's flag table.
+type flagDoc struct{ flag, text string }
+
+// helpWidth is the widest line the help prints.
+const helpWidth = 80
+
+var rootFlagDoc = flagDoc{"--root <dir>", "bundle root (default docs/features, or FDF_ROOT_DIR)"}
+
 var helpPreamble = banner + `
 
-FDF documents each software feature as a Markdown + Gherkin file whose design
-spec, implementation plan, acceptance tests and tasks live beside it as
-stem-qualified siblings, with five bundle-root Context documents holding the
-project's stack, architecture, surfaces, infrastructure and domain language.
-The fdf CLI scaffolds those bundles, validates them, and teaches AI harnesses
-the workflow.
+FDF documents each software feature as a Markdown + Gherkin file. Its design
+spec, plan and test cases sit beside it as siblings named after it, and its
+tasks in a directory of the same name. Five Context documents at the bundle
+root hold the project's stack, architecture, surfaces, infrastructure and
+domain language. Changes and Fixes record work on a delivered feature;
+practices say how a recurring mechanism is always done; the debt and bug
+registers hold what is left undone and what is broken. fdf scaffolds and
+checks the bundle, keeps its names and references consistent, and installs
+the skills that teach an AI agent the workflow.
+
+IDS
+  A document's ID is its path from the bundle root without .md:
+  payments/instant-refunds, bugs/refund-split-capture, changes/refund-window.
+  Commands that name an existing document take its ID: log, mv, history,
+  --affects, --from. fdf new and fdf adopt take the new feature's ID. fdf
+  debt, bug, practice, change and fix take the new document's name inside
+  its directory: fdf debt authz-legacy-handlers files
+  debts/authz-legacy-handlers, as does fdf debt debts/authz-legacy-handlers.
 
 BUNDLE ROOT
   Every command resolves the bundle root the same way:
@@ -31,93 +57,143 @@ BUNDLE ROOT
       --root <dir>   >   FDF_ROOT_DIR   >   docs/features
 
   Relative values resolve against the project root (the topmost enclosing
-  .git), so the bundle is found from any subdirectory; absolute values are
-  used as-is. A bundle may also be a git submodule mounted at that path.
+  git repository, or the linked worktree you are in), so the bundle is found
+  from any subdirectory; absolute values are used as-is. A bundle may also be
+  a git submodule mounted at that path.
 
-  Flags must precede positional arguments:
+  Flags go before arguments. A flag after an argument is refused, and fdf
+  prints the command as it should have been typed:
 
       fdf new --root docs/bundle payments/refunds    # correct
-      fdf new payments/refunds --root docs/bundle    # --root is NOT parsed
+      fdf new payments/refunds --root docs/bundle    # refused
 
 TYPICAL FLOW
-      fdf init                             # scaffold bundle + Context stubs
-      # fill STACK/ARCHITECTURE/SURFACES/INFRA/DOMAIN via the fdf-init skill
-      fdf new payments/instant-refunds     # a draft feature; write Gherkin
-      # add slug.spec.md (+ slug.surface.md when it exposes an interface)
-      # -> specified, slug.plan.md + slug.test.md -> planned,
-      # tasks under slug/ -> implementing -> done
+  A new capability:
+      fdf init                             # bundle + Context stubs
+      # fill STACK/ARCHITECTURE/SURFACES/INFRA/DOMAIN with the fdf-init skill
+      fdf new payments/instant-refunds     # a draft feature; write its Gherkin
+      # slug.spec.md approved, plus slug.surface.md or ` + "`surface: none`" + `
+      #   -> specified; slug.plan.md + slug.test.md, one
+      #   ` + "`## <scenario name>`" + ` case per scenario -> planned;
+      #   tasks under slug/ -> implementing -> done
       fdf log payments/instant-refunds "**Specified**: design approved."
       fdf validate                         # the gate after every bundle edit
 
+  Code that predates the bundle:
+      fdf adopt                            # what is mapped, and what is not
+      fdf adopt --resource internal/payments/card.go payments/card-payments
+
+  After delivery:
+      fdf change --affects payments/instant-refunds refund-window
+      fdf fix --affects payments/instant-refunds refund-rounding
+      fdf bug --affects payments/instant-refunds refund-split-capture
+
+  Every date and time fdf writes is UTC.
+
 EXIT CODES
-      0  success / bundle conformant
+      0  success / bundle conformant (warnings never fail it)
       1  validation or runtime failure
       2  usage error (bad flag, missing or unexpected argument)
 `
 
+// helpTopics are in overview order: grouped, and within a group in the order
+// the work usually meets them.
 var helpTopics = []helpTopic{
 	{
-		name:  "validate",
-		usage: "fdf validate [--root <dir>] [--repo-root <dir>] [--strict-domain]",
-		body: "Check the bundle against the spec version pinned in its root INDEX.md.\n" +
-			"Every violation is reported with its rule code — F1-F14 for format\n" +
-			"conformance, R1 for repo integrity. Exit 0 means conformant. Run this\n" +
-			"after every bundle edit; it is the gate the fdf skills rely on.",
-		flags: []string{
-			"--root <dir>       bundle root (overrides FDF_ROOT_DIR; default docs/features)",
-			"--repo-root <dir>  project root for R1 resource checks (default: auto-detect)",
-			"--strict-domain    report F12 banned domain words as errors, not warnings (DOMAIN.md's `strict: true` does it for every run)",
-		},
-		examples: []string{
-			"fdf validate",
-			"fdf validate --root docs/features",
-			"fdf validate --strict-domain",
-			"FDF_ROOT_DIR=wiki/features fdf validate",
-		},
-	},
-	{
-		name:  "init",
-		usage: "fdf init [--root <dir>]",
+		name:    "init",
+		group:   "Set up",
+		summary: "Create a bundle: INDEX.md, SPEC.md and the five Context documents",
+		usage:   "fdf init [--root <dir>]",
 		body: "Scaffold a new bundle at the resolved root: INDEX.md carrying the\n" +
-			"fdf_version pin, LOG.md, a vendored copy of the spec at SPEC.md, and the\n" +
-			"five Context stubs (STACK.md, ARCHITECTURE.md, SURFACES.md, INFRA.md,\n" +
-			"DOMAIN.md). Existing files are never overwritten. Fill the Context stubs\n" +
-			"with the fdf-init skill before starting feature work — F9 blocks it\n" +
-			"otherwise.",
-		flags:    []string{"--root <dir>  bundle root (default docs/features)"},
+			"fdf_version pin, LOG.md, the spec at SPEC.md, the five Context stubs\n" +
+			"(STACK.md, ARCHITECTURE.md, SURFACES.md, INFRA.md, DOMAIN.md), and the\n" +
+			"changes/, practices/, debts/ and bugs/ indexes. It never overwrites: on a\n" +
+			"bundle already at this version it only adds what is missing, and on an\n" +
+			"older one it points you to `fdf migrate`. Fill the Context stubs with the\n" +
+			"fdf-init skill before feature work: once a feature exists, F9 fails while\n" +
+			"any of them is still a stub.",
+		flags:    []flagDoc{rootFlagDoc},
 		examples: []string{"fdf init", "fdf init --root docs/features"},
 	},
 	{
-		name:  "new",
-		usage: "fdf new [--root <dir>] <group>/<slug>",
-		body: "Scaffold a draft feature at <group>/<slug>.md with frontmatter and empty\n" +
-			"Gherkin fences, creating the group directory and its INDEX.md if needed.\n" +
-			"Group and slug are lowercase [a-z0-9-]. A draft has no task directory and\n" +
-			"no trail siblings apart from a log (v0.7); the rest arrive as the feature\n" +
-			"advances.",
-		flags: []string{"--root <dir>  bundle root (default docs/features)"},
+		name:    "install",
+		group:   "Set up",
+		summary: "Install the FDF skills for claude-code, codex or opencode",
+		usage:   "fdf install [--project] [--root <dir>] <claude-code|codex|opencode>",
+		body: "Install or upgrade the " + countWord(len(install.SkillNames())) + " FDF skills for an AI agent, plus a\n" +
+			"'## Feature Document Format' primer in its instruction file (CLAUDE.md or\n" +
+			"AGENTS.md). Idempotent: re-running upgrades the skills and refreshes the\n" +
+			"primer, unless you edited it — an edited primer is left as it is, with a\n" +
+			"note. Installs into your home directory by default; --project installs\n" +
+			"into the current git project (nearest .git) so the setup is committed\n" +
+			"with the code. Re-run it after `fdf migrate` so the skills teach the new\n" +
+			"layout.",
+		flags: []flagDoc{
+			{"--project", "install into the current git project instead of your home directory"},
+			{"--root <dir>", "bundle root the skills name (default docs/features, or FDF_ROOT_DIR)"},
+		},
 		examples: []string{
-			"fdf new payments/instant-refunds",
-			"fdf new --root docs/features auth/passkey-login",
+			"fdf install claude-code",
+			"fdf install --project claude-code",
+			"fdf install --project --root docs/features codex",
 		},
 	},
 	{
-		name:  "adopt",
-		usage: "fdf adopt [--root <dir>] [--resource <path>[,…]] [--depth <n>] [<group>/<slug>]",
+		name:    "migrate",
+		group:   "Set up",
+		summary: "Upgrade a bundle to the spec version this fdf ships",
+		usage:   "fdf migrate [--root <dir>]",
+		body: "Upgrade a bundle to the spec version this fdf ships, then validate it. It\n" +
+			"rewrites the fdf_version pin, re-vendors SPEC.md, scaffolds missing\n" +
+			"Context stubs and indexes, drops the status tags older versions wrote\n" +
+			"after index listings, and logs the migration in LOG.md; from v0.3 or\n" +
+			"earlier it also lifts nested trail files to stem-qualified siblings. It\n" +
+			"then counts what the new version checks that the old one did not. A\n" +
+			"pre-flight refuses content the new layout cannot hold and leaves the\n" +
+			"bundle untouched, so a refused run is safe to retry after fixing what it\n" +
+			"names. An unfilled Context stub is only a warning here; once the bundle\n" +
+			"has a feature, a plain `fdf validate` fails F9 until it is filled.\n" +
+			"Re-run `fdf install` afterwards.",
+		flags:    []flagDoc{rootFlagDoc},
+		examples: []string{"fdf migrate", "fdf migrate --root docs/features"},
+	},
+	{
+		name:    "new",
+		group:   "Features",
+		summary: "Start a feature to build: fdf new <group>/<slug>",
+		usage:   "fdf new [--root <dir>] <group>/<slug>",
+		body: "Scaffold a draft feature at <group>/<slug>.md with frontmatter and\n" +
+			"placeholder Gherkin, creating the group directory and its INDEX.md if\n" +
+			"needed. Group and slug are lowercase [a-z0-9-], and the group is not a\n" +
+			"reserved directory (changes, practices, debts, bugs, releases). A draft\n" +
+			"may have a log (v0.7) but no other sibling and no task directory; the\n" +
+			"rest arrive as the feature advances.",
+		flags: []flagDoc{rootFlagDoc},
+		examples: []string{
+			"fdf new payments/instant-refunds",
+			"fdf new --root docs/features payments/refund-status",
+		},
+	},
+	{
+		name:    "adopt",
+		group:   "Features",
+		summary: "Map code that predates the bundle, or show what is still unmapped",
+		usage:   "fdf adopt [--root <dir>] [--resource <paths>] [--depth <n>] [<group>/<slug>]",
 		body: "Map what a codebase already does (v0.7). With a feature ID it scaffolds\n" +
-			"an adopted feature — a capability documented from the code as it stands,\n" +
-			"never built through FDF, so it gets no spec, plan or tasks. It starts as\n" +
-			"a map entry: a Feature: block and --resource, the code it lives in (it\n" +
-			"must exist). Scenarios are backfilled later, each with a .test.md case\n" +
-			"that passes against the code as it stands.\n\n" +
+			"an adopted feature: a capability documented from the code as it stands,\n" +
+			"never built through FDF, so it has no spec, plan or tasks. It starts as a\n" +
+			"map entry: a `Feature:` block, and `resource` naming the code it lives in\n" +
+			"(which must exist). Scenarios are backfilled later, each with its case in\n" +
+			"slug.test.md, passing against the code as it stands.\n" +
+			"\n" +
 			"Without an ID it prints the adoption map: every feature with its status,\n" +
-			"scenarios and tested scenarios, then the tracked code (git ls-files) no\n" +
-			"feature, task, change or fix claims yet, grouped --depth levels deep,\n" +
-			"most unclaimed first — the list a phased adoption works down.",
-		flags: []string{
-			"--resource <paths>  comma-separated project-relative path(s) of the capability's code (required when mapping one)",
-			"--depth <n>         directory levels the unclaimed code is grouped by (default 2)",
-			"--root <dir>        bundle root (default docs/features)",
+			"scenario count and tested count, then the tracked code (git ls-files) that\n" +
+			"no feature, task, Change or Fix names in `resource` yet, grouped --depth\n" +
+			"directory levels deep, most unclaimed first. Work down that list.",
+		flags: []flagDoc{
+			{"--resource <paths>", "comma-separated project paths of the capability's code (required with an ID)"},
+			{"--depth <n>", "directory levels the unclaimed code is grouped by (default 2)"},
+			rootFlagDoc,
 		},
 		examples: []string{
 			"fdf adopt --resource internal/payments/card.go payments/card-payments",
@@ -126,47 +202,126 @@ var helpTopics = []helpTopic{
 		},
 	},
 	{
-		name:  "practice",
-		usage: "fdf practice [--root <dir>] [<group>/]<slug>",
-		body: "Scaffold a Practice under practices/ — the project's binding answer to\n" +
-			"how one recurring mechanism is done (authorization, permission checks,\n" +
-			"payment capture, database access). A practice is a living document with\n" +
-			"no spec, plan, test or tasks; its only sibling is an optional\n" +
-			"<slug>.log.md. Fill `# Rules` with the binding statements and set\n" +
-			"`applies-to` to the repo paths it governs — that is how later work is\n" +
-			"routed to it, since features never list the practices they follow.\n" +
-			"A practice binds all future code: land one only with human approval.\n" +
-			"v0.6 bundles and later.",
-		flags: []string{"--root <dir>  bundle root (default docs/features)"},
+		name:    "change",
+		group:   "Features",
+		summary: "Start a Change: a delivered feature must behave differently",
+		usage:   "fdf change [--root <dir>] [--from bugs/<id>] [--affects <group>/<slug>[,…]] [<group>/]<slug>",
+		body: "Scaffold a Change under changes/: a request to alter what a delivered\n" +
+			"(done or adopted) feature does. Use it when the feature's Gherkin has to\n" +
+			"change, including when its document was silent on a case nobody foresaw.\n" +
+			"A Change passes the design gate — an approved <slug>.spec.md — and\n" +
+			"declares under `# Scenario changes` the scenarios it will add, modify or\n" +
+			"remove; F10 will not let it reach `done` until they have. --affects may\n" +
+			"name several features: one Change can span them. --from bugs/<id> starts\n" +
+			"from a filed bug that no scenario covers yet: it copies the bug's\n" +
+			"`# Symptom` and `# Expected` into `# Problem`, takes its `affects`, and\n" +
+			"names it in `resolves`.",
+		flags: []flagDoc{
+			{"--affects <ids>", "comma-separated feature IDs this touches (required unless --from supplies them)"},
+			{"--from bugs/<id>", "the bug this repairs: copies its analysis, writes `resolves`"},
+			rootFlagDoc,
+		},
 		examples: []string{
-			"fdf practice permission-checks",
-			"fdf practice payments/idempotency",
+			"fdf change --affects payments/instant-refunds refund-window",
+			"fdf change --from bugs/refund-to-closed-card refund-to-closed-card",
+			"fdf change --affects payments/instant-refunds,payments/card-payments payments/partial-refunds",
 		},
 	},
 	{
-		name:  "debt",
-		usage: "fdf debt [--root <dir>] [--open|--accepted|--resolved] [--cleanup [--dry-run] [--no-log]] [[<group>/]<slug>]",
-		body: "Read or file the debt register under debts/ — the known gaps between\n" +
-			"what the project says and what the code does: work left undone, and\n" +
-			"rules the codebase does not follow everywhere yet.\n\n" +
-			"With a slug it scaffolds a debt (" + registerStatusList() + "); without one it\n" +
-			"prints the register as a table of status, id, filing date and title.\n" +
-			"`resource` names the paths carrying the gap — that is how later work\n" +
-			"finds the debt, and R1 makes a debt pointing at vanished code loud.\n\n" +
-			"--cleanup is the chore that keeps the register worth reading: each\n" +
-			"resolved debt is recorded in debts/LOG.md as one line and its file is\n" +
-			"removed. Open and accepted debts are never touched. Use --dry-run to\n" +
-			"see the plan first, or --no-log to remove without recording.\n" +
-			"v0.6 bundles and later.",
-		flags: []string{
-			"--root <dir>  bundle root (default docs/features)",
-			"--open        list only open debts",
-			"--accepted    list only accepted debts",
-			"--resolved    list only resolved debts",
-			"--cleanup     clear resolved debts, recording each in debts/LOG.md",
-			"--resource <paths>  when filing: comma-separated path(s) carrying the gap",
-			"--dry-run     with --cleanup: show what would be cleared, change nothing",
-			"--no-log      with --cleanup: remove without writing debts/LOG.md",
+		name:    "fix",
+		group:   "Features",
+		summary: "Start a Fix: the code drifted from what its feature says",
+		usage:   "fdf fix [--root <dir>] [--from bugs/<id>] [--affects <group>/<slug>[,…]] [<group>/]<slug>",
+		body: "Scaffold a Fix under changes/: the feature document was right and the\n" +
+			"code drifted from it. It has no design gate — restoring documented\n" +
+			"behavior needs no approval — and needs no spec, plan or tasks, so the\n" +
+			"smallest Fix is a single file. It lists under `# Regression cases` the\n" +
+			"existing scenarios it proves, each with its verification; the lasting\n" +
+			"record is each case in the affected feature's slug.test.md. --from\n" +
+			"bugs/<id> takes over a bug's `# Symptom` and `# Root cause`, turns its\n" +
+			"`# Violates` scenarios into regression cases, and names it in `resolves`.",
+		flags: []flagDoc{
+			{"--affects <ids>", "comma-separated feature IDs this touches (required unless --from supplies them)"},
+			{"--from bugs/<id>", "the bug this repairs: copies its analysis, writes `resolves`"},
+			rootFlagDoc,
+		},
+		examples: []string{
+			"fdf fix --affects payments/instant-refunds refund-rounding",
+			"fdf fix --from bugs/refund-split-capture refund-split-capture",
+		},
+	},
+	{
+		name:    "history",
+		group:   "Features",
+		summary: "Show a feature's Changes, Fixes and known bugs",
+		usage:   "fdf history [--root <dir>] <group>/<slug>",
+		body: "Show what has happened to a feature since it was delivered: every Change\n" +
+			"and Fix that names it in `affects`, the bugs each one resolves, and the\n" +
+			"bugs on the register that name it. It is computed from those documents'\n" +
+			"frontmatter, so the feature never has to keep back-links by hand.",
+		flags:    []flagDoc{rootFlagDoc},
+		examples: []string{"fdf history payments/instant-refunds"},
+	},
+	{
+		name:    "bug",
+		group:   "Registers and practices",
+		summary: "List the bug register (known defects), or file a bug",
+		usage:   "fdf bug [--root <dir>] [--open|--accepted|--resolved] [--cleanup [--dry-run]] [--affects <ids>] [--resource <paths>] [[<group>/]<slug>]",
+		body: "Read or file the bug register under bugs/ (v0.7): known defects — the\n" +
+			"software doing something wrong that someone could observe — that have\n" +
+			"not been repaired yet. A gap no one could observe is a debt instead.\n" +
+			"\n" +
+			"Without a slug it prints the register. With a slug it files a new bug,\n" +
+			"status `open`, with `# Symptom` and `# Expected` to fill. When a scenario\n" +
+			"already promises the expected behavior, cite it under `# Violates`: the\n" +
+			"repair is a Fix (`fdf fix --from bugs/<id> …`). When none does, the\n" +
+			"repair is a Change that decides it (`fdf change --from bugs/<id> …`). A\n" +
+			"bug is never repaired in place: the Fix or Change that repairs it names\n" +
+			"it in `resolves`. A bug that needs no repair (not a defect, or a\n" +
+			"duplicate) is resolved with a `# Resolution` saying why.\n" +
+			"\n" +
+			"--cleanup clears resolved bugs as `fdf debt --cleanup` does, but always\n" +
+			"logs them: F10 checks a done Fix or Change against bugs/LOG.md.",
+		flags: []flagDoc{
+			{"--open", "list only open bugs (also --accepted, --resolved)"},
+			{"--cleanup", "clear resolved bugs, recording each in bugs/LOG.md"},
+			{"--dry-run", "with --cleanup: show what would be cleared, change nothing"},
+			{"--affects <ids>", "when filing: comma-separated feature IDs the defect shows up in"},
+			{"--resource <paths>", "when filing: comma-separated paths carrying it"},
+			rootFlagDoc,
+		},
+		examples: []string{
+			"fdf bug --open",
+			"fdf bug --affects payments/instant-refunds --resource internal/payments/refund.go refund-split-capture",
+			"fdf bug --cleanup --dry-run",
+		},
+	},
+	{
+		name:    "debt",
+		group:   "Registers and practices",
+		summary: "List the debt register (known gaps), or file a debt",
+		usage:   "fdf debt [--root <dir>] [--open|--accepted|--resolved] [--cleanup [--dry-run] [--no-log]] [--resource <paths>] [[<group>/]<slug>]",
+		body: "Read or file the debt register under debts/: the known gaps between what\n" +
+			"the project says and what the code does — work left undone, and rules\n" +
+			"the codebase does not follow everywhere yet.\n" +
+			"\n" +
+			"Without a slug it prints the register: status, ID, filing date and title.\n" +
+			"With a slug it files a new debt, status `open` (later `accepted` or\n" +
+			"`resolved`), and lists it in the index beside it. Set `resource` to the\n" +
+			"paths that carry the gap: that is how later work finds the debt, and R1\n" +
+			"fails it once those paths are gone.\n" +
+			"\n" +
+			"--cleanup clears resolved debts: each gets one line in debts/LOG.md, and\n" +
+			"its file, its log and its index listing are removed. Open and accepted\n" +
+			"debts are never touched. --dry-run shows the plan first; --no-log clears\n" +
+			"them without the LOG.md line. v0.6 bundles and later.",
+		flags: []flagDoc{
+			{"--open", "list only open debts (also --accepted, --resolved)"},
+			{"--cleanup", "clear resolved debts, recording each in debts/LOG.md"},
+			{"--dry-run", "with --cleanup: show what would be cleared, change nothing"},
+			{"--no-log", "with --cleanup: clear them without writing debts/LOG.md"},
+			{"--resource <paths>", "when filing: comma-separated paths carrying the gap"},
+			rootFlagDoc,
 		},
 		examples: []string{
 			"fdf debt",
@@ -176,118 +331,106 @@ var helpTopics = []helpTopic{
 		},
 	},
 	{
-		name:  "bug",
-		usage: "fdf bug [--root <dir>] [--open|--accepted|--resolved] [--cleanup [--dry-run]] [--affects <ids>] [[<group>/]<slug>]",
-		body: "Read or file the bug register under bugs/ (v0.7) — known defects, the\n" +
-			"software doing something wrong that someone could observe, that nobody\n" +
-			"is repairing yet: undiagnosed, waiting on a decision, in code no feature\n" +
-			"documents, or deferred. A gap nothing observable shows is a debt.\n\n" +
-			"With a slug it scaffolds a bug (" + registerStatusList() + ") with `# Symptom` and\n" +
-			"`# Expected`. When a scenario already promises the expected behavior,\n" +
-			"cite it under `# Violates` and the repair is a Fix: `fdf fix --from\n" +
-			"bugs/<id> …`; when none does, the repair is a Change that decides it:\n" +
-			"`fdf change --from bugs/<id> …`. A bug is never resolved in place — the\n" +
-			"Fix or Change names it in `resolves`. Without a slug it prints the\n" +
-			"register; --cleanup folds resolved bugs into bugs/LOG.md as\n" +
-			"`fdf debt --cleanup` does, and always logs them: a done Fix or Change that\n" +
-			"`resolves` a cleared bug is checked against bugs/LOG.md (F10).",
-		flags: []string{
-			"--affects <ids>     when filing: comma-separated feature ID(s) the defect shows up in",
-			"--resource <paths>  when filing: comma-separated path(s) carrying it",
-			"--open           list only open bugs (also --accepted, --resolved)",
-			"--cleanup        clear resolved bugs, recording each in bugs/LOG.md",
-			"--dry-run        with --cleanup: show what would be cleared, change nothing",
-			"--root <dir>     bundle root (default docs/features)",
+		name:    "practice",
+		group:   "Registers and practices",
+		summary: "Write down the one way the project does a recurring mechanism",
+		usage:   "fdf practice [--root <dir>] [<group>/]<slug>",
+		body: "Scaffold a Practice under practices/: the project's binding answer to\n" +
+			"how one recurring mechanism is done (authorization, permission checks,\n" +
+			"payment capture, database access). It is listed in practices/INDEX.md,\n" +
+			"or in its group's index, created on first use. A practice is a living\n" +
+			"document with no spec, plan, test or tasks; its only sibling is an\n" +
+			"optional <slug>.log.md. Fill `# Rules` with the binding statements and\n" +
+			"set `applies-to` to the project paths it governs: that is how later\n" +
+			"work is routed to it, since features never list the practices they\n" +
+			"follow. A practice binds all future code: land one only with human\n" +
+			"approval. v0.6 bundles and later.",
+		flags: []flagDoc{rootFlagDoc},
+		examples: []string{
+			"fdf practice permission-checks",
+			"fdf practice payments/idempotency",
+		},
+	},
+	{
+		name:    "validate",
+		group:   "Check and maintain",
+		summary: "Check the bundle against its pinned spec (F1-F14, R1)",
+		usage:   "fdf validate [--root <dir>] [--repo-root <dir>] [--strict-domain]",
+		body: "Check the bundle against the spec version pinned in its root INDEX.md.\n" +
+			"Every error names its rule: F1-F14 for the format, R1 for paths that must\n" +
+			"exist in the project. Warnings never fail the run: soft checks, and F12's\n" +
+			"banned words unless strict domain mode is on (`strict: true` in DOMAIN.md,\n" +
+			"or --strict-domain). Exit 0 means conformant. Run it after every bundle\n" +
+			"edit; the fdf skills rely on it.",
+		flags: []flagDoc{
+			{"--strict-domain", "strict domain mode for this run: F12 banned words are errors"},
+			{"--repo-root <dir>", "project root for R1's path checks (default: found from the bundle)"},
+			rootFlagDoc,
 		},
 		examples: []string{
-			"fdf bug --open",
-			"fdf bug --affects payments/instant-refunds --resource internal/payments/refund.go refund-split-capture",
-			"fdf bug --cleanup --dry-run",
+			"fdf validate",
+			"fdf validate --root docs/features",
+			"fdf validate --strict-domain",
+			"FDF_ROOT_DIR=wiki/features fdf validate",
 		},
 	},
 	{
-		name:  "change",
-		usage: "fdf change [--root <dir>] [--from bugs/<id>] --affects <group>/<slug>[,…] [<group>/]<slug>",
-		body: "Scaffold a post-delivery Change: a request to alter what a delivered\n" +
-			"feature does. Use it when the fix requires the feature's Gherkin to\n" +
-			"change — including when the original document was silent on a case\n" +
-			"nobody recognized. A Change carries a design gate (its .spec.md) and\n" +
-			"declares, under `# Scenario changes`, the scenarios it will add, modify\n" +
-			"or remove; F10 will not let it reach `done` until those landed.\n" +
-			"`--affects` may name several features: one Change can span them.\n" +
-			"--from bugs/<id> repairs a bug nobody documented the answer to: it\n" +
-			"copies the bug's analysis into `# Problem` and writes `resolves`.",
-		flags: []string{
-			"--affects <ids>  comma-separated feature ID(s) this touches (required unless --from supplies them)",
-			"--from <bug>     bugs/<id> this repairs: copies its analysis, writes `resolves`",
-			"--root <dir>     bundle root (default docs/features)",
-		},
+		name:    "log",
+		group:   "Check and maintain",
+		summary: "Add an entry to the log it belongs in: fdf log [<id>] \"<entry>\"",
+		usage:   "fdf log [--root <dir>] [<id>] \"<entry>\"",
+		body: "Add one entry to the log it belongs in, under today's `## YYYY-MM-DD`\n" +
+			"heading, newest first; the date is UTC, as every date fdf writes is. An\n" +
+			"entry goes in the log of the one document it is about: a feature, Change,\n" +
+			"Fix, practice, debt or bug ID puts it in that document's <slug>.log.md,\n" +
+			"created on first use, and a task or trail document's entry goes in its\n" +
+			"owner's log. A group ID puts it in the group's LOG.md. With no ID, or for\n" +
+			"a Context document or a release, it goes in the bundle-root LOG.md, which\n" +
+			"is for the bundle as a whole. A log is the one sibling a draft feature\n" +
+			"may have (v0.7). Start an entry with a bold label naming the event\n" +
+			"(**Specified**, **Decision**, **Done**), then say what happened and, for\n" +
+			"a decision, why. fdf adds the list bullet itself; an entry that starts\n" +
+			"with \"-\" goes after --, so it is not read as a flag: fdf log -- \"- …\".",
+		flags: []flagDoc{rootFlagDoc},
 		examples: []string{
-			"fdf change --affects payments/instant-refunds refund-window",
-			"fdf change --from bugs/export-drops-last-row export-keeps-every-row",
-			"fdf change --affects payments/instant-refunds,billing/invoices payments/tax-rounding",
+			"fdf log payments/instant-refunds \"**Specified**: design approved.\"",
+			"fdf log changes/refund-window \"**Decision**: refunds in flight keep the old window.\"",
+			"fdf log \"**Checkpoint**: Context documents re-read against the code.\"",
 		},
 	},
 	{
-		name:  "fix",
-		usage: "fdf fix [--root <dir>] [--from bugs/<id>] --affects <group>/<slug>[,…] [<group>/]<slug>",
-		body: "Scaffold a post-delivery Fix: the feature document was right and the\n" +
-			"code drifted from it. No design gate — restoring documented behavior\n" +
-			"needs no approval — and no trail files are required, so the floor is a\n" +
-			"single file. Declares, under `# Regression cases`, scenarios that\n" +
-			"already exist plus the verification for each; the lasting artifact is\n" +
-			"the case added to the affected feature's .test.md. --from bugs/<id>\n" +
-			"takes over a bug's `# Symptom` and `# Root cause`, turns its `# Violates`\n" +
-			"scenarios into regression cases, and writes `resolves`.",
-		flags: []string{
-			"--affects <ids>  comma-separated feature ID(s) this touches (required unless --from supplies them)",
-			"--from <bug>     bugs/<id> this repairs: copies its analysis, writes `resolves`",
-			"--root <dir>     bundle root (default docs/features)",
-		},
-		examples: []string{
-			"fdf fix --affects payments/instant-refunds refund-rounding",
-			"fdf fix --from bugs/refund-split-capture refund-split-capture",
-		},
-	},
-	{
-		name:  "history",
-		usage: "fdf history [--root <dir>] <group>/<slug>",
-		body: "List every Change and Fix that names this feature in its `affects`,\n" +
-			"the bugs each resolves, and the bugs on the register it shows up in.\n" +
-			"Computed from frontmatter, never from back-links the feature would have\n" +
-			"to maintain by hand — a required back-link is a standing invitation to\n" +
-			"drift. This is how you answer \"what has happened to this feature since\n" +
-			"it shipped?\".",
-		flags:    []string{"--root <dir>  bundle root (default docs/features)"},
-		examples: []string{"fdf history payments/instant-refunds"},
-	},
-	{
-		name:  "mv",
-		usage: "fdf mv [--root <dir>] [--dry-run] <from-id> <to-id>",
+		name:    "mv",
+		group:   "Check and maintain",
+		summary: "Move or rename a document and repair every reference to it",
+		usage:   "fdf mv [--root <dir>] [--dry-run] <from-id> <to-id>",
 		body: "Move or rename a document with everything it owns — a feature with its\n" +
-			"spec, plan, test, surface, log and task directory; a change or fix; a\n" +
+			"spec, plan, test, surface, log and task directory; a Change or Fix; a\n" +
 			"practice, debt or bug; a task within its directory; or a whole group —\n" +
 			"and repair every reference to it across the bundle, frozen documents\n" +
 			"included (v0.7's reference repair): links, `affects`, `depends-on`,\n" +
 			"`replaced-by`, `retires`, `superseded-by`, `resolves`, declaration\n" +
 			"headings, index listings and ID mentions. Logs keep their words and get\n" +
-			"their links repaired. A debt and a bug can be re-filed as each other.\n" +
-			"The move is logged in LOG.md and validated; references outside the\n" +
-			"bundle are listed, never edited. It never overwrites.",
-		flags: []string{
-			"--dry-run     print what would move and what would be repaired",
-			"--root <dir>  bundle root (default docs/features)",
+			"their links repaired. It never overwrites, and it lists references\n" +
+			"outside the bundle without editing them. A debt and a bug can be re-filed\n" +
+			"as each other; a debt re-filed as a bug still needs the `# Expected` a\n" +
+			"bug states. The move is logged in LOG.md, then the bundle is validated,\n" +
+			"and the exit code is validation's.",
+		flags: []flagDoc{
+			{"--dry-run", "print what would move and what would be repaired, change nothing"},
+			rootFlagDoc,
 		},
 		examples: []string{
 			"fdf mv payments/store-hours venues/opening-hours",
 			"fdf mv --dry-run payments billing",
-			"fdf mv debts/export-drops-rows bugs/export-drops-rows",
-			"fdf mv payments/refunds/02-ui payments/refunds/03-ui",
+			"fdf mv debts/refund-webhook-retries bugs/refund-webhook-retries",
+			"fdf mv payments/instant-refunds/02-ui payments/instant-refunds/03-ui",
 		},
 	},
 	{
-		name:  "lexicon",
-		usage: "fdf lexicon [--root <dir>] [--term <Term>] [--all] [--fix [--dry-run]]",
+		name:    "lexicon",
+		group:   "Check and maintain",
+		summary: "List banned domain words (F12), or replace them with their term",
+		usage:   "fdf lexicon [--root <dir>] [--term <Term>] [--all] [--fix [--dry-run]]",
 		body: "Report every banned word F12 sees (v0.7) — file:line:col and the line\n" +
 			"around it, grouped by word — and every name using one, with a suggested\n" +
 			"`fdf mv`. Triage first: a word used in another sense is qualified and\n" +
@@ -297,12 +440,12 @@ var helpTopics = []helpTopic{
 			"everywhere it is a join, slug.test.md included. Italic mentions, labels\n" +
 			"quoted in Gherkin steps, table cells and names are left for a person and\n" +
 			"listed. The sweep is logged in LOG.md and validated.",
-		flags: []string{
-			"--term <Term>  only that term's banned words (required with --fix)",
-			"--all          list every occurrence, not the first few per word",
-			"--fix          replace them with the term (a lexicon fix)",
-			"--dry-run      with --fix: print the diff, change nothing",
-			"--root <dir>   bundle root (default docs/features)",
+		flags: []flagDoc{
+			{"--term <Term>", "only that term's banned words (required with --fix)"},
+			{"--all", "list every occurrence, not the first few per word"},
+			{"--fix", "replace them with the term (a lexicon fix)"},
+			{"--dry-run", "with --fix: print the diff, change nothing"},
+			rootFlagDoc,
 		},
 		examples: []string{
 			"fdf lexicon",
@@ -312,40 +455,19 @@ var helpTopics = []helpTopic{
 		},
 	},
 	{
-		name:  "log",
-		usage: "fdf log [--root <dir>] [<id>] \"<entry>\"",
-		body: "Add one entry to the log it belongs in, under today's `## YYYY-MM-DD`\n" +
-			"heading, newest first; the date is UTC, as every date fdf writes is. An\n" +
-			"entry goes in the log of the one document it is about: a feature,\n" +
-			"change, fix, practice, debt or bug ID puts it in that document's\n" +
-			"<slug>.log.md, created on first use, and a task or trail document's\n" +
-			"entry goes in its owner's log. A group ID puts it in the group's LOG.md.\n" +
-			"With no ID, or for a Context document or a release, it goes in the\n" +
-			"bundle-root LOG.md, which is for the bundle as a whole. A log is the one\n" +
-			"sibling a draft feature may have (v0.7). Start an entry with a bold\n" +
-			"label naming the event (**Specified**, **Decision**, **Done**), then say\n" +
-			"what happened and, for a decision, why.",
-		flags: []string{"--root <dir>  bundle root (default docs/features)"},
-		examples: []string{
-			"fdf log payments/instant-refunds \"**Specified**: design approved; synchronous PSP call, reconciled from the webhook.\"",
-			"fdf log changes/payments/refund-window \"**Decision**: refunds already in flight keep the 180-day window.\"",
-			"fdf log \"**Checkpoint**: Context documents re-read against the code; STACK.md updated.\"",
-		},
-	},
-	{
-		name:  "release",
-		usage: "fdf release [--root <dir>] [--date <YYYY-MM-DD>] [--ship] <version>",
-		body: "Create or refresh releases/<version>.md from the `version:` fields\n" +
-			"already carried by features, changes and fixes. Those lists are the one\n" +
-			"thing in FDF that is wholly derived, so hand-maintaining them is pure\n" +
-			"drift surface. Idempotent, and `# Notes` is human prose that is\n" +
-			"preserved untouched. What it never derives is membership: which work\n" +
-			"ships is a human decision recorded as `version:` on each document.\n" +
-			"--ship refuses while any listed document is still open.",
-		flags: []string{
-			"--date <YYYY-MM-DD>  target date while planned, actual date once shipped",
-			"--ship               flip to shipped once every listed document is done",
-			"--root <dir>         bundle root (default docs/features)",
+		name:    "release",
+		group:   "Check and maintain",
+		summary: "Write releases/<version>.md from the documents' version: fields",
+		usage:   "fdf release [--root <dir>] [--date <YYYY-MM-DD>] [--ship] <version>",
+		body: "Create or refresh releases/<version>.md, listing the features, Changes\n" +
+			"and Fixes whose `version:` is <version>. The lists are derived, never\n" +
+			"hand-written; `# Notes` is yours and is kept as it is. fdf never decides\n" +
+			"what ships: set `version:` on each document that does. --ship marks the\n" +
+			"release shipped, and refuses while any listed document is not `done`.",
+		flags: []flagDoc{
+			{"--date <YYYY-MM-DD>", "target date while planned, actual date once shipped"},
+			{"--ship", "mark the release shipped once every listed document is done"},
+			rootFlagDoc,
 		},
 		examples: []string{
 			"fdf release 1.2.0",
@@ -354,126 +476,360 @@ var helpTopics = []helpTopic{
 		},
 	},
 	{
-		name:  "install",
-		usage: "fdf install [--project] [--root <dir>] <claude-code|codex|opencode>",
-		body: "Install or upgrade the FDF skills and that harness's adapter, plus a\n" +
-			"'## Feature Document Format' primer in its instruction file. Idempotent:\n" +
-			"re-running upgrades the managed blocks and never clobbers your edits.\n" +
-			"Installs into your home directory by default; --project installs into the\n" +
-			"current git project (nearest .git) so the setup is committed with the code.\n" +
-			"Re-run it after `fdf migrate` so the skills teach the new layout.",
-		flags: []string{
-			"--project     install into the current git project instead of the home directory",
-			"--root <dir>  bundle root to bake into the installed skills",
-		},
-		examples: []string{
-			"fdf install claude-code",
-			"fdf install --project claude-code",
-			"fdf install --project --root docs/features codex",
-		},
-	},
-	{
-		name:  "serve",
-		usage: "fdf serve [--root <dir>]",
-		body: "Serve the bundle in a browser by wrapping `bun x mdts`, so the markdown\n" +
-			"renders with working cross-links. Requires bun (https://bun.sh).",
-		flags:    []string{"--root <dir>  bundle root (default docs/features)"},
-		examples: []string{"fdf serve", "fdf serve --root docs/features"},
-	},
-	{
-		name:  "migrate",
-		usage: "fdf migrate [--root <dir>]",
-		body: "Upgrade a bundle to the spec version this binary ships: rewrite the\n" +
-			"fdf_version pin, lift nested trail files to stem-qualified siblings,\n" +
-			"re-vendor SPEC.md, scaffold any missing Context stubs and indexes, drop\n" +
-			"the status tags older versions wrote after index listings, log the\n" +
-			"migration in LOG.md, then validate. A pre-flight refuses to start on\n" +
-			"content the new layout cannot hold and leaves the bundle untouched, so a\n" +
-			"refused run is always safe to retry after fixing what it names. Freshly\n" +
-			"scaffolded Context stubs are warnings here, not errors — a plain `fdf\n" +
-			"validate` still fails F9 until you fill them. Re-run `fdf install`\n" +
-			"afterwards.",
-		flags:    []string{"--root <dir>  bundle root (default docs/features)"},
-		examples: []string{"fdf migrate", "fdf migrate --root docs/features"},
-	},
-	{
-		name:  "spec",
-		usage: "fdf spec [-v <version>] [--list]",
+		name:    "spec",
+		group:   "Reference",
+		summary: "Print the format spec: fdf spec [-v <version>]",
+		usage:   "fdf spec [-v <version>] [--list]",
 		body: "Print the format specification, straight from the copy embedded in this\n" +
 			"binary — no bundle, no network, and no checkout of the fdf repository\n" +
 			"needed. Defaults to the current version; -v prints an older one, which is\n" +
 			"what a bundle still pinning that version must satisfy.",
-		flags: []string{
-			"-v <version>  spec version to print (default: the current version)",
-			"--list        list the spec versions embedded in this binary",
+		flags: []flagDoc{
+			{"-v <version>", "spec version to print (default: the current version)"},
+			{"--list", "list the spec versions embedded in this binary"},
 		},
 		examples: []string{"fdf spec", "fdf spec -v 0.3", "fdf spec --list", "fdf spec | less"},
 	},
 	{
-		name:     "version",
-		usage:    "fdf version",
-		body:     "Print the CLI version.",
-		examples: []string{"fdf version"},
+		name:    "serve",
+		group:   "Reference",
+		summary: "Browse the bundle in a web browser (needs bun)",
+		usage:   "fdf serve [--root <dir>]",
+		body: "Serve the bundle in a browser by wrapping `bun x mdts`, so the markdown\n" +
+			"renders with working cross-links. Requires bun (https://bun.sh).",
+		flags:    []flagDoc{rootFlagDoc},
+		examples: []string{"fdf serve", "fdf serve --root docs/features"},
 	},
 	{
-		name:     "help",
-		usage:    "fdf help [<command>]",
-		body:     "Print this help. With a command name, print only that command's entry.",
-		examples: []string{"fdf help", "fdf help migrate"},
+		name:    "help",
+		group:   "Reference",
+		summary: "Every command in full, with examples: fdf help [<command>]",
+		usage:   "fdf help [<command>]",
+		body: "Print this help. With a command's name, print only its entry; with a\n" +
+			"skill's name, say what the skill is for. `fdf <command> --help` prints\n" +
+			"the same entry.",
+		examples: []string{"fdf help", "fdf help migrate", "fdf migrate --help"},
+	},
+	{
+		name:     "version",
+		group:    "Reference",
+		summary:  "Print the fdf version",
+		usage:    "fdf version",
+		body:     "Print the fdf version; `fdf --version` does the same.",
+		examples: []string{"fdf version"},
 	},
 }
 
+// skills are the agent skills `fdf install` places, each with what it is
+// for. People ask fdf for them by name (`fdf plan`, `fdf help fdf-plan`); the
+// answer is that their AI agent runs them.
+var skills = map[string]string{
+	"fdf-help":       "it routes work to the right skill by the feature's status, before any code is written",
+	"fdf-init":       "it fills the five Context documents through an interview",
+	"fdf-adopt":      "it maps code that predates the bundle into adopted features, and backfills their scenarios",
+	"fdf-brainstorm": "it turns an idea into a feature document and gets its design approved",
+	"fdf-plan":       "it turns an approved spec into tasks and slug.test.md",
+	"fdf-execute":    "it works a planned feature's tasks, keeping every status true",
+	"fdf-change":     "it writes the Change or Fix for a delivered feature",
+	"fdf-debug":      "it finds a defect's root cause before any fix, then routes the repair",
+	"fdf-checkpoint": "it audits the Context documents, SPEC.md and the agent's instruction file against the code",
+	"fdf-validate":   "it turns fdf validate's rule codes into the right fix",
+}
+
+func findTopic(name string) (helpTopic, bool) {
+	for _, t := range helpTopics {
+		if t.name == name {
+			return t, true
+		}
+	}
+	return helpTopic{}, false
+}
+
+func topicNames() []string {
+	names := make([]string, 0, len(helpTopics))
+	for _, t := range helpTopics {
+		names = append(names, t.name)
+	}
+	return names
+}
+
+// commandIndex is the overview's grouped list of commands, one line each.
+func commandIndex() string {
+	var b strings.Builder
+	for i, t := range helpTopics {
+		if i == 0 || t.group != helpTopics[i-1].group {
+			if i > 0 {
+				b.WriteString("\n")
+			}
+			b.WriteString(t.group + "\n")
+		}
+		fmt.Fprintf(&b, "  %-10s %s\n", t.name, t.summary)
+	}
+	return b.String()
+}
+
+// overview is what `fdf` prints on its own, and for -h or --help: every
+// command on one line, grouped, and where the rest is.
+func overview() string {
+	return banner + "\n\n" +
+		"Usage: fdf <command> [flags] [arguments]\n\n" +
+		commandIndex() + "\n" +
+		"Bundle root: --root <dir> > FDF_ROOT_DIR > docs/features. A relative path\n" +
+		"resolves against the project root, so fdf works from any subdirectory.\n" +
+		"Flags go before arguments: fdf new --root <dir> <group>/<slug>.\n\n" +
+		"Run 'fdf help <command>' for its flags and examples, or 'fdf help' for all."
+}
+
+// printTopic prints one command's entry, as `fdf help <command>` does.
+func printTopic(w io.Writer, name string) {
+	t, _ := findTopic(name)
+	fmt.Fprintln(w)
+	t.render(w)
+}
+
+// printUsage prints a command's usage line — its topic's, so a usage error
+// and the help never disagree — and where the rest is.
+func printUsage(w io.Writer, name string) {
+	t, _ := findTopic(name)
+	fmt.Fprintln(w, wrapUsage("usage: ", t.usage))
+	fmt.Fprintf(w, "Run 'fdf help %s' for its flags and examples.\n", name)
+}
+
 func (t helpTopic) render(w io.Writer) {
-	fmt.Fprintf(w, "  %s\n", t.usage)
+	fmt.Fprintln(w, wrapUsage("  ", t.usage))
 	for _, line := range strings.Split(t.body, "\n") {
-		fmt.Fprintf(w, "      %s\n", line)
+		fmt.Fprintln(w, strings.TrimRight("      "+line, " "))
 	}
 	if len(t.flags) > 0 {
 		fmt.Fprintln(w)
+		col := 0
 		for _, f := range t.flags {
-			fmt.Fprintf(w, "      %s\n", f)
+			col = max(col, utf8.RuneCountInString(f.flag))
+		}
+		for _, f := range t.flags {
+			for i, line := range wrap(f.text, helpWidth-len("      ")-col-2) {
+				name := ""
+				if i == 0 {
+					name = f.flag
+				}
+				fmt.Fprintf(w, "      %-*s  %s\n", col, name, line)
+			}
 		}
 	}
 	if len(t.examples) > 0 {
 		fmt.Fprintln(w)
 		for _, e := range t.examples {
-			fmt.Fprintf(w, "      $ %s\n", e)
+			for i, line := range commandLines(e, helpWidth-len("      $ ")) {
+				if i == 0 {
+					fmt.Fprintf(w, "      $ %s\n", line)
+				} else {
+					fmt.Fprintf(w, "        %s\n", line)
+				}
+			}
 		}
 	}
 	fmt.Fprintln(w)
 }
 
 // runHelp prints the long-form help: the whole document, or one command's
-// entry when named. `fdf` with no arguments still prints the short usage.
+// entry when named. `fdf` with no arguments prints the overview instead.
 func runHelp(args []string, stdout io.Writer) int {
-	fs := newFlagSet("help", stdout)
-	if err := fs.Parse(args); err != nil {
-		return 2
+	fs := newFlagSet("help")
+	rest, exit, ok := parseArgs(fs, args, stdout)
+	if !ok {
+		return exit
 	}
-	rest := fs.Args()
-	if len(rest) > 1 {
-		fmt.Fprintln(stdout, "usage: fdf help [<command>]")
-		return 2
-	}
-	if len(rest) == 1 {
+	switch len(rest) {
+	case 0:
+		fmt.Fprint(stdout, helpPreamble)
+		fmt.Fprint(stdout, "\nUsage: fdf <command> [flags] [arguments]\n\n"+commandIndex())
+		fmt.Fprintln(stdout, "\nCOMMANDS")
 		for _, t := range helpTopics {
-			if t.name == rest[0] {
-				fmt.Fprintln(stdout)
-				t.render(stdout)
-				return 0
+			t.render(stdout)
+		}
+		return 0
+	case 1:
+		if _, ok := findTopic(rest[0]); ok {
+			printTopic(stdout, rest[0])
+			return 0
+		}
+		unknownCommand(stdout, "fdf help", rest[0])
+		return 2
+	}
+	printUsage(stdout, "help")
+	return 2
+}
+
+// unknownCommand explains a name that is not a command: a skill's (the agent
+// runs those, not fdf), a flag written before the command, or a near miss.
+// who starts the message: "fdf" or "fdf help".
+func unknownCommand(w io.Writer, who, name string) {
+	skill := "fdf-" + strings.TrimPrefix(name, "fdf-")
+	var msg string
+	if purpose, ok := skills[skill]; ok {
+		msg = fmt.Sprintf("%s: %q is not a command. %s is a skill: %s. Skills are run by your AI agent, not by fdf — `fdf install <harness>` installs them; ask the agent to use %s.",
+			who, name, skill, purpose, skill)
+		if cmd := strings.TrimPrefix(skill, "fdf-"); cmd != name {
+			if _, isCmd := findTopic(cmd); isCmd {
+				msg += fmt.Sprintf(" For the %s command, see `fdf help %s`.", cmd, cmd)
 			}
 		}
-		var names []string
-		for _, t := range helpTopics {
-			names = append(names, t.name)
-		}
-		fmt.Fprintf(stdout, "fdf help: unknown command %q\ncommands: %s\n", rest[0], strings.Join(names, ", "))
-		return 2
+	} else if strings.HasPrefix(name, "-") {
+		msg = fmt.Sprintf("%s: %q is not a command — the command comes first, then its flags: fdf <command> [flags] [arguments]", who, name)
+	} else if near := nearestCommand(name); near != "" {
+		msg = fmt.Sprintf("%s: unknown command %q — did you mean %q?", who, name, near)
+	} else {
+		msg = fmt.Sprintf("%s: unknown command %q", who, name)
 	}
-	fmt.Fprint(stdout, helpPreamble)
-	fmt.Fprintln(stdout, "\nCOMMANDS")
+	for _, line := range wrap(msg, 76) {
+		fmt.Fprintln(w, line)
+	}
+	for _, line := range wrap("commands: "+strings.Join(topicNames(), ", "), helpWidth) {
+		fmt.Fprintln(w, line)
+	}
+}
+
+// nearestCommand is the command a mistyped name most likely meant: at most two
+// edits away, and fewer edits than the name has letters, so that a short
+// name does not "match" every other short one.
+func nearestCommand(name string) string {
+	best, bestD := "", 3
 	for _, t := range helpTopics {
-		t.render(stdout)
+		if d := editDistance(name, t.name); d < bestD && d < utf8.RuneCountInString(name) {
+			best, bestD = t.name, d
+		}
 	}
-	return 0
+	return best
+}
+
+// editDistance is the Levenshtein distance between a and b.
+func editDistance(a, b string) int {
+	ra, rb := []rune(a), []rune(b)
+	prev := make([]int, len(rb)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(ra); i++ {
+		cur := make([]int, len(rb)+1)
+		cur[0] = i
+		for j := 1; j <= len(rb); j++ {
+			cost := 1
+			if ra[i-1] == rb[j-1] {
+				cost = 0
+			}
+			cur[j] = min(prev[j]+1, cur[j-1]+1, prev[j-1]+cost)
+		}
+		prev = cur
+	}
+	return prev[len(rb)]
+}
+
+// wrap breaks text at spaces into lines of at most width runes; a word longer
+// than width gets a line of its own.
+func wrap(text string, width int) []string {
+	var lines []string
+	line := ""
+	for _, word := range strings.Fields(text) {
+		switch {
+		case line == "":
+			line = word
+		case utf8.RuneCountInString(line)+1+utf8.RuneCountInString(word) <= width:
+			line += " " + word
+		default:
+			lines = append(lines, line)
+			line = word
+		}
+	}
+	return append(lines, line)
+}
+
+// wrapUsage breaks a usage line between its bracketed parts, indenting what
+// follows under the first one, so that no line is wider than the help.
+func wrapUsage(lead, usage string) string {
+	parts := usageParts(usage)
+	if len(parts) < 3 {
+		return lead + usage
+	}
+	head := lead + parts[0] + " " + parts[1]
+	indent := strings.Repeat(" ", utf8.RuneCountInString(head)+1)
+	var lines []string
+	line := head
+	for _, p := range parts[2:] {
+		if utf8.RuneCountInString(line)+1+utf8.RuneCountInString(p) > helpWidth {
+			lines = append(lines, line)
+			line = indent + p
+			continue
+		}
+		line += " " + p
+	}
+	return strings.Join(append(lines, line), "\n")
+}
+
+// usageParts splits a usage line at the spaces outside brackets:
+// "[--cleanup [--dry-run]]" stays one part.
+func usageParts(usage string) []string {
+	var parts []string
+	depth, start := 0, 0
+	for i, r := range usage {
+		switch r {
+		case '[', '<':
+			depth++
+		case ']', '>':
+			depth--
+		case ' ':
+			if depth == 0 {
+				parts = append(parts, usage[start:i])
+				start = i + 1
+			}
+		}
+	}
+	return append(parts, usage[start:])
+}
+
+// commandLines breaks a long example command between its words, ending each
+// broken line with a shell continuation, so that it still pastes as one
+// command. A quoted argument is never broken, and a flag stays with its value.
+func commandLines(cmd string, width int) []string {
+	var words []string
+	quote, start := rune(0), 0
+	for i, r := range cmd {
+		switch {
+		case quote != 0:
+			if r == quote {
+				quote = 0
+			}
+		case r == '"' || r == '\'':
+			quote = r
+		case r == ' ':
+			words = append(words, cmd[start:i])
+			start = i + 1
+		}
+	}
+	words = append(words, cmd[start:])
+	var lines, cur []string
+	indent := ""
+	for _, word := range words {
+		next := append(append([]string(nil), cur...), word)
+		if len(cur) == 0 || utf8.RuneCountInString(indent+strings.Join(next, " ")) <= width-len(" \\") {
+			cur = next
+			continue
+		}
+		carry := []string{word}
+		if last := cur[len(cur)-1]; len(cur) > 2 && strings.HasPrefix(last, "-") {
+			cur, carry = cur[:len(cur)-1], []string{last, word}
+		}
+		lines = append(lines, indent+strings.Join(cur, " ")+" \\")
+		indent, cur = "  ", carry
+	}
+	return append(lines, indent+strings.Join(cur, " "))
+}
+
+// countWord spells out a small count for prose: "ten skills".
+func countWord(n int) string {
+	words := []string{"zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+		"eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty"}
+	if n >= 0 && n < len(words) {
+		return words[n]
+	}
+	return fmt.Sprint(n)
 }

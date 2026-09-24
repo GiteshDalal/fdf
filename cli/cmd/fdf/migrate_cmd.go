@@ -8,13 +8,10 @@ import (
 )
 
 func runMigrate(args []string, stdout io.Writer) int {
-	fs := newFlagSet("migrate", stdout)
-	root, source, rest, ok := resolveRootSource(fs, args, stdout)
+	fs := newFlagSet("migrate")
+	root, source, _, exit, ok := resolveRootSource(fs, args, stdout)
 	if !ok {
-		return 2
-	}
-	if !rejectPositionals("migrate", "--root", rest, stdout) {
-		return 2
+		return exit
 	}
 	announce("migrate", root, source, stdout)
 	repoRoot := ""

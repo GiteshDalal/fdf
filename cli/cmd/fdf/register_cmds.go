@@ -16,21 +16,22 @@ func runBug(args []string, stdout io.Writer) int  { return runRegister(register.
 
 func runRegister(k register.Kind, args []string, stdout io.Writer) int {
 	cmd := strings.ToLower(k.Type)
-	fs := newFlagSet(cmd, stdout)
+	fs := newFlagSet(cmd)
 	open := fs.Bool("open", false, "list only open "+cmd+"s")
 	accepted := fs.Bool("accepted", false, "list only accepted "+cmd+"s")
 	resolved := fs.Bool("resolved", false, "list only resolved "+cmd+"s")
 	cleanup := fs.Bool("cleanup", false, "fold resolved "+cmd+"s into "+k.Dir+"/LOG.md and clear them from the register")
 	dryRun := fs.Bool("dry-run", false, "with --cleanup: show what would be cleared and change nothing")
+	// Defined for bugs too, only to refuse it with the reason below.
 	noLog := fs.Bool("no-log", false, "with --cleanup: remove resolved "+cmd+"s without writing "+k.Dir+"/LOG.md")
 	var affects *string
 	if k.Type == "Bug" {
 		affects = fs.String("affects", "", "comma-separated feature ID(s) the defect shows up in (when filing)")
 	}
 	resource := fs.String("resource", "", "comma-separated project-relative path(s) carrying it (when filing)")
-	root, source, rest, ok := resolveRootSource(fs, args, stdout)
+	root, source, rest, exit, ok := resolveRootSource(fs, args, stdout)
 	if !ok {
-		return 2
+		return exit
 	}
 
 	var filters []string
@@ -49,11 +50,7 @@ func runRegister(k register.Kind, args []string, stdout io.Writer) int {
 	}
 
 	if len(rest) > 1 {
-		if k.Type == "Bug" {
-			fmt.Fprintf(stdout, "usage: fdf %s [--open|--accepted|--resolved] [--cleanup [--dry-run]] [[<group>/]<slug>]\n", cmd)
-		} else {
-			fmt.Fprintf(stdout, "usage: fdf %s [--open|--accepted|--resolved] [--cleanup [--dry-run] [--no-log]] [[<group>/]<slug>]\n", cmd)
-		}
+		printUsage(stdout, cmd)
 		return 2
 	}
 	var affected []string
@@ -66,14 +63,17 @@ func runRegister(k register.Kind, args []string, stdout io.Writer) int {
 			return 2
 		}
 		announce(cmd, root, source, stdout)
+		if !requireBundle(root, stdout) {
+			return 1
+		}
 		return k.New(root, rest[0], affected, splitList(*resource), stdout)
 	}
 	if len(affected) > 0 || *resource != "" {
-		fmt.Fprintf(stdout, "usage: --affects and --resource apply when filing a %s: fdf %s [--affects <ids>] [--resource <paths>] [<group>/]<slug>\n", cmd, cmd)
-		return 2
-	}
-	if (*dryRun || *noLog) && !*cleanup {
-		fmt.Fprintf(stdout, "usage: --dry-run and --no-log only apply to `fdf %s --cleanup`\n", cmd)
+		if k.Type == "Bug" {
+			fmt.Fprintln(stdout, "usage: --affects and --resource apply when filing a bug: fdf bug [--affects <ids>] [--resource <paths>] [<group>/]<slug>")
+		} else {
+			fmt.Fprintf(stdout, "usage: --resource applies when filing a %s: fdf %s [--resource <paths>] [<group>/]<slug>\n", cmd, cmd)
+		}
 		return 2
 	}
 	// A cleared bug stays findable in bugs/LOG.md: a done Fix or Change that
@@ -82,13 +82,21 @@ func runRegister(k register.Kind, args []string, stdout io.Writer) int {
 		fmt.Fprintln(stdout, "usage: fdf bug --cleanup always logs — a done Fix or Change that `resolves` a cleared bug is checked against bugs/LOG.md (F10)")
 		return 2
 	}
+	if (*dryRun || *noLog) && !*cleanup {
+		what := "--dry-run and --no-log only apply"
+		if k.Type == "Bug" {
+			what = "--dry-run only applies"
+		}
+		fmt.Fprintf(stdout, "usage: %s to `fdf %s --cleanup`\n", what, cmd)
+		return 2
+	}
 
 	announce(cmd, root, source, stdout)
+	if !requireBundle(root, stdout) {
+		return 1
+	}
 	if *cleanup {
 		return k.Cleanup(root, *dryRun, *noLog, stdout)
 	}
 	return k.List(root, filter, stdout)
 }
-
-// registerStatusList renders the registers' shared vocabulary for help text.
-func registerStatusList() string { return strings.Join(register.Statuses, " → ") }
