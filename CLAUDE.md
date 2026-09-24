@@ -86,11 +86,22 @@ holds no `INDEX.md`.
   `scaffold`) and `scaffold.SpecVersions` go through it.
 
 - **`cli/internal/links`** — the one link-repair engine. `Find` returns a Markdown text's
-  link targets (inline links, images and reference definitions; a footnote is not a link,
-  and a target in code is marked as a sample), and `Retarget` recomputes one after a
-  `Move`: a relative link changes whenever its file or its target moves, wherever the
-  target is, inside the bundle or outside it. A link written from the bundle root changes
-  only when its target moves. `fdf mv` uses it.
+  link targets as CommonMark reads them (inline links and images, with any title or `<…>`
+  destination, and reference definitions; a footnote is not a link, and a target in a
+  fenced or indented code block or a code span is marked as a sample), `Resolve` reads one
+  target as a path, and `Retarget` recomputes one after a `Move`: a relative link changes
+  whenever its file or its target moves, wherever the target is, inside the bundle or
+  outside it. A link written from the bundle root changes only when its target moves.
+  `fdf mv` uses it, and so does the validator under a 1.0 pin.
+
+- **`cli/internal/layout`** — the one source of 1.0 positions: the closed root (its own
+  files, the five Context documents and the six `Registers`), groups nested to any depth in
+  every register but `releases/`, and the directory rule (a directory beside a feature,
+  Change or Fix is its task directory; beside a practice, debt or bug it is an error; any
+  other is a group). `Bundle.File` gives a Markdown file's `Position` (`Kind`, `Register`,
+  the owner's `ID`, a trail's `Role`), or a `Stray` with the path at fault (`Where`) and its
+  `Problem`; `Bundle.Dir` does the same for a directory. It reads names through an `fs.FS`
+  and matches them exactly, so a case-insensitive disk cannot change a result.
 
 - **`cli/internal/bundle`** (`validate.go`) — the heart of the tool. `Validate()` is the
   enforcement engine for the spec. Rules are coded **F1–F14** (format conformance) and **R1**
@@ -98,14 +109,26 @@ holds no `INDEX.md`.
   - `readPin()` reads `fdf_version` from the root `INDEX.md` *before* the directory walk,
     because version-gated rules (Context docs, stem trail layout) must be known for every
     file and `WalkDir` visits lexically (`ARCHITECTURE.md` sorts before `INDEX.md`).
-  - Validates spec **v0.2 – v0.7** (`supportedVersions`); a pin outside that set is an F1
-    error pointing at `fdf migrate`. Gates are `pinAtLeast(pin, minor)`: `specStem` the
-    stem-trail layout (v0.4 onward); `specV5` `changes/`, the `Change`/`Fix` types,
-    `retired`, feature `depends-on`, and F10; `specV6` `practices/`, the `Practice` and
-    `Debt` types, `DOMAIN.md`, F11, F12 and F13; `specV7` `bugs/` and F14, `resolves`,
+  - Validates spec **v0.2 – v0.7** and **v1.0** (`supportedVersions`); a pin outside that
+    set is an F1 error pointing at `fdf migrate`, or at a newer fdf when it is newer than
+    every supported version (`unsupportedPin`). Gates are `pinAtLeast(pin, specver.Version)`:
+    `specStem` the stem-trail layout (v0.4 onward); `specV5` `changes/`, the `Change`/`Fix`
+    types, `retired`, feature `depends-on`, and F10; `specV6` `practices/`, the `Practice`
+    and `Debt` types, `DOMAIN.md`, F11, F12 and F13; `specV7` `bugs/` and F14, `resolves`,
     the `adopted` status and feature `resource`, F12's full reach, and F1's check of a
     `timestamp`'s form (a date, or an RFC 3339 time with `Z` or an offset). Every gate means
-    "this version **and later**". v0.2/v0.3 keep the nested paired-directory layout.
+    "this version **and later**", so a 1.0 pin passes them all: 1.0 keeps the rules 0.7
+    has. v0.2/v0.3 keep the nested paired-directory layout.
+  - **`v1`** (a 1.0 pin) swaps the walk. `validate.go`'s `visitV0` reads a position from
+    the path's segments, as 0.x lays a bundle out; **`walk.go`**'s `walkV1` asks `layout`,
+    and reports a path with no position once, as F3 with `layout`'s `Problem`. Both record
+    each document through **`collect.go`**'s `collection`: `document` for the checks every
+    document takes, then `feature`, `trail`, `task`, `change`, `practice`, `entry` (a debt
+    or bug), `registerLog`, `release` or `root`. Under `v1` the validator also reads links
+    through `links.Find` and `links.Resolve` (`resolveLink`, `sectionLinks`, and the
+    broken-link check, which then reads reference definitions too), F10 and F14 suggest the
+    full ID of a feature named the 0.7 way (`featureHint`), and F12 reads group names
+    through `layout` (`groupName`: at every depth, never a register's own name).
   - **`practices.go`** holds F11 (practice body shape, `superseded-by` graph) and the
     `sectionText` helper that `domain.go`, `debts.go` and `bugs.go` also use.
     **`bugs.go`** holds F14 and the `resolves` half of F10: `# Symptom`/`# Expected`
@@ -233,6 +256,12 @@ are living references with no episodic trail at all — and bugs/ follows debts/
 feature (v0.7) owns only `slug.test.md`/`slug.surface.md`/`slug.log.md`, never a spec, plan
 or task directory. Task dirs must not contain nested SPEC/PLAN/TEST or LOG.md.
 
+Under a **1.0** pin (`spec/1.0.md`) the same documents live in six registers at the root:
+feature groups move under `features/`, where a feature may also be filed flat; groups
+nest to any depth in every register but `releases/`; a directory beside a practice, debt
+or bug is an error; and the root holds no other Markdown. `layout` is the one place
+those rules are written.
+
 ### The conformance contract
 
 `testdata/*/` fixtures are the **executable spec**. Each fixture is a directory with a
@@ -247,7 +276,9 @@ describe the case they lock in (e.g. `done-with-open-task`, `depends-on-cycle`,
 ### Specs and versioning
 
 `spec/<version>.md` files are normative. `spec/README.md` and the top-level `SPEC.md` index
-them; the current version is **0.7**. `currentVersion` is defined in
+them; the current version is **0.7**. `spec/1.0.md` is embedded and the validator checks
+1.0 pins, but `currentVersion` stays 0.7, and the indexes leave 1.0 out, until the
+commands write 1.0 bundles. `currentVersion` is defined in
 `cli/internal/scaffold/scaffold.go`. A bundle vendors a copy of its pinned spec at its own
 `docs/features/SPEC.md`, so bundles are self-describing. Bumping the spec means: add
 `spec/<new>.md`, extend `supportedVersions` in `validate.go`, add a `migrate` path, update
