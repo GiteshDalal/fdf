@@ -25,6 +25,7 @@ import (
 	"github.com/GiteshDalal/fdf/cli/internal/bundle"
 	"github.com/GiteshDalal/fdf/cli/internal/fdfroot"
 	"github.com/GiteshDalal/fdf/cli/internal/logs"
+	"github.com/GiteshDalal/fdf/cli/internal/refactor"
 	"github.com/GiteshDalal/fdf/cli/internal/scaffold"
 )
 
@@ -329,13 +330,8 @@ func joinNames(names []string) string {
 // both are judgments — so the command names the tools and stops there.
 func reportV07(root, validation string, out io.Writer) {
 	if lex, _ := bundle.LoadLexicon(root); lex != nil {
-		docs := map[string]bool{}
-		occ := bundle.ScanBundle(root, lex)
-		for _, o := range occ {
-			docs[o.Rel] = true
-		}
-		if len(occ) > 0 {
-			fmt.Fprintf(out, "\nv0.7: the domain language now reaches every document and name — %d banned word(s) in %d document(s).\n", len(occ), len(docs))
+		if occ := bundle.ScanBundle(root, lex); len(occ) > 0 {
+			fmt.Fprintf(out, "\nv0.7: the domain language now reaches every document and name — %s.\n", refactor.BannedSummary(occ))
 			fmt.Fprintln(out, "      `fdf lexicon` lists them; triage the other senses into `except:`, then sweep one term at a time")
 			fmt.Fprintln(out, "      with `fdf lexicon --term <Term> --fix --dry-run` and `--fix`.")
 		}

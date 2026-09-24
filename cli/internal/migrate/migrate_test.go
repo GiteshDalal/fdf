@@ -537,7 +537,7 @@ func TestMigrateV06ToV07(t *testing.T) {
 	for _, want := range []string{
 		"fdf_version 0.6 -> 0.7",
 		"0 trail file(s) lifted",
-		"the domain language now reaches every document and name — 1 banned word(s) in 1 document(s)",
+		"the domain language now reaches every document and name — 1 banned word(s) in 1 file(s).",
 		"of the 1 debt(s) on the register",
 		"`fdf mv debts/<id> bugs/<id>`",
 	} {

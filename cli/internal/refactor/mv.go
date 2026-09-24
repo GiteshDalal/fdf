@@ -117,8 +117,10 @@ func Move(root, projectRoot, from, to string, dryRun bool, out io.Writer) int {
 	}
 	external := externalRefs(rootAbs, projectRoot, p)
 
+	// changed counts files, not documents: an INDEX.md or LOG.md whose links
+	// were repaired is one of them.
 	if dryRun {
-		fmt.Fprintf(out, "\ndry run: %d file(s) would move and %d reference(s) in %d document(s) would be repaired. Nothing was changed.\n", len(p.files), refs, changed)
+		fmt.Fprintf(out, "\ndry run: %d file(s) would move and %d reference(s) in %d file(s) would be repaired. Nothing was changed.\n", len(p.files), refs, changed)
 		reportExternal(external, out)
 		return 0
 	}
@@ -131,7 +133,7 @@ func Move(root, projectRoot, from, to string, dryRun bool, out io.Writer) int {
 		fmt.Fprintln(out, "error: writing LOG.md:", err)
 		return 1
 	}
-	fmt.Fprintf(out, "\ndone: %d file(s) moved; %d reference(s) repaired in %d document(s); logged in LOG.md.\n", len(p.files), refs, changed)
+	fmt.Fprintf(out, "\ndone: %d file(s) moved; %d reference(s) repaired in %d file(s); logged in LOG.md.\n", len(p.files), refs, changed)
 	if left := emptiedGroup(rootAbs, p); left != "" {
 		fmt.Fprintf(out, "note: %s now holds no documents — remove it, and its listing, if the group is gone.\n", left)
 	}
@@ -775,14 +777,14 @@ func emptiedGroup(rootAbs string, p *plan) string {
 
 // logMove records the move in the bundle-root LOG.md, newest first. The IDs
 // sit in code spans: the entry mentions them, it does not choose them.
-func logMove(rootAbs, from, to string, refs, docs int) error {
+func logMove(rootAbs, from, to string, refs, files int) error {
 	p := filepath.Join(rootAbs, "LOG.md")
 	raw, err := os.ReadFile(p)
 	body := string(raw)
 	if err != nil {
 		body = "# Bundle Update Log\n"
 	}
-	line := fmt.Sprintf("* **Moved**: `%s` → `%s` (fdf mv; %d reference(s) repaired in %d document(s)).\n", from, to, refs, docs)
+	line := fmt.Sprintf("* **Moved**: `%s` → `%s` (fdf mv; %d reference(s) repaired in %d file(s)).\n", from, to, refs, files)
 	return os.WriteFile(p, []byte(logs.Insert(body, line)), 0o644)
 }
 

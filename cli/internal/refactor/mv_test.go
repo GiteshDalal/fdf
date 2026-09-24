@@ -118,6 +118,13 @@ func TestMoveRenamesAFeatureWithItsTrailAndRepairsEveryReference(t *testing.T) {
 	if !strings.Contains(out, "reference(s) repaired") {
 		t.Fatalf("the command reports what it repaired:\n%s", out)
 	}
+	// The repaired count includes venues/INDEX.md, a file but not a document.
+	if !strings.Contains(out, "  venues/INDEX.md: 1 reference(s) repaired") || !strings.Contains(out, " file(s); logged in LOG.md.") || strings.Contains(out, "document(s)") {
+		t.Fatalf("the counts say files, INDEX.md among them:\n%s", out)
+	}
+	if s := read(t, root, "LOG.md"); !strings.Contains(s, " file(s)).") {
+		t.Fatalf("the log line counts files too:\n%s", s)
+	}
 	validates(t, root)
 }
 

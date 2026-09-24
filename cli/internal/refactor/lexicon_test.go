@@ -2,6 +2,7 @@ package refactor
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -144,6 +145,38 @@ func TestLexiconDryRunChangesNothing(t *testing.T) {
 	}
 	if read(t, root, "venues/opening-hours.md") != before {
 		t.Fatal("a dry run edits nothing")
+	}
+}
+
+// The counts say what they count. An INDEX.md is a file F12 reads but not a
+// document, and a group's name is a directory's; a dry run counts the files it
+// would change, not every file it looked in for a scenario name.
+func TestLexiconCountsFilesAndDirectoryNames(t *testing.T) {
+	root := lexiconBundle(t)
+	write(t, root, "venues/INDEX.md", "# Venues\n\n* [opening-hours](opening-hours.md) - hours for each shop.\n")
+	write(t, root, "shop-floor/INDEX.md", "# Shop-floor features\n\n* [Tills](/shop-floor/tills.md) - tills.\n")
+	lex, _ := bundle.LoadLexicon(root)
+	files, dirs := map[string]bool{}, map[string]bool{}
+	occ := bundle.ScanBundle(root, lex)
+	for _, o := range occ {
+		if strings.HasSuffix(o.Rel, "/") {
+			dirs[o.Rel] = true
+		} else {
+			files[o.Rel] = true
+		}
+	}
+	if !files["venues/INDEX.md"] || !dirs["shop-floor/"] {
+		t.Fatalf("the test needs an index and a group name that use a banned word: %v %v", files, dirs)
+	}
+	want := fmt.Sprintf("F12 — %d banned word(s) in %d file(s) and %d directory name(s);", len(occ), len(files), len(dirs))
+	if out := lexicon(t, root, LexiconOptions{}); !strings.Contains(out, want) || strings.Contains(out, "document(s)") {
+		t.Fatalf("the report should say %q:\n%s", want, out)
+	}
+
+	out := lexicon(t, root, LexiconOptions{Term: "Venue", Fix: true, DryRun: true})
+	changed := strings.Count(out, "\n--- ") + map[bool]int{true: 1}[strings.HasPrefix(out, "--- ")]
+	if want := fmt.Sprintf(" in %d file(s); nothing was changed.", changed); changed == 0 || !strings.Contains(out, want) {
+		t.Fatalf("the dry run counts the %d file(s) it shows, %q:\n%s", changed, want, out)
 	}
 }
 

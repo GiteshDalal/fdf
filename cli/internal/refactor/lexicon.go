@@ -153,9 +153,7 @@ func reportLexicon(lex *bundle.Lexicon, occ []bundle.Occurrence, textOf func(str
 	}
 	byWord := map[string]*group{}
 	var names []bundle.Occurrence
-	docs := map[string]bool{}
 	for _, o := range occ {
-		docs[o.Rel] = true
 		if o.InName() {
 			names = append(names, o)
 			continue
@@ -172,7 +170,7 @@ func reportLexicon(lex *bundle.Lexicon, occ []bundle.Occurrence, textOf func(str
 	if lex.Strict {
 		strict = "strict: every one is a validation error"
 	}
-	fmt.Fprintf(out, "F12 — %d banned word(s) in %d document(s); DOMAIN.md is %s.\n", len(occ), len(docs), strict)
+	fmt.Fprintf(out, "F12 — %s; DOMAIN.md is %s.\n", BannedSummary(occ), strict)
 
 	groups := make([]*group, 0, len(byWord))
 	for _, g := range byWord {
@@ -186,7 +184,9 @@ func reportLexicon(lex *bundle.Lexicon, occ []bundle.Occurrence, textOf func(str
 	})
 	const perWord = 8
 	for _, g := range groups {
-		fmt.Fprintf(out, "\n%q → %q — %d in %d document(s)\n", g.banned, g.term, len(g.occ), len(g.docs))
+		// Text, not names: every place counted is a file, an INDEX.md or a
+		// LOG.md among them.
+		fmt.Fprintf(out, "\n%q → %q — %d in %d file(s)\n", g.banned, g.term, len(g.occ), len(g.docs))
 		for i, o := range g.occ {
 			if !all && i == perWord {
 				fmt.Fprintf(out, "  …%d more (--all, or --term %q)\n", len(g.occ)-perWord, g.term)
@@ -218,6 +218,25 @@ func reportLexicon(lex *bundle.Lexicon, occ []bundle.Occurrence, textOf func(str
 	fmt.Fprintln(out, "a mention of the word goes in a code span. Then, one term at a time:")
 	fmt.Fprintf(out, "`fdf lexicon --term %s --fix --dry-run`, review, and `--fix`.\n", t)
 	return 0
+}
+
+// BannedSummary says how many banned words there are and where: in how many
+// files — INDEX.md and LOG.md files count, though they are not documents — and
+// in how many directory names, a group's name being a directory's.
+func BannedSummary(occ []bundle.Occurrence) string {
+	files, dirs := map[string]bool{}, map[string]bool{}
+	for _, o := range occ {
+		if strings.HasSuffix(o.Rel, "/") {
+			dirs[o.Rel] = true
+		} else {
+			files[o.Rel] = true
+		}
+	}
+	s := fmt.Sprintf("%d banned word(s) in %d file(s)", len(occ), len(files))
+	if len(dirs) > 0 {
+		s += fmt.Sprintf(" and %d directory name(s)", len(dirs))
+	}
+	return s
 }
 
 // context is the line around an occurrence, trimmed to a readable width.
@@ -396,7 +415,9 @@ func fixLexicon(rootAbs string, lex *bundle.Lexicon, occ []bundle.Occurrence, te
 		files = append(files, rel)
 	}
 	sort.Strings(files)
-	total := 0
+	// byFile holds every file a scenario rename was looked for in; only the
+	// ones whose text changes count.
+	total, changed := 0, 0
 	for _, rel := range files {
 		text := textOf(rel)
 		spans := dropContained(byFile[rel])
@@ -405,6 +426,7 @@ func fixLexicon(rootAbs string, lex *bundle.Lexicon, occ []bundle.Occurrence, te
 			continue
 		}
 		total += len(spans)
+		changed++
 		if dryRun {
 			printDiff(rel, text, fixed, out)
 			continue
@@ -441,7 +463,7 @@ func fixLexicon(rootAbs string, lex *bundle.Lexicon, occ []bundle.Occurrence, te
 		fmt.Fprintf(out, "\n%d name(s) use a banned word — `fdf lexicon` suggests an `fdf mv` for each.\n", names)
 	}
 	if dryRun {
-		fmt.Fprintf(out, "\ndry run: %d replacement(s) in %d document(s); nothing was changed.\n", total, len(files))
+		fmt.Fprintf(out, "\ndry run: %d replacement(s) in %d file(s); nothing was changed.\n", total, changed)
 		return 0
 	}
 	if total == 0 {
