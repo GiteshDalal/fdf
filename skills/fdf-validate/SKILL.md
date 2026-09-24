@@ -151,7 +151,8 @@ an `instead-of` entry to clear a warning.
 
 **Sweep it — in this order.** A sweep touches finished work, so it is a lexicon
 fix (a maintenance edit): it changes words and nothing else, needs no Change,
-and is logged.
+and is logged. It leaves every `timestamp` as it is — F10 orders finished work
+by timestamp, and a sweep is not new work.
 
 1. **Report**: `fdf lexicon` lists every occurrence with `file:line:col`,
    grouped by word; `--term <Term> --all` shows one term's in full.

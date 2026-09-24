@@ -41,8 +41,10 @@ Say which mode you are using, and why, in one line.
 In every mode **you own the bundle**: you flip every status, update every
 timestamp, and run every `fdf validate`; subagents never edit files under the
 bundle. One writer means no races and a serialized validate after each change.
-Every document you edit, a status flip included, gets its `timestamp` set to
-now, in UTC — the task, the feature and the surface document alike.
+Every document you change in substance, a status flip included, gets its
+`timestamp` set to now, in UTC — the task, the feature and the surface
+document alike. A maintenance edit (a lexicon fix, a reference or path repair)
+leaves `timestamp` as it is: F10 orders documents by it.
 
 ## Per task
 

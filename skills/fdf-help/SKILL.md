@@ -32,7 +32,7 @@ built through FDF. It may start as a *map entry* (a `Feature:` block and no
 scenarios); its scenarios are backfilled as work reaches it. fdf-adopt runs
 that.
 
-Work that arrives **after** a feature ships lives under `changes/` as a
+Work that arrives **after** a feature is delivered lives under `changes/` as a
 `Change` (alters what the feature does) or a `Fix` (the code drifted from what
 the feature document already says). Both may be filed flat or in groups, both
 take the same `slug.spec.md`/`slug.plan.md` trail and task directory, and both

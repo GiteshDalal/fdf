@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/GiteshDalal/fdf/cli/internal/fdfroot"
 )
@@ -135,16 +136,21 @@ func isStub(text string) bool { return strings.Contains(linkScanText(text), stub
 
 // checkLogBody validates ISO-8601 ## date headings and newest-first order
 // for reserved LOG.md and v0.4 slug.log.md files. A `##` line inside a fenced
-// block is an example an entry quotes, not a heading.
-func checkLogBody(rel, text string, errs, warns *[]string) {
+// block is an example an entry quotes, not a heading. From v0.7 a heading is
+// a real calendar date, as a `timestamp` is.
+func checkLogBody(rel, text string, v7 bool, errs, warns *[]string) {
 	var dates []string
 	for _, line := range strings.Split(linkScanText(text), "\n") {
 		if m := logDateRe.FindStringSubmatch(line); m != nil {
 			h := strings.TrimSpace(m[1])
-			if isoDateRe.MatchString(h) {
-				dates = append(dates, h)
-			} else {
+			_, perr := time.Parse(time.DateOnly, h)
+			switch {
+			case !isoDateRe.MatchString(h):
 				*errs = append(*errs, fmt.Sprintf("%s: log date heading '## %s' is not ISO-8601 (F1)", rel, h))
+			case v7 && perr != nil:
+				*errs = append(*errs, fmt.Sprintf("%s: log date heading '## %s' is not a real date (F1)", rel, h))
+			default:
+				dates = append(dates, h)
 			}
 		}
 	}
@@ -183,14 +189,15 @@ func linkScanText(text string) string {
 const stubSentinel = "<!-- fdf:stub -->"
 
 // placeholderRe finds the text fdf's scaffolds write for a person to replace:
-// a line, list item, declaration or frontmatter value beginning "TODO —", and
-// a group index entry still reading "- TODO.". It runs on the text with code
+// a line, list item, declaration or frontmatter value beginning "TODO —", a
+// regression case whose verification is still "TODO", and a group index entry
+// still reading "- TODO". It runs on the text with code
 // stripped (linkScanText), so an example that quotes a placeholder is not one.
 // gherkinPlaceholderRe finds the scaffold's "As a <role>", which lives inside a
 // Gherkin fence and so is matched on the raw text. A v0.7 advisory: a scaffold
 // passes every structural rule, and without this an untouched one reads as
 // done.
-var placeholderRe = regexp.MustCompile(`(?m)^\s*(?:[-*]\s+)?(?:\d+\.\s+)?(?:[a-z-]+:\s*)?TODO —|\) - TODO\.`)
+var placeholderRe = regexp.MustCompile(`(?m)^\s*(?:[-*]\s+)?(?:\d+\.\s+)?(?:[a-z-]+:\s*)?TODO —|\) - TODO\.|\s(?:—|–|--)\s+TODO\b`)
 var gherkinPlaceholderRe = regexp.MustCompile(`(?m)^\s*As an? <role>\s*$`)
 
 // readPin returns the fdf_version pinned by the bundle's root INDEX.md, or ""
@@ -380,7 +387,7 @@ func Validate(root string, opts Options) int {
 					warns = append(warns, fmt.Sprintf("%s: index file has no bulleted listing", rel))
 				}
 			} else { // LOG.md
-				checkLogBody(rel, text, &errs, &warns)
+				checkLogBody(rel, text, specV7, &errs, &warns)
 			}
 			return nil
 		}
@@ -476,7 +483,7 @@ func Validate(root string, opts Options) int {
 					case "plan":
 						p.plan, p.planRel, p.planBody = true, rel, body
 					case "log":
-						checkLogBody(rel, text, &errs, &warns)
+						checkLogBody(rel, text, specV7, &errs, &warns)
 					}
 					return nil
 				}
@@ -550,7 +557,7 @@ func Validate(root string, opts Options) int {
 				if docType != "Log" {
 					errs = append(errs, fmt.Sprintf("%s: expected `type: Log`, got %q (F3)", rel, docType))
 				}
-				checkLogBody(rel, text, &errs, &warns)
+				checkLogBody(rel, text, specV7, &errs, &warns)
 				if register == "bugs" {
 					bugTrails[dir+"/"+m[1]] = rel
 				} else {
@@ -607,7 +614,7 @@ func Validate(root string, opts Options) int {
 				if docType != "Log" {
 					errs = append(errs, fmt.Sprintf("%s: expected `type: Log`, got %q (F3)", rel, docType))
 				}
-				checkLogBody(rel, text, &errs, &warns)
+				checkLogBody(rel, text, specV7, &errs, &warns)
 				practiceTrails[dir+"/"+m[1]] = rel
 				return nil
 			}
@@ -691,7 +698,7 @@ func Validate(root string, opts Options) int {
 						case "log":
 							// Trap 17: same ISO-date / newest-first rules as LOG.md.
 							p.log = true
-							checkLogBody(rel, text, &errs, &warns)
+							checkLogBody(rel, text, specV7, &errs, &warns)
 						case "surface":
 							p.surface = true
 						}

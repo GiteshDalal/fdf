@@ -283,7 +283,7 @@ func checkDomain(rootAbs string, features map[string]*featureInfo, changes map[s
 		// open one. The `## <feature-id>` headings and a regression case's
 		// verification quote a document ID, a command, a path or a surface
 		// string as it stands, which no lexicon fix may change.
-		decls := parseDecls(c.body, heading, !isFix)
+		decls := parseDecls(c.body, heading, !isFix, false) // the v0.6 scan
 		declFids := make([]string, 0, len(decls))
 		for fid := range decls {
 			declFids = append(declFids, fid)

@@ -84,7 +84,7 @@ type bugInfo struct {
 // of the name.
 func violations(body string) map[string][]string {
 	out := map[string][]string{}
-	for fid, d := range parseDecls(body, violatesHeading, false) {
+	for fid, d := range parseDecls(body, violatesHeading, false, true) {
 		out[fid] = append(append([]string{}, d.regressions...), d.missingVerification...)
 	}
 	return out
@@ -129,10 +129,10 @@ func checkBugIntegrity(bugs map[string]*bugInfo, trails map[string]string, featu
 			}
 		}
 
-		for _, e := range strayDeclEntries(b.body, violatesHeading) {
+		for _, e := range strayDeclEntries(b.body, violatesHeading, true) {
 			*errs = append(*errs, fmt.Sprintf("%s: `# Violates` entry %q sits under no `## <feature-id>` heading (F14)", b.rel, e))
 		}
-		for fid, d := range parseDecls(b.body, violatesHeading, false) {
+		for fid, d := range parseDecls(b.body, violatesHeading, false, true) {
 			if d.headings > 1 {
 				*errs = append(*errs, fmt.Sprintf("%s: `# Violates` has %d `## %s` headings — one per feature (F14)", b.rel, d.headings, fid))
 			}

@@ -40,7 +40,7 @@ shortens every phase:
 | How is it verified? | `<group>/<slug>.test.md` — run that case first |
 | Why was it built this way? | `<group>/<slug>.spec.md` (frozen: read it, never edit it) |
 | What was built, and where | `<group>/<slug>.plan.md` and the tasks under `<group>/<slug>/` — their `resource:` paths name the code |
-| What happened since it shipped? | `fdf history <group>/<slug>`, `<group>/<slug>.log.md`, bundle `LOG.md` |
+| What happened since it was delivered? | `fdf history <group>/<slug>`, `<group>/<slug>.log.md`, bundle `LOG.md` |
 | What conventions should the code follow? | `ARCHITECTURE.md`, `SURFACES.md`, `STACK.md`, `INFRA.md` |
 | How was this mechanism supposed to be done? | the practice whose `applies-to` covers the file in the trace — `# Rules` is binding, and code that ignores one is a common root cause |
 | Is this already known? | `fdf bug --open` and `fdf debt --open` — an entry whose `resource` names the file in the trace, or whose `affects` names the feature, has already diagnosed this, and says why it was left |
@@ -142,7 +142,7 @@ Work down; the first row that matches wins:
 | No feature documents the code at all | **Adopt first**: map the capability (fdf-adopt, one map entry), then route by its new status — usually the next row but one: nobody wrote the promise down, so a Change adds it |
 | A `done`/`adopted`/`retired` feature has a scenario saying otherwise — the code drifted | **Fix**: `fdf fix --affects <group>/<slug>[,…] [<group>/]<slug>` → fdf-change |
 | No scenario covers the case, or the scenario itself is what is wrong | **Change**: `fdf change --affects <group>/<slug>[,…] [<group>/]<slug>` → fdf-change |
-| The behavior that should exist reads as its own `Feature:` block | New feature → fdf-brainstorm, recording lineage with `depends-on` |
+| The behavior that should exist reads as its own `Feature:` block | New feature → fdf-brainstorm, naming the feature it builds on in `depends-on` |
 | The root cause is upstream — a dependency, a platform, an external service | Still ours to answer: what should our software do when that happens? That decision is a Change. A version pin with no observable difference is neutral. |
 
 Two findings are not routes of their own. They ride along with whichever row

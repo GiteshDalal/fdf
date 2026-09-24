@@ -126,9 +126,10 @@ not diagnosed, waiting on a decision, in code no feature documents, or
 deferred. A bug states its `# Symptom` and `# Expected`, and cites under
 `# Violates` the scenarios it contradicts, verbatim. It is **never repaired in
 place**: its repair is a `Fix` or `Change` that names it in `resolves`
-(`fdf fix --from bugs/<id>` copies the analysis), and rule **F14** will not let
-that repair land while the bug still reads as open — nor let a bug be
-*accepted* while it contradicts a scenario, because then the feature lies.
+(`fdf fix --from bugs/<id>` copies the analysis). Rule **F10** will not let
+that repair reach `done` while the bug still reads as open, and **F14** will
+not let a bug be *accepted* while it contradicts a scenario, because then the
+feature lies.
 
 **Adopted features** (`status: adopted`) are how a codebase that predates its
 bundle comes in honestly. A capability that was never built through FDF gets no

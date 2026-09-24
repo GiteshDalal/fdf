@@ -22,4 +22,6 @@ An off-by-one in the hour arithmetic.
 
 - Venue owner sets
   opening hours —
-  `go test ./... -run TestHours`
+  `go test ./... -run TestHours`, then open the store page
+  and check the hours
+A line flush left is not part of the entry above.

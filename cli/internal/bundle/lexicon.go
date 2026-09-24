@@ -341,13 +341,19 @@ func maskBody(b []byte, start int, docType string) {
 	}
 	// A declaration's `## <feature-id>` headings quote document IDs, and a
 	// regression case's verification quotes a command, a path or a surface's
-	// wording; the scenario names around them are the bundle's own words.
-	section := ""
+	// wording; the scenario names around them are the bundle's own words. An
+	// entry may wrap (LogicalLines), so its verification runs on through the
+	// entry's indented continuation lines.
+	section, inCase, verifying := "", false, false
 	eachLine(b, start, func(s, e int) {
 		line := strings.TrimRight(string(b[s:e]), "\r")
-		if m := headingRe.FindStringSubmatch(line); m != nil {
-			section = strings.TrimSpace(m[1])
-			return
+		t := strings.TrimSpace(line)
+		if anyHeadingRe.MatchString(line) {
+			inCase = false
+			if m := headingRe.FindStringSubmatch(line); m != nil {
+				section = strings.TrimSpace(m[1])
+				return
+			}
 		}
 		inDecl := strings.EqualFold(section, scenarioChangesHeading) ||
 			strings.EqualFold(section, regressionCasesHeading) ||
@@ -359,13 +365,31 @@ func maskBody(b []byte, start int, docType string) {
 			blank(b, s, e)
 			return
 		}
-		if strings.EqualFold(section, regressionCasesHeading) && listItemRe.MatchString(line) {
-			if loc := verbatimSepRe.FindStringIndex(line); loc != nil {
-				blank(b, s+loc[0], e)
+		if !strings.EqualFold(section, regressionCasesHeading) {
+			return
+		}
+		switch {
+		case anyItemRe.MatchString(line):
+			inCase, verifying = true, false
+		case inCase && t != "" && isIndented(line) && !strings.HasPrefix(t, "```") && !strings.HasPrefix(t, "~~~"):
+			if verifying {
+				blank(b, s, e)
+				return
 			}
+		default:
+			inCase = false
+			return
+		}
+		if loc := caseSepRe.FindStringIndex(line); loc != nil {
+			blank(b, s+loc[0], e)
+			verifying = true
 		}
 	})
 }
+
+// caseSepRe is a regression case's separator, also where a wrapped entry
+// breaks right after it, at the end of the line.
+var caseSepRe = regexp.MustCompile(`\s(?:—|–|--)(?:\s|$)`)
 
 // maskDocument returns a copy of a document's text in which everything F12
 // does not read is blanked, byte for byte.

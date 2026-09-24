@@ -40,7 +40,7 @@ Change.
 
 If the new behavior reads as its own `Feature:` block with its own
 As-a / I-want / So-that, it is not a change at all — it is a **new feature**
-(fdf-brainstorm), which may record its lineage with `depends-on`.
+(fdf-brainstorm), which names the feature it builds on in `depends-on`.
 
 Do not settle this from the report's wording. A defect's route follows from
 its **root cause**, so if nobody has diagnosed it yet, run **fdf-debug**
@@ -53,8 +53,10 @@ Fix body's `# Symptom` and `# Root cause` sections are waiting for.
    are `done`, `adopted` or `retired`. A feature still in flight is edited
    directly — route back to fdf-brainstorm/plan/execute. Code no feature
    documents is adopted first (fdf-adopt), then changed here. For an `adopted`
-   feature, every scenario this work will `modify:` or `remove:` must exist
-   first — backfill them with fdf-adopt; one it only `add:`s needs none.
+   feature, backfill first whatever behavior this work will alter, decided
+   from the code rather than from the scenario list (a map entry has none):
+   fdf-adopt, *Phase 2*. Behavior the code does not have yet needs no
+   backfill, and a defect is never backfilled.
 2. **Scaffold**, flags before the slug:
    - `fdf change --affects <group>/<slug>[,…] [<group>/]<slug>`
    - `fdf fix --affects <group>/<slug>[,…] [<group>/]<slug>`

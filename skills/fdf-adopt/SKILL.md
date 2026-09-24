@@ -117,7 +117,9 @@ carry the change:
   list: "hide out-of-stock products" alters what the list shows today, so
   "An out-of-stock product appears in the product list" is backfilled first.
   A Change that adds behavior the code does not have at all needs no
-  backfill. Then route the work to fdf-change.
+  backfill, and neither does a defect the Change repairs: wrong behavior is
+  never backfilled (see *Backfilling one scenario*). Then route the work to
+  fdf-change.
 - **Record the interface the Change will alter.** When the Change touches an
   endpoint, a screen, a command or an event, write the capability's
   `slug.surface.md` from the code as it stands first (see *Recording an

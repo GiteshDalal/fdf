@@ -44,8 +44,8 @@ func TestInstallClaudeCodePlacesSkillsPrimerAndUpgrades(t *testing.T) {
 	if !strings.Contains(string(claudeMd), "practices/") || !strings.Contains(string(claudeMd), "type: Practice") {
 		t.Fatalf("primer should teach practice documents:\n%s", claudeMd)
 	}
-	if !strings.Contains(string(claudeMd), "set its `timestamp` to now, in UTC") || !strings.Contains(string(claudeMd), "every date and time fdf writes is UTC") {
-		t.Fatalf("primer should say an edited document's timestamp is now, in UTC:\n%s", claudeMd)
+	if !strings.Contains(string(claudeMd), "set its `timestamp` to\n  now, in UTC") || !strings.Contains(string(claudeMd), "leaves `timestamp` as it is") {
+		t.Fatalf("primer should say a changed document's timestamp is now, in UTC, and a maintenance edit's is kept:\n%s", claudeMd)
 	}
 	if strings.Contains(string(claudeMd), "resolved in place") {
 		t.Fatalf("a bug is never *repaired* in place; one that needs no repair is resolved:\n%s", claudeMd)

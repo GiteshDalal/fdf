@@ -313,8 +313,10 @@ Working in an FDF project:
   command, an event — describes it in ` + "`slug.surface.md`" + `, kept current
   like its Gherkin; one without says ` + "`surface: none`" + ` in its frontmatter.
   Each test case is a ` + "`## <scenario name>`" + ` heading, matched exactly.
-- When you edit a document, set its ` + "`timestamp`" + ` to now, in UTC
-  (` + "`YYYY-MM-DDThh:mm:ssZ`" + `); every date and time fdf writes is UTC too.
+- When you change a document's content or status, set its ` + "`timestamp`" + ` to
+  now, in UTC (` + "`YYYY-MM-DDThh:mm:ssZ`" + `); every date and time fdf writes is UTC
+  too. A maintenance edit (a lexicon fix, a reference or path repair) changes
+  no substance and leaves ` + "`timestamp`" + ` as it is.
 - Once a feature is **done** or **adopted**, never edit its behavior in place and never fork
   a second feature document for the same capability. Post-delivery work is a
   document under ` + "`" + root + "/changes/`" + `: ` + "`fdf change`" + ` when the

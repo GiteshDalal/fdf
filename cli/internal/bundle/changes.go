@@ -63,11 +63,13 @@ func hasHeading(body, heading string) bool {
 // parseDecls slices `# <heading>` out of a body and returns one entry per
 // `## <feature-id>` subheading under it. verbs selects the Change grammar
 // (`- add:/modify:/remove: <scenario>`) over the Fix grammar
-// (`- <scenario> — <verification>`).
-func parseDecls(body, heading string, verbs bool) map[string]*changeDecl {
+// (`- <scenario> — <verification>`). v7 reads an entry across its wrapped
+// lines and counts a verification that is still a `TODO` as missing; earlier
+// pins read one line per entry, as they always have.
+func parseDecls(body, heading string, verbs, v7 bool) map[string]*changeDecl {
 	out := map[string]*changeDecl{}
 	inSection, current := false, ""
-	for _, line := range LogicalLines(body) {
+	for _, line := range declLines(body, v7) {
 		if m := headingRe.FindStringSubmatch(line); m != nil {
 			inSection = strings.EqualFold(strings.TrimSpace(m[1]), heading)
 			current = ""
@@ -112,7 +114,8 @@ func parseDecls(body, heading string, verbs bool) map[string]*changeDecl {
 			entry := m[1]
 			if loc := verbatimSepRe.FindStringIndex(entry); loc != nil {
 				name := strings.TrimSpace(entry[:loc[0]])
-				if strings.TrimSpace(entry[loc[1]:]) == "" {
+				verification := strings.TrimSpace(entry[loc[1]:])
+				if verification == "" || v7 && strings.HasPrefix(verification, "TODO") {
 					d.missingVerification = append(d.missingVerification, name)
 				} else {
 					d.regressions = append(d.regressions, name)
@@ -127,10 +130,10 @@ func parseDecls(body, heading string, verbs bool) map[string]*changeDecl {
 
 // strayDeclEntries returns the list items under `# <heading>` that come before
 // its first `## <feature-id>` heading: entries that belong to no feature.
-func strayDeclEntries(body, heading string) []string {
+func strayDeclEntries(body, heading string, v7 bool) []string {
 	var out []string
 	inSection, seenSub := false, false
-	for _, line := range LogicalLines(body) {
+	for _, line := range declLines(body, v7) {
 		if m := headingRe.FindStringSubmatch(line); m != nil {
 			inSection = strings.EqualFold(strings.TrimSpace(m[1]), heading)
 			seenSub = false
@@ -153,28 +156,44 @@ func strayDeclEntries(body, heading string) []string {
 // anyHeadingRe is a Markdown heading of any level.
 var anyHeadingRe = regexp.MustCompile(`^#{1,6}\s`)
 
+// declLines is the lines parseDecls reads: entries joined across their
+// wrapped lines from v0.7, one physical line each before.
+func declLines(body string, v7 bool) []string {
+	if v7 {
+		return LogicalLines(body)
+	}
+	return strings.Split(body, "\n")
+}
+
 // LogicalLines splits a body into lines, joining each list item's
-// continuation lines onto it as Markdown reads them: a line after an item
-// that is not blank, a heading, a fence or an item of its own is part of that
-// item, indented or not. A declaration entry may then wrap the way an editor
-// wraps it.
+// continuation lines onto it: a line indented under an item that is not
+// blank, a heading, a fence or an item of its own is part of that item, so a
+// declaration entry may wrap the way an editor wraps it. A nested list item
+// starts an entry of its own, and an unindented line ends the item.
 func LogicalLines(body string) []string {
 	var out []string
 	inItem := false
-	for _, line := range strings.Split(body, "\n") {
+	for _, line := range strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n") {
 		t := strings.TrimSpace(line)
 		switch {
 		case t == "" || anyHeadingRe.MatchString(line) || strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~"):
 			inItem = false
 		case anyItemRe.MatchString(line):
 			inItem = true
-		case inItem:
+		case inItem && isIndented(line):
 			out[len(out)-1] = strings.TrimRight(out[len(out)-1], " \t") + " " + t
 			continue
+		default:
+			inItem = false
 		}
 		out = append(out, line)
 	}
 	return out
+}
+
+// isIndented reports whether a line starts with a space or a tab.
+func isIndented(line string) bool {
+	return line != "" && (line[0] == ' ' || line[0] == '\t')
 }
 
 // scenarioNames returns every Scenario:/Scenario Outline: name in a feature body.
@@ -238,7 +257,7 @@ func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*f
 		if c.status != "done" || c.docType != "Change" {
 			continue
 		}
-		for fid, d := range parseDecls(c.body, scenarioChangesHeading, true) {
+		for fid, d := range parseDecls(c.body, scenarioChangesHeading, true, v7) {
 			for _, nm := range removals(d, replaces) {
 				superseded[fid+"\x00"+nm] = true
 				removedBy[fid+"\x00"+nm] = append(removedBy[fid+"\x00"+nm], stamped{id, c.timestamp})
@@ -293,9 +312,9 @@ func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*f
 			continue
 		}
 
-		decls := parseDecls(c.body, wantHeading, !isFix)
+		decls := parseDecls(c.body, wantHeading, !isFix, v7)
 		if v7 {
-			for _, e := range strayDeclEntries(c.body, wantHeading) {
+			for _, e := range strayDeclEntries(c.body, wantHeading, v7) {
 				*errs = append(*errs, fmt.Sprintf("%s: `# %s` entry %q sits under no `## <feature-id>` heading (F10)", c.rel, wantHeading, e))
 			}
 			for _, fid := range sortedDeclKeys(decls) {
@@ -551,7 +570,7 @@ func checkRegressionLanded(changes map[string]*changeInfo, pairs map[string]*pai
 		if c.docType == "Fix" {
 			heading = regressionCasesHeading
 		}
-		decls := parseDecls(c.body, heading, c.docType == "Change")
+		decls := parseDecls(c.body, heading, c.docType == "Change", true) // v0.7 only
 		for _, fid := range sortedDeclKeys(decls) {
 			d := decls[fid]
 			if len(d.adds)+len(d.modifies)+len(d.removes)+len(d.regressions) == 0 {

@@ -21,4 +21,4 @@ The Venue closes at 17:00.
 ## venues/opening-hours
 
 - Venue owner sets opening
-hours — the closing time is an hour early
+  hours — the closing time is an hour early

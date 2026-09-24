@@ -48,9 +48,9 @@ scenario of that feature stays true. The addition is this feature's behavior:
 its interface goes in this feature's `slug.surface.md`, its proof in this
 feature's `slug.test.md`, and this feature names the one it builds on in
 `depends-on` (add it now if the brainstorm did not). When a scenario of a
-`done` feature would stop being true, that is not a task. Stop and tell the
-user: that feature changes only through a Change (fdf-change), and they decide
-whether it comes first.
+delivered (`done` or `adopted`) feature would stop being true, that is not a
+task. Stop and tell the user: that feature changes only through a Change
+(fdf-change), and they decide whether it comes first.
 
 ## Process
 
