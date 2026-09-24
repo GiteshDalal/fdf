@@ -9,11 +9,11 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 	"time"
 
 	fdf "github.com/GiteshDalal/fdf"
+	"github.com/GiteshDalal/fdf/cli/internal/specver"
 )
 
 const currentVersion = "0.7"
@@ -205,10 +205,6 @@ func ChangePlaceTaken(root, id string) string {
 	return ""
 }
 
-// specVersionRe matches an embedded spec filename stem (spec/<MAJOR.MINOR>.md),
-// so spec/README.md is skipped when listing versions.
-var specVersionRe = regexp.MustCompile(`^\d+\.\d+$`)
-
 // CurrentVersion is the spec version `fdf init` pins into new bundles and the
 // version `fdf spec` prints when none is requested.
 func CurrentVersion() string { return currentVersion }
@@ -225,18 +221,19 @@ func SpecVersions() []string {
 			continue
 		}
 		v := strings.TrimSuffix(e.Name(), ".md")
-		if v != e.Name() && specVersionRe.MatchString(v) {
+		// spec/README.md is not a version; spec/<MAJOR.MINOR>.md is.
+		if _, ok := specver.Parse(v); ok && v != e.Name() {
 			out = append(out, v)
 		}
 	}
-	sort.Strings(out)
+	specver.Sort(out)
 	return out
 }
 
 // SpecText returns the embedded normative text of a spec version, exactly as
 // published under spec/ — no bundle frontmatter (that is specDoc's job).
 func SpecText(version string) ([]byte, error) {
-	if !specVersionRe.MatchString(version) {
+	if _, ok := specver.Parse(version); !ok {
 		return nil, fmt.Errorf("%q is not a spec version (expected MAJOR.MINOR, e.g. %s)", version, currentVersion)
 	}
 	raw, err := fs.ReadFile(fdf.Assets, "spec/"+version+".md")

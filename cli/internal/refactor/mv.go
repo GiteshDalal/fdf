@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/GiteshDalal/fdf/cli/internal/links"
 	"github.com/GiteshDalal/fdf/cli/internal/logs"
 	"github.com/GiteshDalal/fdf/cli/internal/scaffold"
 )
@@ -25,11 +26,8 @@ var (
 	segRe      = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 	taskBaseRe = regexp.MustCompile(`^\d{2}-[a-z0-9][a-z0-9-]*$`)
 	trailRe    = regexp.MustCompile(`^([a-z0-9][a-z0-9-]*)\.([a-z]+)\.md$`)
-	linkRe     = regexp.MustCompile(`\]\(([^)\s]+)((?:\s+"[^"]*")?)\)`)
-	refDefRe   = regexp.MustCompile(`(?m)^[ \t]{0,3}\[[^\]\n]+\]:[ \t]*(\S+)`)
 	typeLineRe = regexp.MustCompile(`(?m)^type:\s*(\S+)\s*$`)
 	fenceRe    = regexp.MustCompile("^(`{3,}|~{3,})")
-	codeSpanRe = regexp.MustCompile("`+[^`\n]*?`+")
 )
 
 // registers are the reserved bundle-root directories holding documents of
@@ -324,21 +322,8 @@ func relSlash(rootAbs, p string) string {
 	return filepath.ToSlash(r)
 }
 
-// newPathOf maps a bundle-relative path through the move, or returns it as is.
-func (p *plan) newPathOf(rel string) (string, bool) {
-	if n, ok := p.files[rel]; ok {
-		return n, true
-	}
-	for o, n := range p.dirs {
-		if rel == o {
-			return n, true
-		}
-		if strings.HasPrefix(rel, o+"/") {
-			return n + strings.TrimPrefix(rel, o), true
-		}
-	}
-	return rel, false
-}
+// move is the plan as the link engine reads it: bundle-relative paths.
+func (p *plan) move() links.Move { return links.Move{Files: p.files, Dirs: p.dirs} }
 
 // edit is one file's new text and how many references changed in it.
 type edit struct {
@@ -351,49 +336,12 @@ type span struct {
 	text       string
 }
 
-// codeRanges marks fenced blocks and code spans: a link written there is a
-// sample, not a reference, and is left alone.
-func codeRanges(text string) []span {
-	var out []span
-	fence, fenceStart := "", 0
-	pos := 0
-	for _, line := range strings.SplitAfter(text, "\n") {
-		t := strings.TrimSpace(line)
-		switch {
-		case fence != "":
-			if strings.HasPrefix(t, fence) && strings.Trim(t, fence[:1]) == "" {
-				out = append(out, span{fenceStart, pos + len(line), ""})
-				fence = ""
-			}
-		case fenceRe.MatchString(t):
-			fence, fenceStart = fenceRe.FindString(t), pos
-		default:
-			for _, loc := range codeSpanRe.FindAllStringIndex(line, -1) {
-				out = append(out, span{pos + loc[0], pos + loc[1], ""})
-			}
-		}
-		pos += len(line)
-	}
-	if fence != "" {
-		out = append(out, span{fenceStart, len(text), ""})
-	}
-	return out
-}
-
-func inRanges(rs []span, at int) bool {
-	for _, r := range rs {
-		if at >= r.start && at < r.end {
-			return true
-		}
-	}
-	return false
-}
-
 // rewriteAll computes every file's new text: links and link-style references
 // to anything that moves, and — outside logs, which keep their words — every
 // mention of a moved document's ID.
 func rewriteAll(rootAbs string, p *plan) (map[string]*edit, error) {
 	edits := map[string]*edit{}
+	mv := p.move() // the same Move for every file and every link in it
 	err := filepath.WalkDir(rootAbs, func(q string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -413,32 +361,22 @@ func rewriteAll(rootAbs string, p *plan) (map[string]*edit, error) {
 			return rerr
 		}
 		text := string(raw)
-		newRel, _ := p.newPathOf(rel)
+		newRel, _ := mv.New(rel)
 		base := path.Base(rel)
 		isLog := base == "LOG.md" || strings.HasSuffix(base, ".log.md")
 
 		var reps []span
-		code := codeRanges(text)
-		targets := map[int]bool{}
-		for _, m := range linkRe.FindAllStringSubmatchIndex(text, -1) {
-			ts, te := m[2], m[3]
-			for i := ts; i < te; i++ {
+		targets := map[int]bool{} // link targets, which mentions leave to the engine
+		site := links.Site{OldPath: rel, NewPath: newRel}
+		for _, l := range links.Find(text) {
+			for i := l.Start; i < l.End; i++ {
 				targets[i] = true
 			}
-			if inRanges(code, ts) {
-				continue
+			if l.InCode {
+				continue // a sample, not a reference
 			}
-			if nt, ok := p.retarget(text[ts:te], rel, newRel); ok {
-				reps = append(reps, span{ts, te, nt})
-			}
-		}
-		for _, m := range refDefRe.FindAllStringSubmatchIndex(text, -1) {
-			ts, te := m[2], m[3]
-			for i := ts; i < te; i++ {
-				targets[i] = true
-			}
-			if nt, ok := p.retarget(text[ts:te], rel, newRel); ok {
-				reps = append(reps, span{ts, te, nt})
+			if nt, ok := links.Retarget(l.Target, site, mv); ok {
+				reps = append(reps, span{l.Start, l.End, nt})
 			}
 		}
 		if !isLog {
@@ -454,53 +392,6 @@ func rewriteAll(rootAbs string, p *plan) (map[string]*edit, error) {
 		return nil
 	})
 	return edits, err
-}
-
-// retarget returns a link target rewritten for the move: pointing at the
-// moved document, from wherever the linking document now is, in the style it
-// was written in (bundle-relative or relative), fragment kept.
-func (p *plan) retarget(target, rel, newRel string) (string, bool) {
-	if target == "" || strings.HasPrefix(target, "#") || strings.Contains(target, "://") ||
-		strings.HasPrefix(target, "mailto:") || strings.HasPrefix(target, "tel:") {
-		return "", false
-	}
-	pathPart, suffix := target, ""
-	if i := strings.IndexAny(target, "#?"); i >= 0 {
-		pathPart, suffix = target[:i], target[i:]
-	}
-	if pathPart == "" {
-		return "", false
-	}
-	trailing := strings.HasSuffix(pathPart, "/")
-	var resolved string
-	absolute := strings.HasPrefix(pathPart, "/")
-	if absolute {
-		resolved = path.Clean(strings.TrimPrefix(pathPart, "/"))
-	} else {
-		resolved = path.Clean(path.Join(path.Dir(rel), pathPart))
-	}
-	if strings.HasPrefix(resolved, "..") {
-		return "", false // outside the bundle
-	}
-	moved, targetMoved := p.newPathOf(resolved)
-	if !targetMoved && (absolute || newRel == rel) {
-		return "", false
-	}
-	var nt string
-	if absolute {
-		nt = "/" + moved
-	} else {
-		r, err := filepath.Rel(filepath.FromSlash(path.Dir(newRel)), filepath.FromSlash(moved))
-		if err != nil {
-			return "", false
-		}
-		nt = filepath.ToSlash(r)
-	}
-	if trailing && !strings.HasSuffix(nt, "/") {
-		nt += "/"
-	}
-	nt += suffix
-	return nt, nt != target
 }
 
 // isPathByte reports the characters a path or an ID is made of.
@@ -628,8 +519,6 @@ func applySpans(text string, reps []span) string {
 	return b.String()
 }
 
-var listLinkRe = regexp.MustCompile(`^\s*[-*]\s+.*\]\(([^)\s]+)`)
-
 // moveListings moves a moved document's line from its old index to its new
 // one, when the move changes the directory it is listed in. It edits the
 // already-rewritten texts and reports what it did.
@@ -655,21 +544,9 @@ func moveListings(rootAbs string, p *plan, edits map[string]*edit) []string {
 	}
 	var kept, movedLines []string
 	for _, line := range strings.Split(src, "\n") {
-		if m := listLinkRe.FindStringSubmatch(line); m != nil {
-			target := m[1]
-			if i := strings.IndexAny(target, "#?"); i >= 0 {
-				target = target[:i]
-			}
-			var resolved string
-			if strings.HasPrefix(target, "/") {
-				resolved = path.Clean(strings.TrimPrefix(target, "/"))
-			} else {
-				resolved = path.Clean(path.Join(oldDir, target))
-			}
-			if resolved == p.to+".md" { // the old index's line, already retargeted
-				movedLines = append(movedLines, line)
-				continue
-			}
+		if scaffold.ListingTarget(line, oldDir) == p.to+".md" { // the old index's line, already retargeted
+			movedLines = append(movedLines, line)
+			continue
 		}
 		kept = append(kept, line)
 	}
@@ -684,21 +561,20 @@ func moveListings(rootAbs string, p *plan, edits map[string]*edit) []string {
 		edits[rel] = &edit{newRel: rel, text: text, count: delta}
 	}
 	setText(oldIdx, strings.Join(kept, "\n"), 0)
-	// Re-express each line's link from the new index's position.
+	// Re-express each line's links from the new index's position: the text
+	// moves from one index to the other, and nothing it names moves.
+	site := links.Site{OldPath: oldIdx, NewPath: newIdx}
 	for i, line := range movedLines {
-		movedLines[i] = linkRe.ReplaceAllStringFunc(line, func(m string) string {
-			sm := linkRe.FindStringSubmatch(m)
-			target := sm[1]
-			if strings.HasPrefix(target, "/") {
-				return m
+		var reps []span
+		for _, l := range links.Find(line) {
+			if l.InCode {
+				continue // a sample, not a reference
 			}
-			abs := path.Clean(path.Join(oldDir, target))
-			r, err := filepath.Rel(filepath.FromSlash(newDir), filepath.FromSlash(abs))
-			if err != nil {
-				return m
+			if nt, ok := links.Retarget(l.Target, site, links.Move{}); ok {
+				reps = append(reps, span{l.Start, l.End, nt})
 			}
-			return "](" + filepath.ToSlash(r) + sm[2] + ")"
-		})
+		}
+		movedLines[i] = applySpans(line, reps)
 	}
 	notes := []string{fmt.Sprintf("listing moved from %s to %s", oldIdx, newIdx)}
 	dst, ok := textOf(newIdx)

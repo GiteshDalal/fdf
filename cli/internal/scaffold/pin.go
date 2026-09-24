@@ -15,6 +15,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/GiteshDalal/fdf/cli/internal/specver"
 )
 
 // reservedSince is the spec minor version from which each bundle-root
@@ -62,11 +64,8 @@ func pinAtLeast(pin string, minor int) bool {
 	for _, v := range SpecVersions() {
 		supported = supported || v == pin
 	}
-	var n int
-	if _, err := fmt.Sscanf(pin, "0.%d", &n); !supported || err != nil {
-		return false
-	}
-	return n >= minor
+	v, ok := specver.Parse(pin)
+	return supported && ok && v.AtLeast(specver.Version{Major: 0, Minor: minor})
 }
 
 // ReservedDirs returns the bundle-root directories the bundle at root reserves
