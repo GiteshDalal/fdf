@@ -34,18 +34,19 @@ func ListEntry(root, dir, id, title, what string, out io.Writer) int {
 			}
 			fmt.Fprintf(out, "wrote %s\n", idxRel)
 			line := fmt.Sprintf("* [%s](/%s) - %ss in %s.\n", heading, idxRel, what, group)
-			if code := addListing(root, dir+"/INDEX.md", idxRel, line, out); code != 0 {
+			if code := addListing(root, dir+"/INDEX.md", idxRel, heading, line, out); code != 0 {
 				return code
 			}
 		}
 	}
 	target := dir + "/" + id + ".md"
-	return addListing(root, idxRel, target, fmt.Sprintf("* [%s](/%s) - %s.\n", title, target, what), out)
+	return addListing(root, idxRel, target, title, fmt.Sprintf("* [%s](/%s) - %s.\n", title, target, what), out)
 }
 
 // addListing appends line to the index at idxRel unless the index already
-// lists target (a bundle-relative path).
-func addListing(root, idxRel, target, line string, out io.Writer) int {
+// lists target (a bundle-relative path), and says so the way `fdf new` does:
+// "updated <index> (now lists <title>)".
+func addListing(root, idxRel, target, title, line string, out io.Writer) int {
 	p := filepath.Join(root, filepath.FromSlash(idxRel))
 	raw, err := os.ReadFile(p)
 	if err != nil {
@@ -66,8 +67,24 @@ func addListing(root, idxRel, target, line string, out io.Writer) int {
 		fmt.Fprintln(out, "error:", err)
 		return 1
 	}
-	fmt.Fprintf(out, "listed it in %s\n", idxRel)
+	fmt.Fprintf(out, "updated %s (now lists %q)\n", idxRel, title)
 	return 0
+}
+
+// ListedIn returns the path of the INDEX.md beside the document at rel when
+// it lists the document — the index Unlist would change — or "".
+func ListedIn(root, rel string) string {
+	idxRel := path.Dir(rel) + "/INDEX.md"
+	raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(idxRel)))
+	if err != nil {
+		return ""
+	}
+	for _, l := range strings.Split(string(raw), "\n") {
+		if listingTarget(l, path.Dir(idxRel)) == rel {
+			return idxRel
+		}
+	}
+	return ""
 }
 
 // Unlist removes every listing of the document at rel (bundle-relative, such

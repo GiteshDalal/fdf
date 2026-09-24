@@ -276,3 +276,56 @@ func TestNewListsTheEntryAndCleanupUnlistsIt(t *testing.T) {
 		t.Errorf("cleanup should say it unlisted the entry:\n%s", out.String())
 	}
 }
+
+// The full ID — what `fdf log`, `fdf mv` and --from take — files the entry
+// where the ID says, not a level deeper under debts/debts/.
+func TestNewTakesTheFullID(t *testing.T) {
+	root := t.TempDir()
+	var out bytes.Buffer
+	if code := Debt.New(root, "debts/loose-config", nil, nil, &out); code != 0 {
+		t.Fatalf("fdf debt debts/loose-config: exit %d\n%s", code, out.String())
+	}
+	if code := Bug.New(root, "bugs/ui/label", nil, nil, &out); code != 0 {
+		t.Fatalf("fdf bug bugs/ui/label: exit %d\n%s", code, out.String())
+	}
+	for _, rel := range []string{"debts/loose-config.md", "bugs/ui/label.md"} {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); err != nil {
+			t.Errorf("%s was not written: %v\n%s", rel, err, out.String())
+		}
+	}
+	for _, rel := range []string{"debts/debts", "bugs/bugs"} {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); err == nil {
+			t.Errorf("%s/ must not exist:\n%s", rel, out.String())
+		}
+	}
+}
+
+// A dry run names everything the real run removes: the entry's log goes with
+// it, entries and all, and its listing leaves the index.
+func TestCleanupDryRunNamesTheLogAndTheListing(t *testing.T) {
+	root := t.TempDir()
+	var out bytes.Buffer
+	if code := Debt.New(root, "venues/slow-hours", nil, nil, &out); code != 0 {
+		t.Fatalf("fdf debt: exit %d\n%s", code, out.String())
+	}
+	seed(t, root, "venues/slow-hours", "resolved", "\n# Resolution\n\nCached in changes/x.\n")
+	logSib := filepath.Join(root, "debts", "venues", "slow-hours.log.md")
+	os.WriteFile(logSib, []byte("---\ntype: Log\n---\n\n## 2026-09-16\n\n* note\n"), 0o644)
+
+	out.Reset()
+	if code := Debt.Cleanup(root, true, false, &out); code != 0 {
+		t.Fatalf("dry run: exit %d\n%s", code, out.String())
+	}
+	for _, want := range []string{
+		"would remove debts/venues/slow-hours.md — ",
+		"  would remove debts/venues/slow-hours.log.md with it — its entries are not kept\n",
+		"  would unlist it from debts/venues/INDEX.md\n",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("dry run should say %q:\n%s", want, out.String())
+		}
+	}
+	if _, err := os.Stat(logSib); err != nil {
+		t.Fatal("a dry run changes nothing")
+	}
+}

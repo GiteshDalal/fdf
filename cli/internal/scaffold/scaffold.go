@@ -131,7 +131,7 @@ func EnsureDebtsIndex(root string, out io.Writer) int {
 }
 
 // EnsureBugsIndex creates bugs/INDEX.md if absent. The bug register (v0.7)
-// records known defects nobody is repairing yet.
+// records known defects that have not been repaired yet.
 func EnsureBugsIndex(root string, out io.Writer) int {
 	dir := filepath.Join(root, "bugs")
 	idx := filepath.Join(dir, "INDEX.md")
@@ -142,12 +142,23 @@ func EnsureBugsIndex(root string, out io.Writer) int {
 		fmt.Fprintln(out, "error:", err)
 		return 1
 	}
-	body := "# Bugs\n\nKnown defects — the software doing something wrong that someone could\nobserve — that nobody is repairing yet. Each is repaired by a Fix or a Change\nthat names it in `resolves`. Run `fdf bug` to read the register.\n\n* [Format reference](/SPEC.md) - how bugs are structured.\n"
+	body := "# Bugs\n\nKnown defects — the software doing something wrong that someone could\nobserve — that have not been repaired yet. Each is repaired by a Fix or a\nChange that names it in `resolves`. Run `fdf bug` to read the register.\n\n* [Format reference](/SPEC.md) - how bugs are structured.\n"
 	if err := os.WriteFile(idx, []byte(body), 0o644); err != nil {
 		fmt.Fprintln(out, "error:", err)
 		return 1
 	}
 	fmt.Fprintln(out, "wrote bugs/INDEX.md (the bug register)")
+	return 0
+}
+
+// ensureIndexes creates whichever of the reserved directories' indexes
+// `fdf init` scaffolds are absent.
+func ensureIndexes(root string, out io.Writer) int {
+	for _, ensure := range []func(string, io.Writer) int{EnsureChangesIndex, EnsurePracticesIndex, EnsureDebtsIndex, EnsureBugsIndex} {
+		if code := ensure(root, out); code != 0 {
+			return code
+		}
+	}
 	return 0
 }
 
@@ -299,10 +310,34 @@ var idRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*$`)
 var practiceSlugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 var practiceGroupedRe = regexp.MustCompile(`^([a-z0-9][a-z0-9-]*)/([a-z0-9][a-z0-9-]*)$`)
 
+// reservedGroups are the bundle-root directories that each hold one kind of
+// document, with the command that files one there. A feature's group is any
+// other name.
+var reservedGroups = map[string]string{
+	"changes":   "holds Changes and Fixes (start one with fdf change or fdf fix)",
+	"practices": "holds the project's practices (write one with fdf practice <slug>)",
+	"debts":     "holds the debt register (file one with fdf debt <slug>)",
+	"bugs":      "holds the bug register (file one with fdf bug <slug>)",
+	"releases":  "holds the releases (write one with fdf release <version>)",
+}
+
+// reservedGroup refuses a feature ID whose group is a reserved directory,
+// naming the command that files what belongs there.
+func reservedGroup(id string, out io.Writer) bool {
+	group, _, _ := strings.Cut(id, "/")
+	if what, ok := reservedGroups[group]; ok {
+		fmt.Fprintf(out, "error: %s/ %s; a feature's group is any other name\n", group, what)
+		return true
+	}
+	return false
+}
+
 // Practice scaffolds practices/<id>.md, where id is "<slug>" or
-// "<group>/<slug>". A practice has no trail and no tasks: the document is the
-// whole thing, so there is nothing else to create.
+// "<group>/<slug>" — or the full ID, practices/<slug>, which files it in the
+// same place. A practice has no trail and no tasks: the document is the whole
+// thing, so there is nothing else to create.
 func Practice(root, id string, out io.Writer) int {
+	id = strings.TrimPrefix(id, "practices/")
 	if !practiceSlugRe.MatchString(id) && !practiceGroupedRe.MatchString(id) {
 		fmt.Fprintf(out, "error: id must be <slug> or <group>/<slug>, lowercase [a-z0-9-]; got %q\n", id)
 		return 1
@@ -371,12 +406,15 @@ func Init(root string, out io.Writer) int {
 	idx := filepath.Join(root, "INDEX.md")
 	if raw, err := os.ReadFile(idx); err == nil {
 		if m := pinRe.FindSubmatch(raw); m != nil && string(m[1]) == currentVersion {
-			// Backfill the spec copy and context stubs for bundles
-			// initialized before they existed.
+			// Backfill what a bundle initialized before it existed, or since
+			// lost, is missing: the spec copy, Context stubs and indexes.
 			if code := writeSpec(root, false, out); code != 0 {
 				return code
 			}
 			if code := writeContextStubs(root, out); code != 0 {
+				return code
+			}
+			if code := ensureIndexes(root, out); code != 0 {
 				return code
 			}
 			fmt.Fprintf(out, "\ndone: bundle at %s was already initialized and up to date (fdf_version %s)\n", root, currentVersion)
@@ -411,22 +449,13 @@ func Init(root string, out io.Writer) int {
 	if code := writeContextStubs(root, out); code != 0 {
 		return code
 	}
-	if code := EnsureChangesIndex(root, out); code != 0 {
-		return code
-	}
-	if code := EnsurePracticesIndex(root, out); code != 0 {
-		return code
-	}
-	if code := EnsureDebtsIndex(root, out); code != 0 {
-		return code
-	}
-	if code := EnsureBugsIndex(root, out); code != 0 {
+	if code := ensureIndexes(root, out); code != 0 {
 		return code
 	}
 	fmt.Fprintf(out, "\ndone: initialized FDF bundle at %s\n", root)
 	fmt.Fprintf(out, "  pinned fdf_version %s; wrote INDEX.md, LOG.md, SPEC.md and %d Context stub(s)\n", currentVersion, len(contextDocs))
 	fmt.Fprintln(out, "next: run the fdf-init skill to fill "+contextDocNames()+" before adding features.")
-	fmt.Fprintln(out, "      `fdf validate` fails F9 until those stubs are filled and a feature exists.")
+	fmt.Fprintln(out, "      `fdf validate` warns about them now, and fails F9 once a feature exists while any is unfilled.")
 	fmt.Fprintln(out, "      On an existing codebase, map what it already does with `fdf adopt` (the fdf-adopt skill).")
 	return 0
 }
@@ -434,6 +463,9 @@ func Init(root string, out io.Writer) int {
 func New(root, id string, out io.Writer) int {
 	if !idRe.MatchString(id) {
 		fmt.Fprintf(out, "error: feature id must be <group>/<slug>, lowercase [a-z0-9-]; got %q\n", id)
+		return 1
+	}
+	if reservedGroup(id, out) {
 		return 1
 	}
 	group, slug, _ := strings.Cut(id, "/")
@@ -521,9 +553,12 @@ func Adopt(root, projectRoot, id string, resources []string, out io.Writer) int 
 		fmt.Fprintf(out, "error: feature id must be <group>/<slug>, lowercase [a-z0-9-]; got %q\n", id)
 		return 1
 	}
+	if reservedGroup(id, out) {
+		return 1
+	}
 	if len(resources) == 0 {
 		fmt.Fprintln(out, "error: --resource is required — name the code this capability lives in; with no tasks, it is the feature's only link to the code")
-		return 1
+		return 2
 	}
 	if projectRoot != "" {
 		for _, r := range resources {

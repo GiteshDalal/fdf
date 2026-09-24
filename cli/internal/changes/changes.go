@@ -34,8 +34,10 @@ func New(root, id, docType string, affects []string, out io.Writer) int {
 // NewFrom is New for work that repairs a bug on the register (v0.7): the new
 // document takes over the bug's analysis as its permanent record and names
 // the bug in `resolves`, which F10 holds to: once the work is done, the bug
-// must not read as open. affects defaults to the bug's own.
+// must not read as open. affects defaults to the bug's own. id may also be
+// the full ID, changes/<slug>, which files the document in the same place.
 func NewFrom(root, id, docType string, affects []string, fromBug string, out io.Writer) int {
+	id = strings.TrimPrefix(id, "changes/")
 	if !slugRe.MatchString(id) && !groupedRe.MatchString(id) {
 		fmt.Fprintf(out, "error: id must be <slug> or <group>/<slug>, lowercase [a-z0-9-]; got %q\n", id)
 		return 1
@@ -51,15 +53,15 @@ func NewFrom(root, id, docType string, affects []string, fromBug string, out io.
 			affects = b.affects
 		}
 		if len(affects) == 0 {
-			fmt.Fprintf(out, "error: %s names no feature in `affects`, so there is nothing for a %s to amend.\n", fromBug, strings.ToLower(docType))
+			fmt.Fprintf(out, "error: %s names no feature in `affects`, so there is nothing for a %s to amend.\n", fromBug, docType)
 			fmt.Fprintln(out, "  a defect in code no feature documents is repaired after its capability is adopted:")
 			fmt.Fprintln(out, "  `fdf adopt --resource <path> <group>/<slug>`, add that feature to the bug's `affects`, then retry.")
 			return 1
 		}
 	}
 	if len(affects) == 0 {
-		fmt.Fprintf(out, "error: --affects is required — name the delivered feature(s) this %s touches\n", strings.ToLower(docType))
-		return 1
+		fmt.Fprintf(out, "error: --affects is required — name the delivered feature(s) this %s touches\n", docType)
+		return 2
 	}
 	for _, f := range affects {
 		if !featureRe.MatchString(f) {
@@ -305,12 +307,8 @@ func History(root, featureID string, out io.Writer) int {
 	}
 	found := collect(root, "changes", featureID, func(t string) bool { return t == "Change" || t == "Fix" })
 	bugs := collect(root, "bugs", featureID, func(t string) bool { return t == "Bug" })
-	if len(found) == 0 && len(bugs) == 0 {
-		fmt.Fprintf(out, "%s: no changes or fixes since delivery\n", featureID)
-		return 0
-	}
 	if len(found) == 0 {
-		fmt.Fprintf(out, "%s: no changes or fixes since delivery\n", featureID)
+		fmt.Fprintf(out, "%s: no Change or Fix names it in `affects`\n", featureID)
 	} else {
 		fmt.Fprintf(out, "%s — %d post-delivery document(s):\n\n", featureID, len(found))
 		for _, e := range found {

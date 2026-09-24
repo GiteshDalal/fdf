@@ -144,4 +144,72 @@ func TestPracticeIsListed(t *testing.T) {
 	if want := "# Payments\n\n* [Capture](/practices/payments/capture.md) - practice.\n"; string(group) != want {
 		t.Errorf("practices/payments/INDEX.md:\n%s\nwant:\n%s", group, want)
 	}
+	// Each listing is reported the way `fdf new` reports its own.
+	for _, want := range []string{
+		`updated practices/INDEX.md (now lists "Permission checks")`,
+		`updated practices/INDEX.md (now lists "Payments")`,
+		`updated practices/payments/INDEX.md (now lists "Capture")`,
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output should say %q:\n%s", want, out.String())
+		}
+	}
+}
+
+// The full ID files a practice where it says, not under practices/practices/.
+func TestPracticeTakesTheFullID(t *testing.T) {
+	root := t.TempDir()
+	var out bytes.Buffer
+	if code := Practice(root, "practices/permission-checks", &out); code != 0 {
+		t.Fatalf("exit %d\n%s", code, out.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, "practices", "permission-checks.md")); err != nil {
+		t.Fatalf("practices/permission-checks.md was not written:\n%s", out.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, "practices", "practices")); err == nil {
+		t.Fatalf("practices/practices/ must not exist:\n%s", out.String())
+	}
+}
+
+// A reserved directory holds one kind of document; a feature there would be
+// filed where validation and every other command look for something else.
+func TestFeaturesRefuseAReservedGroup(t *testing.T) {
+	root := t.TempDir()
+	for _, tc := range []struct{ id, names string }{
+		{"debts/x", "fdf debt <slug>"},
+		{"bugs/x", "fdf bug <slug>"},
+		{"practices/x", "fdf practice <slug>"},
+		{"changes/x", "fdf change or fdf fix"},
+		{"releases/x", "fdf release <version>"},
+	} {
+		var out bytes.Buffer
+		if code := New(root, tc.id, &out); code != 1 {
+			t.Errorf("fdf new %s: exit %d, want 1\n%s", tc.id, code, out.String())
+		}
+		if code := Adopt(root, "", tc.id, []string{"main.go"}, &out); code != 1 {
+			t.Errorf("fdf adopt %s: exit %d, want 1\n%s", tc.id, code, out.String())
+		}
+		if !strings.Contains(out.String(), tc.names) || !strings.Contains(out.String(), "a feature's group is any other name") {
+			t.Errorf("%s: the refusal names %q:\n%s", tc.id, tc.names, out.String())
+		}
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(tc.id)+".md")); err == nil {
+			t.Errorf("%s.md must not be written", tc.id)
+		}
+	}
+}
+
+// Re-running init on a current bundle adds back what is missing — the
+// reserved directories' indexes included — and overwrites nothing.
+func TestInitBackfillsMissingIndexes(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "docs", "features")
+	var out bytes.Buffer
+	Init(root, &out)
+	if !strings.Contains(out.String(), "`fdf validate` warns about them now, and fails F9 once a feature exists") {
+		t.Errorf("init should say when F9 fails:\n%s", out.String())
+	}
+	os.Remove(filepath.Join(root, "bugs", "INDEX.md"))
+	out.Reset()
+	if code := Init(root, &out); code != 0 || !strings.Contains(out.String(), "wrote bugs/INDEX.md") {
+		t.Fatalf("re-init should restore bugs/INDEX.md: exit %d\n%s", code, out.String())
+	}
 }

@@ -95,6 +95,26 @@ func TestNewRejectsUnknownOrMissingAffects(t *testing.T) {
 			t.Errorf("%s: want %q, got %q", tc.name, tc.want, out.String())
 		}
 	}
+	// A missing required flag is a usage error.
+	var out bytes.Buffer
+	if code := New(root, "c-bare", "Fix", nil, &out); code != 2 {
+		t.Errorf("no --affects: exit %d, want 2\n%s", code, out.String())
+	}
+}
+
+// The full ID files the document where it says, not under changes/changes/.
+func TestNewTakesTheFullID(t *testing.T) {
+	root := bundle(t)
+	var out bytes.Buffer
+	if code := New(root, "changes/refund-window", "Change", []string{"payments/instant-refunds"}, &out); code != 0 {
+		t.Fatalf("exit %d\n%s", code, out.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, "changes", "refund-window.md")); err != nil {
+		t.Fatalf("changes/refund-window.md was not written:\n%s", out.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, "changes", "changes")); err == nil {
+		t.Fatalf("changes/changes/ must not exist:\n%s", out.String())
+	}
 }
 
 func TestHistoryFindsChangesByAffects(t *testing.T) {
@@ -121,7 +141,7 @@ func TestHistoryOnUntouchedFeatureSaysSo(t *testing.T) {
 	if code := History(root, "payments/instant-refunds", &out); code != 0 {
 		t.Fatalf("exit %d", code)
 	}
-	if !strings.Contains(out.String(), "no changes or fixes since delivery") {
+	if !strings.Contains(out.String(), "no Change or Fix names it in `affects`") {
 		t.Errorf("unexpected: %s", out.String())
 	}
 }

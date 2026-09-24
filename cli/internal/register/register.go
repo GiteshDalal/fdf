@@ -1,7 +1,7 @@
 // Package register implements `fdf debt` and `fdf bug` — the bundle's two
 // registers. A debt is a known gap between what the project says and what the
 // code does; a bug is a known defect, the software doing something wrong,
-// that nobody is repairing yet. Both are cheap to file on purpose: a register
+// that has not been repaired yet. Both are cheap to file on purpose: a register
 // only works if writing an entry costs nothing. The chores here are what keep
 // one worth reading — listing what is outstanding, and clearing out what is
 // closed.
@@ -318,6 +318,17 @@ func (k Kind) Cleanup(root string, dryRun, noLog bool, out io.Writer) int {
 		if e.resolution == "" {
 			fmt.Fprintf(out, "  warning: no `# Resolution` to log (validate should have caught this)\n")
 		}
+		if !dryRun {
+			continue
+		}
+		// Everything the real run does to an entry, so the plan hides nothing.
+		if fileExists(logOf(e)) {
+			fmt.Fprintf(out, "  would remove %s.log.md with it — its entries are not kept\n", e.id)
+		}
+		rel, _ := filepath.Rel(root, e.path)
+		if idx := scaffold.ListedIn(root, filepath.ToSlash(rel)); idx != "" {
+			fmt.Fprintf(out, "  would unlist it from %s\n", idx)
+		}
 	}
 	if dryRun {
 		fmt.Fprintf(out, "\ndry run: %d resolved %s(s) left in place. Re-run without --dry-run to clear them.\n", len(done), k.noun)
@@ -346,7 +357,7 @@ func (k Kind) Cleanup(root string, dryRun, noLog bool, out io.Writer) int {
 			fmt.Fprintf(out, "unlisted it from %s\n", idx)
 		}
 		// An entry's only legal sibling goes with it.
-		if log := strings.TrimSuffix(e.path, ".md") + ".log.md"; fileExists(log) {
+		if log := logOf(e); fileExists(log) {
 			if err := os.Remove(log); err != nil {
 				fmt.Fprintln(out, "error:", err)
 				return 1
@@ -363,6 +374,9 @@ func (k Kind) Cleanup(root string, dryRun, noLog bool, out io.Writer) int {
 }
 
 func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }
+
+// logOf is the path of an entry's log, its only legal sibling.
+func logOf(e entry) string { return strings.TrimSuffix(e.path, ".md") + ".log.md" }
 
 // appendLog writes one line per retired entry under today's date heading,
 // newest first — the ordering every FDF log uses. The entry's ID leads the
@@ -396,10 +410,13 @@ func resourceLine(resources []string, what string) string {
 	return "resource: [" + strings.Join(resources, ", ") + "]"
 }
 
-// New scaffolds <dir>/<id>.md, where id is "<slug>" or "<group>/<slug>".
-// affects (bugs only) names the features the defect shows up in; each must
-// exist. resources are the project-relative paths carrying the entry.
+// New scaffolds <dir>/<id>.md, where id is "<slug>" or "<group>/<slug>" — or
+// the full ID, which log, mv and --from take: typing it here files the entry
+// where the ID says, not a level deeper. affects (bugs only) names the
+// features the defect shows up in; each must exist. resources are the
+// project-relative paths carrying the entry.
 func (k Kind) New(root, id string, affects, resources []string, out io.Writer) int {
+	id = strings.TrimPrefix(id, k.Dir+"/")
 	for _, s := range Statuses {
 		if id == s {
 			fmt.Fprintf(out, "error: %q is a status, not a slug — did you mean `fdf %s --%s`?\n", id, k.noun, s)
