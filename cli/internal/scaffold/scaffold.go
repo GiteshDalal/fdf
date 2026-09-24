@@ -312,7 +312,8 @@ var practiceGroupedRe = regexp.MustCompile(`^([a-z0-9][a-z0-9-]*)/([a-z0-9][a-z0
 
 // reservedGroups are the bundle-root directories that each hold one kind of
 // document, with the command that files one there. A feature's group is any
-// other name.
+// other name — and any of these the bundle's pin does not reserve yet
+// (ReservedDirs): on a v0.6 bundle, bugs/ is a feature group like any other.
 var reservedGroups = map[string]string{
 	"changes":   "holds Changes and Fixes (start one with fdf change or fdf fix)",
 	"practices": "holds the project's practices (write one with fdf practice <slug>)",
@@ -321,12 +322,12 @@ var reservedGroups = map[string]string{
 	"releases":  "holds the releases (write one with fdf release <version>)",
 }
 
-// reservedGroup refuses a feature ID whose group is a reserved directory,
+// reservedGroup refuses a feature ID whose group the bundle's pin reserves,
 // naming the command that files what belongs there.
-func reservedGroup(id string, out io.Writer) bool {
+func reservedGroup(root, id string, out io.Writer) bool {
 	group, _, _ := strings.Cut(id, "/")
-	if what, ok := reservedGroups[group]; ok {
-		fmt.Fprintf(out, "error: %s/ %s; a feature's group is any other name\n", group, what)
+	if ReservedDirs(root)[group] {
+		fmt.Fprintf(out, "error: %s/ %s; a feature's group is any other name\n", group, reservedGroups[group])
 		return true
 	}
 	return false
@@ -465,7 +466,7 @@ func New(root, id string, out io.Writer) int {
 		fmt.Fprintf(out, "error: feature id must be <group>/<slug>, lowercase [a-z0-9-]; got %q\n", id)
 		return 1
 	}
-	if reservedGroup(id, out) {
+	if reservedGroup(root, id, out) {
 		return 1
 	}
 	group, slug, _ := strings.Cut(id, "/")
@@ -553,7 +554,7 @@ func Adopt(root, projectRoot, id string, resources []string, out io.Writer) int 
 		fmt.Fprintf(out, "error: feature id must be <group>/<slug>, lowercase [a-z0-9-]; got %q\n", id)
 		return 1
 	}
-	if reservedGroup(id, out) {
+	if reservedGroup(root, id, out) {
 		return 1
 	}
 	if len(resources) == 0 {

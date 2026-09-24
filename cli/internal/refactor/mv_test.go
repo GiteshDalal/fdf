@@ -218,6 +218,51 @@ func TestLogsKeepTheirWordsButNotBrokenLinks(t *testing.T) {
 	}
 }
 
+// bugsGroupV06 is a v0.6 bundle whose feature group is named bugs/: legal
+// under v0.6, and what `fdf migrate` asks to be moved before it reaches v0.7.
+func bugsGroupV06(t *testing.T) string {
+	t.Helper()
+	root := fixture(t, "valid-domain-v06")
+	write(t, root, "INDEX.md", read(t, root, "INDEX.md")+"* [Bugs](/bugs/INDEX.md) - the crash tracker.\n")
+	write(t, root, "bugs/INDEX.md", "# Bugs features\n\n* [Crash report](/bugs/crash-report.md) - crash reports.\n")
+	write(t, root, "bugs/crash-report.md", strings.NewReplacer("title: Example", "title: Crash report", "Feature: Example", "Feature: Crash report").
+		Replace(read(t, root, "wdise/example.md")))
+	validates(t, root)
+	return root
+}
+
+// Which directories are registers follows the pin: on a v0.6 bundle bugs/ is
+// a feature group, so its documents and the group itself move like any other.
+func TestMoveOnAV06BundleTreatsBugsAsAFeatureGroup(t *testing.T) {
+	root := bugsGroupV06(t)
+	move(t, root, "bugs/crash-report", "issues/crash-report")
+	gone(t, root, "bugs/crash-report.md")
+	if s := read(t, root, "issues/INDEX.md"); !strings.HasPrefix(s, "# Issues features\n") || !strings.Contains(s, "crash-report.md") {
+		t.Fatalf("the feature is listed in its new group:\n%s", s)
+	}
+	// Under v0.6 a feature may move into bugs/ as well.
+	move(t, root, "wdise/example", "bugs/example")
+	validates(t, root)
+
+	root = bugsGroupV06(t)
+	move(t, root, "bugs", "issues")
+	gone(t, root, "bugs")
+	read(t, root, "issues/crash-report.md")
+	if s := read(t, root, "INDEX.md"); !strings.Contains(s, "(/issues/INDEX.md)") {
+		t.Fatalf("the root index follows the group:\n%s", s)
+	}
+	validates(t, root)
+
+	// Without a bug register there is nothing to re-file a debt into.
+	root = bugsGroupV06(t)
+	write(t, root, "debts/INDEX.md", "# Debt\n\n* [Gap](/debts/gap.md) - a gap.\n")
+	write(t, root, "debts/gap.md", "---\ntype: Debt\nstatus: open\ntitle: Gap\ndescription: d.\ntimestamp: 2026-09-16T00:00:00Z\n---\n\n# Gap\n\nMissing.\n")
+	var out bytes.Buffer
+	if code := Move(root, "", "debts/gap", "bugs/gap", false, &out); code != 1 || !strings.Contains(out.String(), "a debt stays under debts/ (nothing changes register)") {
+		t.Fatalf("a v0.6 debt cannot be re-filed as a bug: exit %d\n%s", code, out.String())
+	}
+}
+
 func TestMoveRefusals(t *testing.T) {
 	root := fixture(t, "valid-bugs-v07")
 	cases := []struct{ from, to, want string }{

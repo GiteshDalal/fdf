@@ -165,9 +165,10 @@ var helpTopics = []helpTopic{
 		body: "Scaffold a draft feature at <group>/<slug>.md with frontmatter and\n" +
 			"placeholder Gherkin, creating the group directory and its INDEX.md if\n" +
 			"needed. Group and slug are lowercase [a-z0-9-], and the group is not a\n" +
-			"reserved directory (changes, practices, debts, bugs, releases). A draft\n" +
-			"may have a log (v0.7) but no other sibling and no task directory; the\n" +
-			"rest arrive as the feature advances.",
+			"directory the bundle's pin reserves: releases, and changes (from v0.5),\n" +
+			"practices and debts (v0.6) and bugs (v0.7). A draft may have a log\n" +
+			"(v0.7) but no other sibling and no task directory; the rest arrive as\n" +
+			"the feature advances.",
 		flags: []flagDoc{rootFlagDoc},
 		examples: []string{
 			"fdf new payments/instant-refunds",
@@ -413,8 +414,10 @@ var helpTopics = []helpTopic{
 			"their links repaired. It never overwrites, and it lists references\n" +
 			"outside the bundle without editing them. A debt and a bug can be re-filed\n" +
 			"as each other; a debt re-filed as a bug still needs the `# Expected` a\n" +
-			"bug states. The move is logged in LOG.md, then the bundle is validated,\n" +
-			"and the exit code is validation's.",
+			"bug states. Which directories are registers follows the bundle's pin: on\n" +
+			"a v0.6 bundle bugs/ is a feature group, which `fdf mv bugs <group>`\n" +
+			"renames before `fdf migrate`. The move is logged in LOG.md, then the\n" +
+			"bundle is validated, and the exit code is validation's.",
 		flags: []flagDoc{
 			{"--dry-run", "print what would move and what would be repaired, change nothing"},
 			rootFlagDoc,

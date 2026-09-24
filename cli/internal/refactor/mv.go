@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/GiteshDalal/fdf/cli/internal/logs"
+	"github.com/GiteshDalal/fdf/cli/internal/scaffold"
 )
 
 var (
@@ -32,7 +33,9 @@ var (
 )
 
 // registers are the reserved bundle-root directories holding documents of
-// one kind each (releases/ holds releases and nothing moves in it).
+// one kind each (releases/ holds releases and nothing moves in it). Which of
+// them a bundle has follows its pin (scaffold.ReservedDirs): on a v0.6
+// bundle, bugs/ is a feature group and moves like one.
 var registers = map[string]string{"changes": "change", "practices": "practice", "debts": "debt", "bugs": "bug"}
 
 // kind is what a move moves.
@@ -56,6 +59,8 @@ type plan struct {
 	task     [2]string         // a task rename: old and new stem, within one task directory
 	flip     map[string]string // new rel -> the type it takes (a debt re-filed as a bug, or back)
 	prefix   string            // the bundle's path in the project, e.g. "docs/features/"
+	reserved map[string]bool   // the bundle-root directories the pin reserves, releases/ included
+	reg      map[string]string // the registers among them: directory -> the noun of what it holds
 }
 
 // Move moves or renames a document — with its trail, task directory and log —
@@ -145,7 +150,13 @@ func isDir(p string) bool  { fi, err := os.Stat(p); return err == nil && fi.IsDi
 // makePlan classifies the source, checks the target, and lists everything
 // that moves.
 func makePlan(rootAbs, from, to string) (*plan, error) {
-	p := &plan{from: from, to: to, files: map[string]string{}, dirs: map[string]string{}, ids: map[string]string{}, flip: map[string]string{}}
+	p := &plan{from: from, to: to, files: map[string]string{}, dirs: map[string]string{}, ids: map[string]string{}, flip: map[string]string{},
+		reserved: scaffold.ReservedDirs(rootAbs), reg: map[string]string{}}
+	for dir, noun := range registers {
+		if p.reserved[dir] {
+			p.reg[dir] = noun
+		}
+	}
 	fp, tp := strings.Split(from, "/"), strings.Split(to, "/")
 	for _, s := range append(append([]string{}, fp...), tp...) {
 		if !segRe.MatchString(s) && !taskBaseRe.MatchString(s) {
@@ -160,17 +171,17 @@ func makePlan(rootAbs, from, to string) (*plan, error) {
 
 	switch {
 	case len(fp) == 1:
-		if registers[fp[0]] != "" || fp[0] == "releases" {
+		if p.reserved[fp[0]] {
 			return nil, fmt.Errorf("%s/ is a reserved directory; move the documents or groups inside it instead", fp[0])
 		}
 		if !isDir(src(from)) {
 			return nil, fmt.Errorf("%s is not a group in this bundle", from)
 		}
-		if len(tp) != 1 || registers[tp[0]] != "" || tp[0] == "releases" {
+		if len(tp) != 1 || p.reserved[tp[0]] {
 			return nil, fmt.Errorf("a feature group moves to another group name, not to %s", to)
 		}
 		p.kind = kGroup
-	case registers[fp[0]] != "":
+	case p.reg[fp[0]] != "":
 		switch {
 		case (len(fp) == 2 || len(fp) == 3) && docExists(from):
 			p.kind = kRegisterDoc
@@ -195,7 +206,7 @@ func makePlan(rootAbs, from, to string) (*plan, error) {
 
 	switch p.kind {
 	case kFeature:
-		if len(tp) != 2 || registers[tp[0]] != "" || tp[0] == "releases" {
+		if len(tp) != 2 || p.reserved[tp[0]] {
 			return nil, fmt.Errorf("a feature moves to <group>/<slug>, not %s", to)
 		}
 		p.addDoc(rootAbs, from, to, true)
@@ -216,15 +227,21 @@ func makePlan(rootAbs, from, to string) (*plan, error) {
 		})
 	case kRegisterDoc:
 		fromReg, toReg := fp[0], tp[0]
-		refile := (fromReg == "debts" && toReg == "bugs") || (fromReg == "bugs" && toReg == "debts")
+		// Re-filing needs both registers, and bugs/ is one from v0.7 only.
+		both := p.reg["debts"] != "" && p.reg["bugs"] != ""
+		refile := both && ((fromReg == "debts" && toReg == "bugs") || (fromReg == "bugs" && toReg == "debts"))
 		if fromReg != toReg && !refile {
-			return nil, fmt.Errorf("a %s stays under %s/ (a debt and a bug can be re-filed as each other; nothing else changes register)", registers[fromReg], fromReg)
+			why := "nothing changes register"
+			if both {
+				why = "a debt and a bug can be re-filed as each other; nothing else changes register"
+			}
+			return nil, fmt.Errorf("a %s stays under %s/ (%s)", p.reg[fromReg], fromReg, why)
 		}
 		if len(tp) < 2 || len(tp) > 3 {
 			return nil, fmt.Errorf("%s moves to %s/<slug> or %s/<group>/<slug>, not %s", from, toReg, toReg, to)
 		}
 		if isDir(src(from)) && fromReg != "changes" {
-			return nil, fmt.Errorf("%s has a directory beside it, which a %s never owns", from, registers[fromReg])
+			return nil, fmt.Errorf("%s has a directory beside it, which a %s never owns", from, p.reg[fromReg])
 		}
 		p.addDoc(rootAbs, from, to, fromReg == "changes")
 		if refile {
@@ -680,7 +697,7 @@ func moveListings(rootAbs string, p *plan, edits map[string]*edit) []string {
 	if !ok {
 		name := path.Base(newDir)
 		heading := strings.ToUpper(name[:1]) + name[1:]
-		if !strings.Contains(newDir, "/") && registers[newDir] == "" {
+		if !strings.Contains(newDir, "/") && p.reg[newDir] == "" {
 			heading += " features" // a feature group; a register or its group is named plainly
 		}
 		dst = "# " + heading + "\n\n"

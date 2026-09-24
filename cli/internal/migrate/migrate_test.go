@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/GiteshDalal/fdf/cli/internal/bundle"
+	"github.com/GiteshDalal/fdf/cli/internal/refactor"
 )
 
 func write(t *testing.T, root, rel, content string) {
@@ -565,6 +566,38 @@ func TestMigrateRefusesBugsFeatureGroup(t *testing.T) {
 	idx, _ := os.ReadFile(filepath.Join(root, "INDEX.md"))
 	if !strings.Contains(string(idx), `fdf_version: "0.6"`) {
 		t.Fatal("a refused migration must leave the bundle untouched")
+	}
+}
+
+// The refusal names its way out, and the way out works: `fdf mv bugs
+// <new-group>` renames the v0.6 feature group — bugs/ is not a register
+// under that pin — and the migration then goes through.
+func TestMigrateAfterMovingTheBugsFeatureGroup(t *testing.T) {
+	root := t.TempDir()
+	buildV06Bundle(t, root)
+	write(t, root, "INDEX.md", "---\nfdf_version: \"0.6\"\n---\n\n# Bundle\n\n* [Venues](/venues/INDEX.md) - group.\n* [Bugs](/bugs/INDEX.md) - the tracker.\n")
+	write(t, root, "bugs/INDEX.md", "# Bugs\n\n* [Tracker](/bugs/tracker.md) - a feature group named bugs.\n")
+	write(t, root, "bugs/tracker.md", "---\ntype: Feature\nstatus: draft\ntitle: Tracker\ndescription: d.\ntimestamp: 2026-09-16T00:00:00Z\n---\n\n# Feature\n\n```gherkin\nFeature: Tracker\n  As a user\n  I want it\n  So that it helps\n```\n\n# Scenarios\n\n```gherkin\nScenario: It works\n  Given it\n  When it runs\n  Then it works\n```\n")
+	var out bytes.Buffer
+	if code := Run(root, "", &out); code != 1 || !strings.Contains(out.String(), "`fdf mv bugs <new-group>`") {
+		t.Fatalf("migrate should refuse and name the move: exit %d\n%s", code, out.String())
+	}
+	out.Reset()
+	if code := refactor.Move(root, "", "bugs", "issues", false, &out); code != 0 {
+		t.Fatalf("fdf mv bugs issues on the v0.6 bundle: exit %d\n%s", code, out.String())
+	}
+	out.Reset()
+	if code := Run(root, "", &out); code != 0 {
+		t.Fatalf("migrate after the move: exit %d\n%s", code, out.String())
+	}
+	if idx, _ := os.ReadFile(filepath.Join(root, "INDEX.md")); !strings.Contains(string(idx), `fdf_version: "0.7"`) || !strings.Contains(string(idx), "(/issues/INDEX.md)") {
+		t.Fatalf("migrated, with the root index following the moved group:\n%s", idx)
+	}
+	if raw, err := os.ReadFile(filepath.Join(root, "bugs", "INDEX.md")); err != nil || !strings.Contains(string(raw), "Known defects") {
+		t.Fatalf("bugs/ is now the bug register: %v\n%s", err, raw)
+	}
+	if _, err := os.Stat(filepath.Join(root, "issues", "tracker.md")); err != nil {
+		t.Fatalf("the feature moved with its group: %v", err)
 	}
 }
 

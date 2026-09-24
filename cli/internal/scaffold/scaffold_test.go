@@ -171,10 +171,24 @@ func TestPracticeTakesTheFullID(t *testing.T) {
 	}
 }
 
+// pinned returns a temp bundle root whose INDEX.md pins pin ("" for none).
+func pinned(t *testing.T, pin string) string {
+	t.Helper()
+	root := t.TempDir()
+	index := "# Bundle\n\n* [Spec](/SPEC.md) - the format.\n"
+	if pin != "" {
+		index = "---\nfdf_version: \"" + pin + "\"\n---\n\n" + index
+	}
+	if err := os.WriteFile(filepath.Join(root, "INDEX.md"), []byte(index), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
 // A reserved directory holds one kind of document; a feature there would be
 // filed where validation and every other command look for something else.
 func TestFeaturesRefuseAReservedGroup(t *testing.T) {
-	root := t.TempDir()
+	root := pinned(t, currentVersion)
 	for _, tc := range []struct{ id, names string }{
 		{"debts/x", "fdf debt <slug>"},
 		{"bugs/x", "fdf bug <slug>"},
@@ -195,6 +209,93 @@ func TestFeaturesRefuseAReservedGroup(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(tc.id)+".md")); err == nil {
 			t.Errorf("%s.md must not be written", tc.id)
 		}
+	}
+}
+
+// A name is reserved only from the version that reserved it: under v0.6,
+// bugs/ is a feature group, and `fdf migrate` itself asks for one there to be
+// moved — so fdf new must be able to write one.
+func TestReservedGroupsFollowThePin(t *testing.T) {
+	for _, tc := range []struct {
+		pin     string
+		allowed []string
+		refused []string
+	}{
+		{"0.6", []string{"bugs"}, []string{"debts", "practices", "changes", "releases"}},
+		{"0.5", []string{"bugs", "debts", "practices"}, []string{"changes", "releases"}},
+		{"0.4", []string{"bugs", "debts", "practices", "changes"}, []string{"releases"}},
+		{"", []string{"bugs", "debts", "practices", "changes"}, []string{"releases"}},
+	} {
+		root := pinned(t, tc.pin)
+		for _, group := range tc.allowed {
+			var out bytes.Buffer
+			if code := New(root, group+"/crash-report", &out); code != 0 {
+				t.Errorf("pin %q: fdf new %s/crash-report: exit %d\n%s", tc.pin, group, code, out.String())
+			}
+		}
+		for _, group := range tc.refused {
+			var out bytes.Buffer
+			if code := New(root, group+"/crash-report", &out); code != 1 || !strings.Contains(out.String(), "a feature's group is any other name") {
+				t.Errorf("pin %q: fdf new %s/crash-report: exit %d, want a refusal\n%s", tc.pin, group, code, out.String())
+			}
+		}
+	}
+}
+
+// The gates are the validator's own: under every version it checks, a
+// feature in a directory the pin reserves fails validation, and one in any
+// other directory passes. This holds ReservedDirs to bundle.Validate.
+func TestReservedDirsMirrorTheValidator(t *testing.T) {
+	context := map[string][]string{
+		"0.2": nil,
+		"0.3": {"STACK.md", "ARCHITECTURE.md", "INFRA.md"},
+		"0.4": {"STACK.md", "ARCHITECTURE.md", "SURFACES.md", "INFRA.md"},
+		"0.5": {"STACK.md", "ARCHITECTURE.md", "SURFACES.md", "INFRA.md"},
+		"0.6": {"STACK.md", "ARCHITECTURE.md", "SURFACES.md", "INFRA.md", "DOMAIN.md"},
+		"0.7": {"STACK.md", "ARCHITECTURE.md", "SURFACES.md", "INFRA.md", "DOMAIN.md"},
+	}
+	if len(context) != len(SpecVersions()) {
+		t.Fatalf("this test knows the Context documents of %d spec versions; the binary embeds %v", len(context), SpecVersions())
+	}
+	feature := "---\ntype: Feature\nstatus: draft\ntitle: X\ndescription: d.\ntimestamp: 2026-09-24T00:00:00Z\n---\n\n" +
+		"```gherkin\nFeature: X\n  As a user\n  I want x\n  So that y\n```\n\n```gherkin\nScenario: It works\n  Given x\n  When y\n  Then z\n```\n"
+	for pin, docs := range context {
+		for dir := range reservedSince {
+			root := pinned(t, pin)
+			for _, name := range docs {
+				body := "Filled.\n"
+				if name == "DOMAIN.md" {
+					body = "# Terms\n\n## Venue\nA physical location where a merchant sells.\n- instead-of: shopfront\n"
+				}
+				os.WriteFile(filepath.Join(root, name), []byte("---\ntype: Context\ntitle: T\ndescription: d.\ntimestamp: 2026-09-24T00:00:00Z\n---\n\n"+body), 0o644)
+			}
+			os.MkdirAll(filepath.Join(root, dir), 0o755)
+			os.WriteFile(filepath.Join(root, dir, "x.md"), []byte(feature), 0o644)
+			var out bytes.Buffer
+			passes := bundle.Validate(root, bundle.Options{Out: &out}) == 0
+			if reserved := ReservedDirs(root)[dir]; passes == reserved {
+				t.Errorf("pin %s: ReservedDirs says %s/ reserved=%v, but a feature there validates=%v:\n%s", pin, dir, reserved, passes, out.String())
+			}
+		}
+	}
+}
+
+func TestPinReadsTheFrontmatterAsTheValidatorDoes(t *testing.T) {
+	for index, want := range map[string]string{
+		"---\nfdf_version: \"0.6\"\n---\n# B\n":             "0.6",
+		"---\nfdf_version: 0.5\n---\n":                      "0.5",
+		"\uFEFF---\r\nfdf_version: '0.7'\r\n---\r\n# B\r\n": "0.7",
+		"# B\n\nfdf_version: \"0.6\"\n":                     "", // not frontmatter
+		"---\nfdf_version: \"0.6\"\n# B\n":                  "", // unterminated
+	} {
+		root := t.TempDir()
+		os.WriteFile(filepath.Join(root, "INDEX.md"), []byte(index), 0o644)
+		if got := Pin(root); got != want {
+			t.Errorf("Pin(%q) = %q, want %q", index, got, want)
+		}
+	}
+	if PinAtLeast(pinned(t, "0.9"), 5) {
+		t.Error("a pin this fdf does not support is below every gate, as the validator treats it")
 	}
 }
 
