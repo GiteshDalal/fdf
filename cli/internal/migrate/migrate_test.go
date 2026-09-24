@@ -240,11 +240,12 @@ func TestMigrateV03ToV04StemLayout(t *testing.T) {
 		t.Fatalf("root LOG.md must remain: %v", err)
 	}
 
-	// Closing message lists four context docs and warns about F9.
+	// Closing message names the Context docs still to fill — the two the
+	// migration scaffolded, not the three the bundle already had — and warns
+	// about F9.
 	msg := out.String()
-	if !strings.Contains(msg, "STACK.md") || !strings.Contains(msg, "ARCHITECTURE.md") ||
-		!strings.Contains(msg, "SURFACES.md") || !strings.Contains(msg, "INFRA.md") {
-		t.Fatalf("closing message must list four context docs:\n%s", msg)
+	if !strings.Contains(msg, "\nnext: run the fdf-init skill to fill SURFACES.md and DOMAIN.md.\n") {
+		t.Fatalf("closing message must name the unfilled context docs:\n%s", msg)
 	}
 	if !strings.Contains(msg, "F9") {
 		t.Fatalf("closing message must warn about F9 on plain validate:\n%s", msg)
@@ -567,6 +568,53 @@ func TestMigrateRefusesBugsFeatureGroup(t *testing.T) {
 	if !strings.Contains(string(idx), `fdf_version: "0.6"`) {
 		t.Fatal("a refused migration must leave the bundle untouched")
 	}
+}
+
+// The fdf-init hint follows the validator's stub messages, not the word
+// "stub": a debt named stub-gateway in a filled bundle asks for nothing, and
+// an unfilled DOMAIN.md is the one stub named.
+func TestMigrateNamesOnlyTheUnfilledStubs(t *testing.T) {
+	root := t.TempDir()
+	buildV06Bundle(t, root)
+	// No description: validation warns, naming the file.
+	write(t, root, "debts/stub-gateway.md", "---\ntype: Debt\nstatus: open\ntitle: Stub gateway\nresource: []\ntimestamp: 2026-09-16T00:00:00Z\n---\n\n# Gap\n\nThe gateway is a stand-in.\n")
+	var out bytes.Buffer
+	if code := Run(root, "", &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
+	}
+	if !strings.Contains(out.String(), "debts/stub-gateway.md: missing recommended `description`") {
+		t.Fatalf("the test needs a validation line naming the debt:\n%s", out.String())
+	}
+	if strings.Contains(out.String(), "fdf-init") {
+		t.Errorf("every Context document is filled; nothing asks for fdf-init:\n%s", out.String())
+	}
+
+	// From v0.5, DOMAIN.md arrives as a stub, and the bundle has a feature.
+	root = t.TempDir()
+	buildV06Bundle(t, root)
+	os.Remove(filepath.Join(root, "DOMAIN.md"))
+	write(t, root, "INDEX.md", strings.Replace(string(mustRead(t, filepath.Join(root, "INDEX.md"))), `"0.6"`, `"0.5"`, 1))
+	out.Reset()
+	if code := Run(root, "", &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
+	}
+	for _, want := range []string{
+		"\nnext: run the fdf-init skill to fill DOMAIN.md.\n",
+		"warning: the next plain `fdf validate` will fail F9 until those stubs are filled",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output should say %q:\n%s", want, out.String())
+		}
+	}
+}
+
+func mustRead(t *testing.T, p string) []byte {
+	t.Helper()
+	raw, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
 }
 
 // The refusal names its way out, and the way out works: `fdf mv bugs

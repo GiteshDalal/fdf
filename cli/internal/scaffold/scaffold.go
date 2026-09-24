@@ -291,10 +291,6 @@ func writeSpec(root string, force bool, out io.Writer) int {
 
 // contextDocNames lists the Context documents for user-facing messages, so a
 // new one never leaves a stale literal behind.
-// ContextDocNames is contextDocNames for other packages (migrate's next-step
-// message), so the list of Context documents has one source.
-func ContextDocNames() string { return contextDocNames() }
-
 func contextDocNames() string {
 	names := make([]string, 0, len(contextDocs))
 	for _, c := range contextDocs {

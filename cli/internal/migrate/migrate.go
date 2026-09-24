@@ -277,16 +277,50 @@ func Run(root, repoRoot string, out io.Writer) int {
 	fmt.Fprintln(out, "\nvalidating migrated bundle:")
 	var report bytes.Buffer
 	code := bundle.Validate(root, bundle.Options{RepoRoot: repoRoot, Out: io.MultiWriter(out, &report), FreshStubsAdvisory: true})
-	// Say so only when validation found a stub: F9 fails a plain validate
-	// only while one is unfilled and the bundle has a feature.
-	if code == 0 && strings.Contains(report.String(), "stub") {
-		fmt.Fprintln(out, "\nnext: run the fdf-init skill to fill "+scaffold.ContextDocNames()+".")
-		if strings.Contains(report.String(), "(F9)") {
+	// Say so only when validation found a stub, and name the ones it found:
+	// F9 fails a plain validate only while one is unfilled and the bundle has
+	// a feature.
+	if stubs := stubsIn(report.String()); code == 0 && len(stubs) > 0 {
+		fmt.Fprintln(out, "\nnext: run the fdf-init skill to fill "+joinNames(stubs)+".")
+		if freshStubRe.MatchString(report.String()) {
 			fmt.Fprintln(out, "warning: the next plain `fdf validate` will fail F9 until those stubs are filled (migrate reports an unfilled stub as a warning, not an error).")
 		}
 	}
 	reportV07(root, report.String(), out)
 	return code
+}
+
+// stubRe matches the validator's messages for a Context document that is
+// still an unfilled stub (bundle's F9 check): "freshly scaffolded stub" while
+// the bundle has features — migrate's advisory form of F9 — and "still an
+// unfilled stub" while it has none. Only those lines mean the fdf-init
+// interview has work to do; a document that merely has "stub" in its name
+// (debts/stub-gateway.md) is not one of them.
+var stubRe = regexp.MustCompile(`(?m)^warn: ([A-Z]+\.md): (?:freshly scaffolded stub|still an unfilled stub) — run the fdf-init interview to populate it`)
+
+// freshStubRe is stubRe's advisory F9 form: a stub the next plain validate
+// fails, because the bundle has a feature.
+var freshStubRe = regexp.MustCompile(`(?m)^warn: [A-Z]+\.md: freshly scaffolded stub — .*\(F9\)$`)
+
+// stubsIn lists the Context documents a validation report calls unfilled
+// stubs, in the order it reports them.
+func stubsIn(report string) []string {
+	var names []string
+	for _, m := range stubRe.FindAllStringSubmatch(report, -1) {
+		names = append(names, m[1])
+	}
+	return names
+}
+
+// joinNames writes names as prose: "A", "A and B", "A, B, and C".
+func joinNames(names []string) string {
+	switch len(names) {
+	case 1:
+		return names[0]
+	case 2:
+		return names[0] + " and " + names[1]
+	}
+	return strings.Join(names[:len(names)-1], ", ") + ", and " + names[len(names)-1]
 }
 
 // reportV07 says what v0.7 changes about a bundle that has just reached it:
