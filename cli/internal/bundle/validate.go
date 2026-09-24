@@ -107,14 +107,15 @@ var releaseStatuses = []string{"planned", "shipped"}
 // outside this set is an F1 error directing the user to `fdf migrate`.
 var supportedVersions = map[string]bool{"0.2": true, "0.3": true, "0.4": true, "0.5": true, "0.6": true, "0.7": true}
 
-// pinAtLeast reports whether a supported pin is spec 0.<minor> or later. An
-// empty or unsupported pin validates under v0.2 rules (F1 reports the latter).
-func pinAtLeast(pin string, minor int) bool {
+// pinAtLeast reports whether a supported pin is spec version gate or later.
+// An empty or unsupported pin validates under v0.2 rules (F1 reports the
+// latter).
+func pinAtLeast(pin string, gate specver.Version) bool {
 	if !supportedVersions[pin] {
 		return false
 	}
 	v, ok := specver.Parse(pin)
-	return ok && v.AtLeast(specver.Version{Major: 0, Minor: minor})
+	return ok && v.AtLeast(gate)
 }
 
 // supportedList renders supportedVersions for error messages, so adding a
@@ -126,6 +127,22 @@ func supportedList() string {
 	}
 	specver.Sort(vs)
 	return strings.Join(vs, ", ")
+}
+
+// unsupportedPin is F1's error for a pin this validator does not check. A
+// version newer than every one it supports takes a newer fdf; any other,
+// `fdf migrate`.
+func unsupportedPin(pin string) string {
+	newer, ok := specver.Parse(pin)
+	for s := range supportedVersions {
+		if v, _ := specver.Parse(s); !v.Less(newer) {
+			ok = false
+		}
+	}
+	if ok {
+		return fmt.Sprintf("INDEX.md: fdf_version %q is newer than any version this fdf validates (%s) — upgrade fdf (F1)", pin, supportedList())
+	}
+	return fmt.Sprintf("INDEX.md: fdf_version %q is not a supported version (%s) — run `fdf migrate` (F1)", pin, supportedList())
 }
 
 // isStub reports whether a Context document still carries the stub marker
@@ -282,15 +299,15 @@ func Validate(root string, opts Options) int {
 	// SURFACES.md on v0.4+. Anything else validates under v0.2 rules.
 	pinnedVer := readPin(rootAbs)
 	// specStem: the stem-qualified trail layout (v0.4 onward).
-	specStem := pinAtLeast(pinnedVer, 4)
+	specStem := pinAtLeast(pinnedVer, specver.Version{Major: 0, Minor: 4})
 	// specV5: v0.5 and later — changes/, Change/Fix, `retired`, feature
 	// depends-on, F10. specV6 adds practices/, debts/, DOMAIN.md, F11-F13.
 	// specV7 adds bugs/ and F14, the `adopted` feature status, and F12's
 	// reach into every document and name.
-	specV5 := pinAtLeast(pinnedVer, 5)
-	specV6 := pinAtLeast(pinnedVer, 6)
-	specV7 := pinAtLeast(pinnedVer, 7)
-	specHasContext := pinAtLeast(pinnedVer, 3)
+	specV5 := pinAtLeast(pinnedVer, specver.Version{Major: 0, Minor: 5})
+	specV6 := pinAtLeast(pinnedVer, specver.Version{Major: 0, Minor: 6})
+	specV7 := pinAtLeast(pinnedVer, specver.Version{Major: 0, Minor: 7})
+	specHasContext := pinAtLeast(pinnedVer, specver.Version{Major: 0, Minor: 3})
 	// contextDocs[name] records a seen root Context document and whether it is
 	// still an unfilled stub, for F9.
 	contextDocs := map[string]bool{} // name -> isStub
@@ -376,7 +393,7 @@ func Validate(root string, opts Options) int {
 					if rel != "INDEX.md" || data == nil || data["fdf_version"] == nil {
 						warns = append(warns, fmt.Sprintf("%s: index file should not carry frontmatter", rel))
 					} else if v, _ := data["fdf_version"].(string); !supportedVersions[v] {
-						errs = append(errs, fmt.Sprintf("INDEX.md: fdf_version %q is not a supported version (%s) — run `fdf migrate` (F1)", v, supportedList()))
+						errs = append(errs, unsupportedPin(v))
 					}
 				} else if rel == "INDEX.md" {
 					warns = append(warns, "INDEX.md: root index should pin fdf_version")

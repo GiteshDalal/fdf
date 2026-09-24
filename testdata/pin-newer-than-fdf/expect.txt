@@ -1,0 +1,4 @@
+exit: 1
+contains: INDEX.md: fdf_version "9.0" is newer than any version this fdf validates
+contains: — upgrade fdf (F1)
+not-contains: fdf migrate
