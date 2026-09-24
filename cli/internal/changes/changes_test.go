@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -91,6 +92,34 @@ func TestNewChangeIsGroupedAndCarriesScenarioChanges(t *testing.T) {
 		t.Error("a changes/ group must get its own INDEX.md")
 	}
 }
+
+// The fdf-change skill deletes each scaffold line that starts `TODO —` once it
+// is answered or does not apply. Every such placeholder is one whole line, so
+// deleting it leaves nothing behind.
+func TestTodoPlaceholdersAreWholeLines(t *testing.T) {
+	root := bundle(t)
+	var out bytes.Buffer
+	for _, c := range []struct{ id, docType string }{{"refund-window", "Change"}, {"refund-rounding", "Fix"}} {
+		if code := New(root, c.id, c.docType, []string{"payments/instant-refunds"}, &out); code != 0 {
+			t.Fatalf("exit %d\n%s", code, out.String())
+		}
+		raw, _ := os.ReadFile(filepath.Join(root, "changes", c.id+".md"))
+		lines := strings.Split(string(raw), "\n")
+		for i := 1; i < len(lines); i++ {
+			// A placeholder line — `TODO —` after any bullet or `key:` — must
+			// not run on into the next: that line would be left behind.
+			prev, line := todoLineRe.MatchString(lines[i-1]), lines[i]
+			if prev && strings.TrimSpace(line) != "" && !newBlockRe.MatchString(line) {
+				t.Errorf("%s: %q continues a TODO line, and deleting that line leaves it behind:\n%s", c.docType, line, raw)
+			}
+		}
+	}
+}
+
+var (
+	todoLineRe = regexp.MustCompile(`^(?:- )?(?:[a-z-]+: )?TODO —`)
+	newBlockRe = regexp.MustCompile(`^(?:- |#|---|[a-z-]+:)`)
+)
 
 // A changes/ group is listed like every reserved directory's groups: its index
 // is titled after the group and listed once in changes/INDEX.md.
