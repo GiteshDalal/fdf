@@ -59,7 +59,8 @@ func isPathByte(c byte) bool {
 // variable or a placeholder, as in $PWD/, ${ROOT}/ or <worktree>/. One inside
 // a URL is left as it is, since a permalink keeps its path, and so is one
 // after a longer path, such as repo/docs/features, which may name another
-// bundle.
+// bundle. A match inside a longer name, as in mydocs/features or
+// docs/features-old, is no mention at all.
 func (p *plan) pathMentions(text string, skip map[int]bool, mv links.Move) []mention {
 	var out []mention
 	for i := 0; ; {
@@ -77,8 +78,8 @@ func (p *plan) pathMentions(text string, skip map[int]bool, mv links.Move) []men
 		for k > e && text[k-1] == '.' {
 			k-- // a dot that ends a sentence
 		}
-		if skip[s] || k > e && text[e] != '/' {
-			continue // a link the engine repairs, or a longer name: docs/features-old
+		if skip[s] || k > e && text[e] != '/' || s > 0 && text[s-1] != '/' && isPathByte(text[s-1]) {
+			continue // a link the engine repairs, or a longer name: docs/features-old, mydocs/features
 		}
 		written := text[s:k]
 		to, moved := mv.New(written)

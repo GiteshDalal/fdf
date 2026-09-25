@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/GiteshDalal/fdf/cli/internal/bundle"
+	"github.com/GiteshDalal/fdf/cli/internal/layout"
 	"github.com/GiteshDalal/fdf/cli/internal/scaffold"
 )
 
@@ -571,6 +572,24 @@ func TestMigrateRefusesACaseRenameOntoAnotherFile(t *testing.T) {
 	}
 	if after := tree(t, root); after != before {
 		t.Errorf("a refused migration changes nothing:\n%s", after)
+	}
+}
+
+// migrate discards the ok of scaffold.IndexText and scaffold.ContextStub
+// (indexes, repair), which is right only while scaffold has an index for
+// every register in layout but releases/, which fdf release writes, and a
+// stub for every Context document: one added to layout alone would be
+// written empty.
+func TestEveryRegisterAndContextDocumentHasItsText(t *testing.T) {
+	for _, reg := range layout.Registers {
+		if _, ok := scaffold.IndexText(reg); !ok && reg != "releases" {
+			t.Errorf("scaffold has no index for the register %s/, which migrate writes", reg)
+		}
+	}
+	for _, name := range layout.ContextDocs {
+		if stub, ok := scaffold.ContextStub(name); !ok || stub == "" {
+			t.Errorf("scaffold has no stub for %s, which migrate writes when it is missing", name)
+		}
 	}
 }
 
@@ -1992,7 +2011,8 @@ func TestMigrateDryRunLeavesGitAsItIs(t *testing.T) {
 // project root and a reference definition among them; a link in a code
 // sample is read as the code it is. Every occurrence of the old path left as
 // it is is listed: a mention inside a URL, or after a longer path, and a link
-// that spells the path but leads elsewhere. A bare feature ID outside the
+// that spells the path but leads elsewhere; a match inside a longer name,
+// such as mydocs/features, is no mention at all. A bare feature ID outside the
 // bundle is left alone; what fdf install manages is skipped and counted, a
 // link in it that leads elsewhere too; and a binary file is not read. Inside
 // the bundle the same rule applies, but logs keep their words.
@@ -2004,7 +2024,8 @@ func TestMigrateRewritesReferencesOutsideTheBundle(t *testing.T) {
 			"Permalink: https://github.com/org/repo/blob/main/docs/features/venues/opening-hours.md\n" +
 			"An old plan named repo/docs/features.\n" +
 			"Its root is [here](/docs/features/INDEX.md), and [the spec][spec] is vendored.\n\n[spec]: docs/features/SPEC.md\n" +
-			"\nSee [the permalink](https://github.com/org/repo/blob/main/docs/features/venues/opening-hours.md).\n",
+			"\nSee [the permalink](https://github.com/org/repo/blob/main/docs/features/venues/opening-hours.md).\n" +
+			"Its intro is in userdocs/features/intro.md, beside mydocs/features and .docs/features.\n",
 		"docs/launch/plan.md": "# Launch\n\nSee [the fix](../features/changes/old-fix.md) and [hours](../features/venues/opening-hours.md).\n" +
 			"The feature venues/opening-hours ships.\n",
 		"Taskfile.yml":    "tasks:\n  docs:\n    cmds:\n      - fdf validate --root $PWD/docs/features\n      - ls ${ROOT}/docs/features/venues\n",
@@ -2044,6 +2065,7 @@ func TestMigrateRewritesReferencesOutsideTheBundle(t *testing.T) {
 			"https://github.com/org/repo/blob/main/docs/features/venues/opening-hours.md\n",
 			"An old plan named repo/docs/features.\n",
 			"Its root is [here](/docs/fdf/INDEX.md), and [the spec][spec] is vendored.\n\n[spec]: docs/fdf/SPEC.md\n",
+			"Its intro is in userdocs/features/intro.md, beside mydocs/features and .docs/features.\n",
 		},
 		"docs/launch/plan.md": {
 			"See [the fix](../fdf/changes/old-fix.md) and [hours](../fdf/features/venues/opening-hours.md).\n",
@@ -2087,6 +2109,9 @@ func TestMigrateRewritesReferencesOutsideTheBundle(t *testing.T) {
 	}
 	if strings.Contains(out.String(), ".claude/") {
 		t.Errorf("the plan lists nothing in what fdf install manages:\n%s", out.String())
+	}
+	if strings.Contains(out.String(), "README.md:12") {
+		t.Errorf("a match inside a longer name, such as mydocs/features, is no mention, and is not listed:\n%s", out.String())
 	}
 	if diff := gitIn(t, project, "diff", "--name-only"); !strings.Contains(diff, "README.md\n") || !strings.Contains(diff, "Taskfile.yml\n") || strings.Contains(diff, ".claude/") {
 		t.Errorf("git diff shows what migrate rewrote outside the bundle, and nothing install manages:\n%s", diff)
