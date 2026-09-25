@@ -288,8 +288,9 @@ func TestMigrateAlready04IsNoop(t *testing.T) {
 
 // migrate upgrades a 0.x bundle to 0.7, and a bundle pinned to 1.0 is not
 // one: its steps would pin a conformant 1.0 bundle back to 0.7, and refuse
-// another with messages about v0.4. It is refused before anything is read
-// or written, whatever it holds, and however its pin is quoted.
+// another with messages about v0.4. It is refused before anything but its
+// pin is read, or anything is written, whatever it holds, and however its
+// pin is quoted; so is a pin that is almost 1.0 but no version.
 func TestMigrateLeavesA10BundleAsItIs(t *testing.T) {
 	const at10 = "cannot migrate: the bundle pins fdf_version 1.0, and this binary upgrades a 0.x bundle to 0.7 — the bundle was left as it is."
 	notAVersion := func(pin string) string {

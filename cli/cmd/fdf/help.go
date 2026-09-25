@@ -160,10 +160,10 @@ var helpTopics = []helpTopic{
 			"then counts what the new version checks that the old one did not. A\n" +
 			"pre-flight refuses content the new layout cannot hold and leaves the\n" +
 			"bundle untouched, so a refused run is safe to retry after fixing what it\n" +
-			"names. A bundle pinned to 1.0 or later is refused before anything is read.\n" +
-			"An unfilled Context stub is only a warning here; once the bundle has a\n" +
-			"feature, a plain `fdf validate` fails F9 until it is filled. Re-run `fdf\n" +
-			"install` afterwards.",
+			"names. A bundle pinned to 1.0 or later is refused before anything but its\n" +
+			"pin is read, or anything is written. An unfilled Context stub is only a\n" +
+			"warning here; once the bundle has a feature, a plain `fdf validate` fails\n" +
+			"F9 until it is filled. Re-run `fdf install` afterwards.",
 		flags:    []flagDoc{rootFlagDoc},
 		examples: []string{"fdf migrate", "fdf migrate --root docs/features"},
 	},

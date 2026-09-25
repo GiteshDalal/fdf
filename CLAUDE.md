@@ -72,7 +72,8 @@ command's usage line, its group and summary in the overview, `fdf help <command>
 is documented. A command that works on a bundle stops with `fdfroot.NoBundle` when the root
 holds no `INDEX.md`. Every command but `validate`, `migrate` and `serve` works on spec 1.x
 bundles only: `scaffold.RequireSupported` stops it on a bundle that pins 0.x, or no
-version, and points it at `fdf migrate`.
+version, and points it at `fdf migrate`; a pin that is not a `MAJOR.MINOR` version is to
+be corrected in `INDEX.md`, and a root inside a pinned bundle is sent to that bundle.
 
 - **`cli/internal/fdfroot`** — root resolution, used by every command. Bundle root precedence:
   `--root` flag > `FDF_ROOT_DIR` env > the default: the first of `docs/fdf` and
@@ -81,7 +82,11 @@ version, and points it at `fdf migrate`.
   `fdf_version`, so a documentation site's `docs/features` is never taken for a bundle
   (`pinned`). `Resolve` returns the root, which input chose it (the header labels the old
   location `pre-1.0 default docs/features`), and the bundle the default passed over when
-  both hold one (`Shadowed`), which the header warns about. Relative roots resolve against the
+  both hold one (`Shadowed`), which the header warns about. `BundleAbove` finds the nearest
+  directory above a root whose `INDEX.md` pins a version: a root whose own `INDEX.md` pins
+  nothing below one, such as `--root docs/fdf/features`, is a register or group of that
+  bundle, which the commands' gate and `fdf migrate` refuse in `InsideBundle`'s words.
+  Relative roots resolve against the
   **project root**, found by walking up to the topmost `.git`. A `.git` *file* (submodule)
   marks a boundary but the walk continues to the superproject — so `resource:` paths always
   verify against the real project root even when the bundle is a git submodule. A `.git`
@@ -206,7 +211,9 @@ version, and points it at `fdf migrate`.
   skill's `.fdf-version` reads `<version> skills=<digest> primer=<digest> root=<root>`, so
   another build of the same version upgrades, and a primer an earlier install recorded
   counts as fdf's own; also removes the superseded slash commands by exact name), and **`cli/internal/migrate`** (mechanical upgrades of a 0.x bundle to 0.7, its
-  `target`; it refuses a bundle pinned to 1.0 or later before reading anything.
+  `target`; it goes ahead only on a 0.x pin or none: a bundle pinned to 1.0 or later, or
+  to anything that is not a version, is refused before migrate reads anything but that
+  pin, or writes anything, and so is a root inside a pinned bundle.
   0.3→0.4 rewrites nested trail files to stem siblings and scaffolds
   `SURFACES.md`; 0.4→0.5, 0.5→0.6 and 0.6→0.7 are **additive**, so the pre-0.4 layout
   transform — pre-flight included — is skipped for bundles already in the stem layout.
