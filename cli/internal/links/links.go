@@ -225,14 +225,15 @@ type Span struct{ Start, End int }
 // starts in one of them is returned with InCode set.
 //
 // A fence opens on a line indented less than four columns, or on any line of
-// a list, and closes on a line of the same character at least as long as
-// the one that opened it. An indented code block is a line indented four
-// columns or more (a tab reaches the next multiple of four) that starts a
-// block outside a list, after a blank line, a heading or a closing fence,
-// and the indented lines that follow it. The text's first line continues
-// whatever came before it, so a line read on its own, such as one listing
-// line, is never code for its indentation alone. Code spans are marked in
-// each block of prose, and a heading is a block of its own.
+// a list, whose info string, after backticks, holds no backtick, and closes
+// on a line of the same character at least as long as the one that opened
+// it. An indented code block is a line indented four columns or more (a tab
+// reaches the next multiple of four) that starts a block outside a list,
+// after a blank line, a heading or a closing fence, and the indented lines
+// that follow it. The text's first line continues whatever came before it,
+// so a line read on its own, such as one listing line, is never code for its
+// indentation alone. Code spans are marked in each block of prose, and a
+// heading is a block of its own.
 func Code(text string) []Span {
 	code, _, _ := blocks(text)
 	return code
@@ -288,7 +289,7 @@ func blocks(text string) (code []Span, defAt map[int]bool, block []Span) {
 			block = append(block, Span{start, pos})
 			indented, boundary, para = true, false, false
 			continue
-		case fenceRe.MatchString(t) && (columns(line) < 4 || inList):
+		case opensFence(t) && (columns(line) < 4 || inList):
 			endProse(start)
 			fence, fenceStart = fenceRe.FindString(t), start
 			indented, boundary, para = false, false, false
@@ -325,6 +326,15 @@ func blocks(text string) (code []Span, defAt map[int]bool, block []Span) {
 		block = append(block, Span{fenceStart, len(text)})
 	}
 	return code, defAt, block
+}
+
+// opensFence reports whether t, a line without its indentation, is a fence
+// marker: three backticks or tildes or more, then the info string, which,
+// after backticks, holds no backtick. "```go fmt``` formats …" is prose that
+// starts with a code span.
+func opensFence(t string) bool {
+	f := fenceRe.FindString(t)
+	return f != "" && (f[0] != '`' || !strings.Contains(t[len(f):], "`"))
 }
 
 // columns is how far a line is indented, a tab reaching the next multiple of

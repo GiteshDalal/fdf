@@ -316,6 +316,20 @@ func TestFindAFenceIndentedFourColumnsOpensNoFence(t *testing.T) {
 	})
 }
 
+// A backtick fence's info string holds no backtick, as CommonMark reads it:
+// a line of prose that starts with a code span of three backticks, such as
+// "```go fmt``` formats …", opens no fence, so the links on it and after it
+// are prose. A tilde fence's info string may hold one.
+func TestFindABacktickInTheInfoStringOpensNoFence(t *testing.T) {
+	checkFind(t, "```go fmt``` formats [a](a.md).\n\n[b](b.md)\n\n"+
+		"~~~ `info`\n[c](c.md)\n~~~\n[d](d.md)\n", []wantLink{
+		{target: "a.md"},
+		{target: "b.md"},
+		{target: "c.md", inCode: true},
+		{target: "d.md"},
+	})
+}
+
 // A heading is a block of its own: a backtick in it pairs with nothing on the
 // next line, so it hides no link there.
 func TestFindAHeadingEndsItsBlock(t *testing.T) {
