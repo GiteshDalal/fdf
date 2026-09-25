@@ -9,11 +9,12 @@ import (
 
 func runMigrate(args []string, stdout io.Writer) int {
 	fs := newFlagSet("migrate")
-	root, source, _, exit, ok := resolveRootSource(fs, args, stdout)
+	r, _, exit, ok := resolveRootSource(fs, args, stdout)
 	if !ok {
 		return exit
 	}
-	announce("migrate", root, source, stdout)
+	root := r.Root
+	announce("migrate", r, stdout)
 	repoRoot := ""
 	if pr, standalone := fdfroot.ProjectRoot(root); !standalone {
 		repoRoot = pr

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -17,41 +18,34 @@ import (
 
 	// Aliased: this package's tests name a helper bundle.
 	validation "github.com/GiteshDalal/fdf/cli/internal/bundle"
+	"github.com/GiteshDalal/fdf/cli/internal/layout"
 	"github.com/GiteshDalal/fdf/cli/internal/scaffold"
 )
 
 var (
-	slugRe    = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
-	groupedRe = regexp.MustCompile(`^([a-z0-9][a-z0-9-]*)/([a-z0-9][a-z0-9-]*)$`)
-	featureRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*$`)
-	typeRe    = regexp.MustCompile(`(?m)^type:\s*(\S+)`)
-	statusRe  = regexp.MustCompile(`(?m)^status:\s*(\S+)`)
-	titleRe   = regexp.MustCompile(`(?m)^title:\s*(.+)$`)
+	typeRe   = regexp.MustCompile(`(?m)^type:\s*(\S+)`)
+	statusRe = regexp.MustCompile(`(?m)^status:\s*(\S+)`)
+	titleRe  = regexp.MustCompile(`(?m)^title:\s*(.+)$`)
 )
 
 // New scaffolds a Change (docType "Change") or Fix (docType "Fix") at
-// changes/<id>.md, where id is "<slug>" or "<group>/<slug>".
-func New(root, id, docType string, affects []string, out io.Writer) int {
-	return NewFrom(root, id, docType, affects, "", out)
+// changes/[<group>/…]<slug>.md.
+func New(root, name, docType string, affects []string, out io.Writer) int {
+	return NewFrom(root, name, docType, affects, "", out)
 }
 
-// NewFrom is New for work that repairs a bug on the register (v0.7): the new
+// NewFrom is New for work that repairs a bug on the register: the new
 // document takes over the bug's analysis as its permanent record and names
 // the bug in `resolves`, which F10 holds to: once the work is done, the bug
-// must not read as open. affects defaults to the bug's own. id may also be
-// the full ID, changes/<slug>, which files the document in the same place.
-// Changes and Fixes are v0.5: an older pin reads changes/ as a feature group,
-// so the command refuses there.
-func NewFrom(root, id, docType string, affects []string, fromBug string, out io.Writer) int {
-	if !scaffold.RequirePin(root, 5, "Changes and Fixes", "changes/ is a feature group, and a "+docType+" written there fails validation (F3)", out) {
-		return 1
-	}
-	id = strings.TrimPrefix(id, "changes/")
-	if !slugRe.MatchString(id) && !groupedRe.MatchString(id) {
-		fmt.Fprintf(out, "error: id must be <slug> or <group>/<slug>, lowercase [a-z0-9-]; got %q\n", id)
+// must not read as open. affects defaults to the bug's own. name is
+// [<group>/…]<slug>, or the full ID, changes/…, which files the document in
+// the same place.
+func NewFrom(root, name, docType string, affects []string, fromBug string, out io.Writer) int {
+	if !scaffold.RequireSupported(root, out) {
 		return 1
 	}
 	var b *bugDoc
+	bugsAffects := false // whether affects is the bug's own, not --affects
 	if fromBug != "" {
 		var err error
 		if b, err = readBug(root, fromBug); err != nil {
@@ -59,12 +53,12 @@ func NewFrom(root, id, docType string, affects []string, fromBug string, out io.
 			return 1
 		}
 		if len(affects) == 0 {
-			affects = b.affects
+			affects, bugsAffects = b.affects, true
 		}
 		if len(affects) == 0 {
 			fmt.Fprintf(out, "error: %s names no feature in `affects`, so there is nothing for a %s to amend.\n", fromBug, docType)
 			fmt.Fprintln(out, "  a defect in code no feature documents is repaired after its capability is adopted:")
-			fmt.Fprintln(out, "  `fdf adopt --resource <path> <group>/<slug>`, add that feature to the bug's `affects`, then retry.")
+			fmt.Fprintln(out, "  `fdf adopt --resource <path> [<group>/…]<slug>`, add its ID (features/…) to the bug's `affects`, then retry.")
 			return 1
 		}
 	}
@@ -73,35 +67,29 @@ func NewFrom(root, id, docType string, affects []string, fromBug string, out io.
 		return 2
 	}
 	for _, f := range affects {
-		if !featureRe.MatchString(f) {
-			fmt.Fprintf(out, "error: --affects takes feature IDs of the form <group>/<slug>; got %q\n", f)
+		switch {
+		case scaffold.IsFeature(root, f):
+		case bugsAffects:
+			// The bug is where the mistake is, and where it is corrected.
+			fmt.Fprintf(out, "error: %s's `affects` names %s, which is not a feature in this bundle (F14); correct it there, then retry%s\n", b.id, f, scaffold.FeatureHint(root, f))
 			return 1
-		}
-		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(f)+".md")); err != nil {
-			fmt.Fprintf(out, "error: --affects names %s, which is not a feature in this bundle\n", f)
+		default:
+			fmt.Fprintf(out, "error: --affects names %s, which is not a feature in this bundle%s\n", f, scaffold.FeatureHint(root, f))
 			return 1
 		}
 	}
 
-	path := filepath.Join(root, "changes", filepath.FromSlash(id)+".md")
-	if _, err := os.Stat(path); err == nil {
-		fmt.Fprintf(out, "error: changes/%s.md already exists\n", id)
+	id := scaffold.NewID(root, "changes", name, out)
+	if id == "" {
 		return 1
 	}
-	if why := scaffold.ChangePlaceTaken(root, id); why != "" {
-		fmt.Fprintln(out, "error: "+why)
-		return 1
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	file := filepath.Join(root, filepath.FromSlash(id)+".md")
+	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
 		fmt.Fprintln(out, "error:", err)
 		return 1
 	}
 
-	slug := id
-	if m := groupedRe.FindStringSubmatch(id); m != nil {
-		slug = m[2]
-	}
-	title := strings.ToUpper(slug[:1]) + strings.ReplaceAll(slug[1:], "-", " ")
+	title := scaffold.Title(path.Base(id))
 	affectsField := affects[0]
 	if len(affects) > 1 {
 		affectsField = "[" + strings.Join(affects, ", ") + "]"
@@ -152,22 +140,25 @@ func NewFrom(root, id, docType string, affects []string, fromBug string, out io.
 			sb.WriteString("- TODO scenario name (verbatim, must already exist) — TODO the command, test path, or manual procedure\n\n")
 		}
 	}
-	if err := os.WriteFile(path, []byte(sb.String()), 0o644); err != nil {
+	if err := scaffold.WriteNew(root, id, sb.String()); err != nil {
 		fmt.Fprintln(out, "error:", err)
 		return 1
 	}
-	fmt.Fprintf(out, "created changes/%s.md (type: %s, status: draft)\n", id, docType)
+	fmt.Fprintf(out, "created %s.md (type: %s, status: draft)\n", id, docType)
 
-	if code := ensureIndex(root, id, title, docType, out); code != 0 {
+	if code := scaffold.EnsureIndex(root, "changes", out); code != 0 {
 		return code
 	}
-	fmt.Fprintf(out, "\ndone: %s changes/%s affects %s\n", docType, id, strings.Join(affects, ", "))
+	if code := scaffold.ListEntry(root, "changes", strings.TrimPrefix(id, "changes/"), title, strings.ToLower(docType), out); code != 0 {
+		return code
+	}
+	fmt.Fprintf(out, "\ndone: %s %s affects %s\n", docType, id, strings.Join(affects, ", "))
 	if b != nil {
 		fmt.Fprintf(out, "resolves %s — its analysis is copied here; once this is done, flip the bug to resolved with a\n", b.id)
-		fmt.Fprintf(out, "  `# Resolution` naming changes/%s (F10 holds the bug to it).\n", id)
+		fmt.Fprintf(out, "  `# Resolution` naming %s (F10 holds the bug to it).\n", id)
 	}
 	if docType == "Change" {
-		fmt.Fprintln(out, "next: fill `# Scenario changes`, then write changes/"+id+".spec.md and get the design approved (status: specified).")
+		fmt.Fprintln(out, "next: fill `# Scenario changes`, then write "+id+".spec.md and get the design approved (status: specified).")
 	} else {
 		fmt.Fprintln(out, "next: fill `# Regression cases` with scenarios that already exist, and add the case to each affected feature's .test.md.")
 	}
@@ -183,7 +174,7 @@ func orTODO(s, what string) string {
 	return s
 }
 
-var bugIDRe = regexp.MustCompile(`^bugs/[a-z0-9][a-z0-9-]*(/[a-z0-9][a-z0-9-]*)?$`)
+var bugIDRe = regexp.MustCompile(`^bugs(/[a-z0-9][a-z0-9-]*)+$`)
 
 // bugDoc is the part of a Bug a Fix or Change takes over.
 type bugDoc struct {
@@ -197,7 +188,7 @@ type bugDoc struct {
 func readBug(root, id string) (*bugDoc, error) {
 	id = strings.TrimSuffix(strings.TrimPrefix(id, "/"), ".md")
 	if !bugIDRe.MatchString(id) {
-		return nil, fmt.Errorf("--from takes a bug ID of the form bugs/<slug> or bugs/<group>/<slug>; got %q", id)
+		return nil, fmt.Errorf("--from takes a bug's ID, bugs/[<group>/…]<slug>; got %q", id)
 	}
 	raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(id)+".md"))
 	if err != nil {
@@ -285,33 +276,21 @@ func listField(text, key string) []string {
 	return nil
 }
 
-// ensureIndex lists the new document in changes/INDEX.md, or in its group's
-// index, as every reserved directory lists its documents: a group's index is
-// created on first use, titled after the group, and listed in
-// changes/INDEX.md so the group can be found.
-func ensureIndex(root, id, title, docType string, out io.Writer) int {
-	if code := scaffold.EnsureChangesIndex(root, out); code != 0 {
-		return code
-	}
-	return scaffold.ListEntry(root, "changes", id, title, strings.ToLower(docType), out)
-}
-
 type entry struct {
 	id, docType, status, title string
 	resolves                   []string
 }
 
 // History prints every Change and Fix whose `affects` names a feature, and
-// (v0.7) every bug on the register that shows up in it. The edges are computed
-// from frontmatter, never from a hand-written back-link on the feature — a
+// every bug on the register that shows up in it. The edges are computed from
+// frontmatter, never from a hand-written back-link on the feature — a
 // required back-link is a standing invitation to drift.
 func History(root, featureID string, out io.Writer) int {
-	if !featureRe.MatchString(featureID) {
-		fmt.Fprintf(out, "error: feature id must be <group>/<slug>; got %q\n", featureID)
+	if !scaffold.RequireSupported(root, out) {
 		return 1
 	}
-	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(featureID)+".md")); err != nil {
-		fmt.Fprintf(out, "error: %s is not a feature in this bundle\n", featureID)
+	if !scaffold.IsFeature(root, featureID) {
+		fmt.Fprintf(out, "error: %s is not a feature in this bundle%s\n", featureID, scaffold.FeatureHint(root, featureID))
 		return 1
 	}
 	found := collect(root, "changes", featureID, func(t string) bool { return t == "Change" || t == "Fix" })
@@ -336,12 +315,22 @@ func History(root, featureID string, out io.Writer) int {
 	return 0
 }
 
-// collect reads the documents under one bundle directory whose type passes
-// want and whose `affects` names featureID, in ID order.
+// collect reads the documents layout files in one register whose type
+// passes want and whose `affects` names featureID, in ID order.
 func collect(root, dir, featureID string, want func(string) bool) []entry {
 	var found []entry
+	b := layout.New(os.DirFS(root))
 	filepath.WalkDir(filepath.Join(root, dir), func(p string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".md") || d.Name() == "INDEX.md" || d.Name() == "LOG.md" {
+		switch {
+		case err != nil:
+			return nil
+		case d.IsDir() && strings.HasPrefix(d.Name(), "."):
+			return filepath.SkipDir // a tool's state, not the bundle's
+		case d.IsDir() || !strings.HasSuffix(p, ".md"):
+			return nil
+		}
+		rel, _ := filepath.Rel(root, p)
+		if pos := b.File(filepath.ToSlash(rel)); pos.Kind != layout.Document || pos.Register != dir {
 			return nil
 		}
 		raw, rerr := os.ReadFile(p)
@@ -362,7 +351,6 @@ func collect(root, dir, featureID string, want func(string) bool) []entry {
 		if !hit {
 			return nil
 		}
-		rel, _ := filepath.Rel(root, p)
 		e := entry{id: strings.TrimSuffix(filepath.ToSlash(rel), ".md"), docType: m[1], resolves: listField(text, "resolves")}
 		if sm := statusRe.FindStringSubmatch(text); sm != nil {
 			e.status = sm[1]

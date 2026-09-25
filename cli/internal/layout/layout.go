@@ -14,6 +14,10 @@
 //     feature, Change or Fix it is the task directory, which holds only
 //     NN-<name>.md tasks; a practice, debt or bug owns no directory. Every
 //     other directory in a register is a group.
+//   - A directory that holds no Markdown, such as one of images, is outside
+//     FDF wherever it is, as a file that is not Markdown is.
+//   - No document is named index.md or log.md, which a disk that ignores
+//     case reads as the INDEX.md or LOG.md beside it.
 package layout
 
 import (
@@ -87,7 +91,13 @@ var roles = map[string][]string{
 // or bug owns no directory at all.
 var ownsTasks = map[string]bool{"features": true, "changes": true}
 
-var nouns = map[string]string{"practices": "practice", "debts": "debt", "bugs": "bug"}
+// nouns name what each register files.
+var nouns = map[string]string{"features": "feature", "changes": "Change or Fix", "practices": "practice", "debts": "debt", "bugs": "bug"}
+
+// caseTwins are the file names no document takes, each with the reserved
+// file a disk that ignores case reads it as: on macOS and Windows, by
+// default, index.md and INDEX.md in one directory are one file.
+var caseTwins = map[string]string{"index.md": "INDEX.md", "log.md": "LOG.md"}
 
 const (
 	rootFileProblem = "the bundle root holds only INDEX.md, LOG.md, SPEC.md, README.md and the five Context documents — file it in a register, or move it out of the bundle"
@@ -100,12 +110,15 @@ const (
 // time a question needs it, and keeps what it read: it is a snapshot, so a
 // caller that changes the bundle makes a new one to see the change.
 type Bundle struct {
-	fsys  fs.FS
-	names map[string]map[string]bool // directory -> the names it holds, read once
+	fsys     fs.FS
+	names    map[string]map[string]bool // directory -> the names it holds, read once
+	markdown map[string]bool            // directory -> whether it holds Markdown, at any depth
 }
 
 // New returns the Bundle whose root is the root of fsys.
-func New(fsys fs.FS) *Bundle { return &Bundle{fsys: fsys, names: map[string]map[string]bool{}} }
+func New(fsys fs.FS) *Bundle {
+	return &Bundle{fsys: fsys, names: map[string]map[string]bool{}, markdown: map[string]bool{}}
+}
 
 // has reports whether dir holds an entry called name, spelled exactly so: a
 // case-insensitive file system must not turn a group called index/ into the
@@ -121,6 +134,58 @@ func (b *Bundle) has(dir, name string) bool {
 		b.names[dir] = names
 	}
 	return names[name]
+}
+
+// spelled returns the name dir holds that differs from name only in case,
+// when dir holds nothing called name itself: on a disk that ignores case, a
+// path through name opens that entry.
+func (b *Bundle) spelled(dir, name string) string {
+	if b.has(dir, name) {
+		return ""
+	}
+	other := ""
+	for n := range b.names[dir] {
+		if strings.EqualFold(n, name) && (other == "" || n < other) {
+			other = n
+		}
+	}
+	return other
+}
+
+// HoldsMarkdown reports whether the directory at rel holds a Markdown file at
+// any depth, hidden files and directories aside. One that holds none is
+// outside FDF: no rule reads its position or its name.
+func (b *Bundle) HoldsMarkdown(rel string) bool {
+	if held, ok := b.markdown[rel]; ok {
+		return held
+	}
+	top := path.Clean("./" + rel)
+	held := false
+	fs.WalkDir(b.fsys, top, func(p string, e fs.DirEntry, err error) error {
+		switch {
+		case err != nil:
+			return nil
+		case p != top && strings.HasPrefix(e.Name(), "."):
+			if e.IsDir() {
+				return fs.SkipDir
+			}
+		case !e.IsDir() && strings.HasSuffix(e.Name(), ".md"):
+			held = true
+			return fs.SkipAll
+		}
+		return nil
+	})
+	b.markdown[rel] = held
+	return held
+}
+
+// Exists reports whether the bundle holds a file or directory at rel, a
+// slash-separated path from the bundle root, its name spelled exactly so:
+// on a disk that ignores case, os.Stat finds features/INDEX.md when asked
+// for features/index.md, and Exists does not.
+func (b *Bundle) Exists(rel string) bool {
+	dir, name := path.Split(rel)
+	return b.has(strings.TrimSuffix(dir, "/"), name)
 }
 
 // Dir returns the position of the directory at rel, a slash-separated path
@@ -178,6 +243,8 @@ func (b *Bundle) File(rel string) Position {
 		return Position{Kind: Index, Register: d.Register, ID: d.ID}
 	case name == "LOG.md":
 		return Position{Kind: Log, Register: d.Register, ID: d.ID}
+	case caseTwins[name] != "":
+		return stray(rel, fmt.Sprintf("no document is named %s: a disk that ignores case reads it as the %s beside it — rename it", name, caseTwins[name]))
 	case !fileRe.MatchString(name):
 		return stray(rel, "filenames are lowercase; uppercase is reserved for INDEX/LOG/SPEC/STACK/ARCHITECTURE/SURFACES/INFRA/DOMAIN.md")
 	case d.Register == "releases":
@@ -190,6 +257,57 @@ func (b *Bundle) File(rel string) Position {
 		return Position{Kind: Trail, Register: d.Register, ID: d.ID + "/" + m[1], Role: m[2]}
 	}
 	return Position{Kind: Document, Register: d.Register, ID: strings.TrimSuffix(rel, ".md")}
+}
+
+// Place says why a new document cannot be filed at id, a full ID such as
+// "features/payments/instant-refunds", in the bundle as it stands, or
+// returns "". The ID starts with a register that files documents (every one
+// but releases/), and its other parts are lowercase [a-z0-9-] names; the
+// last, its slug, is not index or log. Nothing may stand in its place: no
+// document of that name, and no directory of that name that holds Markdown,
+// which the new document would own. Nor may a directory on its way belong
+// to a document: a task directory holds only tasks, and a practice, debt or
+// bug owns no directory. And each directory on its way that is there is
+// spelled as the ID spells it: on a disk that ignores case, one spelled
+// otherwise is where the document would land, under a name F3 rejects.
+func (b *Bundle) Place(id string) string {
+	parts := strings.Split(id, "/")
+	reg := parts[0]
+	if !IsRegister(reg) || reg == "releases" || len(parts) < 2 {
+		return fmt.Sprintf("%s does not name a place in a register: a document's ID is <register>/[<group>/…]<slug>", id)
+	}
+	for _, p := range parts[1:] {
+		if !nameRe.MatchString(p) {
+			return fmt.Sprintf("%q in %s is not a name: names are lowercase [a-z0-9-]", p, id)
+		}
+	}
+	dir, name := path.Dir(id), path.Base(id)
+	if twin := caseTwins[name+".md"]; twin != "" {
+		return fmt.Sprintf("%s is not a slug: a disk that ignores case reads %s.md as the %s beside it (F3); choose another name", name, name, twin)
+	}
+	for i := 0; i < len(parts)-1; i++ {
+		parent := path.Join(parts[:i]...)
+		if other := b.spelled(parent, parts[i]); other != "" {
+			return fmt.Sprintf("%s/ is already there: a disk that ignores case would file %s in it, and directory names are lowercase (F3); rename that directory, or choose another name", path.Join(parent, other), id)
+		}
+	}
+	if dir != reg {
+		switch d := b.Dir(dir); d.Kind {
+		case TaskDir:
+			return fmt.Sprintf("%s/ is the task directory of %s and holds only its NN-slug.md tasks (F3); file this in a group of another name", d.ID, d.ID)
+		case Stray:
+			return fmt.Sprintf("%s: %s (F3)", d.Where, d.Problem)
+		}
+	}
+	switch {
+	case b.has(dir, name+".md"):
+		return id + ".md already exists"
+	case !b.has(dir, name) || !b.HoldsMarkdown(id):
+		return ""
+	case ownsTasks[reg]:
+		return fmt.Sprintf("%s/ is a group, and a %s named %s would make it its task directory (F3); choose another name", id, nouns[reg], name)
+	}
+	return fmt.Sprintf("%s/ is a group, and a %s named %s cannot sit beside it: a %s owns no directory (F3); choose another name", id, nouns[reg], name, nouns[reg])
 }
 
 // rootFile is the position of a Markdown file at the bundle root.

@@ -15,13 +15,13 @@ import (
 	"time"
 
 	"github.com/GiteshDalal/fdf/cli/internal/fdfroot"
+	"github.com/GiteshDalal/fdf/cli/internal/layout"
 	"github.com/GiteshDalal/fdf/cli/internal/scaffold"
 )
 
 var (
 	dateHeadRe  = regexp.MustCompile(`(?m)^##[ \t]+\d{4}-\d{2}-\d{2}[ \t]*$`)
 	typeRe      = regexp.MustCompile(`(?m)^type:\s*"?([A-Za-z]+)"?\s*$`)
-	statusRe    = regexp.MustCompile(`(?m)^status:\s*"?([a-z-]+)"?\s*$`)
 	titleRe     = regexp.MustCompile(`(?m)^title:\s*(.+?)\s*$`)
 	headingRe   = regexp.MustCompile(`(?m)^#\s+(.+?)\s*$`)
 	trailRe     = regexp.MustCompile(`^(.+)\.(spec|plan|test|surface|log)$`)
@@ -81,10 +81,13 @@ type target struct {
 	note   string // why the entry went somewhere other than the ID itself
 }
 
-// Resolve finds the log for id: "" is the bundle-root LOG.md; a group is its
-// LOG.md; a feature, change, fix, practice, debt or bug is its <id>.log.md; a
-// task or trail document is logged with the document that owns it; a Context
-// document, SPEC.md or a release is logged in the bundle-root LOG.md.
+// Resolve finds the log for id: "" is the bundle-root LOG.md; a register or
+// a group is its LOG.md; a feature, change, fix, practice, debt or bug is its
+// <id>.log.md; a task or trail document is logged with the document that owns
+// it; a Context document, SPEC.md or a release is logged in the bundle-root
+// LOG.md. Positions are layout's, so nothing with no place in a 1.0 bundle —
+// a directory that is not a register or a group, or a document in one — is
+// given a log.
 func Resolve(root, id string) (target, error) {
 	id = strings.Trim(filepath.ToSlash(strings.TrimSpace(id)), "/")
 	id = strings.TrimSuffix(id, ".md")
@@ -101,24 +104,31 @@ func Resolve(root, id string) (target, error) {
 		}
 		return t, err
 	}
-	raw, err := os.ReadFile(filepath.Join(root, id+".md"))
-	if err != nil {
-		if st, serr := os.Stat(filepath.Join(root, id)); serr == nil && st.IsDir() {
+	b := layout.New(os.DirFS(root))
+	if !b.Exists(id + ".md") {
+		if st, serr := os.Stat(filepath.Join(root, id)); serr == nil && st.IsDir() && b.Exists(id) {
+			switch pos := b.Dir(id); {
+			case pos.Kind == layout.Stray:
+				return target{}, fmt.Errorf("%s has no place in a 1.0 bundle — %s: %s (F3)", id, pos.Where, pos.Problem)
+			case !b.HoldsMarkdown(id):
+				return target{}, fmt.Errorf("%s/ holds no Markdown, so it is outside the bundle and has no log", id)
+			}
 			return groupLog(root, id), nil
 		}
-		return target{}, fmt.Errorf("no document or group %q in the bundle", id)
+		return target{}, fmt.Errorf("no document or group %q in the bundle%s", id, scaffold.IDHint(root, id))
+	}
+	if pos := b.File(id + ".md"); pos.Kind == layout.Stray {
+		return target{}, fmt.Errorf("%s has no place in a 1.0 bundle — %s: %s (F3)", id, pos.Where, pos.Problem)
+	}
+	raw, err := os.ReadFile(filepath.Join(root, id+".md"))
+	if err != nil {
+		return target{}, err
 	}
 	fm, _ := split(string(raw))
 	docType := first(typeRe, fm)
 	switch docType {
-	case "Feature":
-		// Before v0.7 a draft had no siblings at all, a log included.
-		if first(statusRe, fm) == "draft" && !scaffold.PinAtLeast(root, 7) {
-			return target{}, fmt.Errorf("%s is a draft, and under this bundle's pin a draft feature has no trail siblings (F4). "+
-				"Log in the bundle-root LOG.md until its spec is approved, or `fdf migrate` to v0.7, where a draft may have a log", id)
-		}
-		return siblingLog(id, docType, fm), nil
-	case "Change", "Fix", "Practice", "Debt", "Bug":
+	case "Feature", "Change", "Fix", "Practice", "Debt", "Bug":
+		// A draft feature may have a log: it is the one sibling a draft has.
 		return siblingLog(id, docType, fm), nil
 	case "Task":
 		owner := id
@@ -213,6 +223,9 @@ func Append(root, id, text string, out io.Writer) int {
 	}
 	if err := fdfroot.CheckBundle(root); err != nil {
 		fmt.Fprintln(out, "error:", err)
+		return 1
+	}
+	if !scaffold.RequireSupported(root, out) {
 		return 1
 	}
 	t, err := Resolve(root, id)

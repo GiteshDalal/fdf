@@ -30,3 +30,14 @@ func TestSpecVersionsAreOrderedByNumber(t *testing.T) {
 		t.Fatal("spec/README.md is not a version")
 	}
 }
+
+// RequireSupported names the newest of Supported(), so it must never be
+// empty: it holds the version fdf init pins.
+func TestSupportedHoldsTheCurrentVersion(t *testing.T) {
+	for _, v := range Supported() {
+		if v == CurrentVersion() {
+			return
+		}
+	}
+	t.Fatalf("Supported() = %v; want it to hold the current version, %s", Supported(), CurrentVersion())
+}

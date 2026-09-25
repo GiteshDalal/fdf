@@ -194,10 +194,10 @@ func TestFilingFlagsWithoutASlug(t *testing.T) {
 		if code != 2 {
 			t.Errorf("%v: exit %d", tc.args, code)
 		}
-		if tc.args[0] == "debt" && out != "usage: --resource applies when filing a debt: fdf debt [--resource <paths>] [<group>/]<slug>\n" {
+		if tc.args[0] == "debt" && out != "usage: --resource applies when filing a debt: fdf debt [--resource <paths>] [<group>/…]<slug>\n" {
 			t.Errorf("debt: %q", out)
 		}
-		if tc.args[0] == "bug" && out != "usage: --affects and --resource apply when filing a bug: fdf bug [--affects <ids>] [--resource <paths>] [<group>/]<slug>\n" {
+		if tc.args[0] == "bug" && out != "usage: --affects and --resource apply when filing a bug: fdf bug [--affects <ids>] [--resource <paths>] [<group>/…]<slug>\n" {
 			t.Errorf("bug: %q", out)
 		}
 	}
@@ -223,5 +223,69 @@ func TestCommandsSayTheSameWhenThereIsNoBundle(t *testing.T) {
 	}
 	if _, err := os.Stat(root); err == nil {
 		t.Errorf("no command may create %s", root)
+	}
+}
+
+// Every command that works on a bundle's documents points a 0.x bundle at
+// `fdf migrate`, in the same words, and writes nothing in it.
+func TestCommandsPointA0xBundleAtMigrate(t *testing.T) {
+	root := t.TempDir()
+	index := "---\nfdf_version: \"0.7\"\n---\n\n# Bundle\n"
+	if err := os.WriteFile(filepath.Join(root, "INDEX.md"), []byte(index), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FDF_ROOT_DIR", root)
+	want := "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0 bundles — run `fdf migrate` to upgrade it first\n"
+	for _, args := range [][]string{
+		{"new", "payments/x"}, {"adopt", "--resource", "main.go", "payments/x"}, {"adopt"}, {"practice", "x"},
+		{"debt"}, {"debt", "x"}, {"bug", "--cleanup"}, {"change", "--affects", "features/p/q", "x"},
+		{"fix", "--affects", "features/p/q", "x"}, {"history", "features/p/q"},
+		{"mv", "features/a", "features/b"}, {"lexicon"}, {"log", "an entry"}, {"release", "1.0.0"},
+	} {
+		code, out, _ := fdfRun(args...)
+		if code != 1 || !strings.Contains(out, want) {
+			t.Errorf("%v: exit %d, want 1 and %q:\n%s", args, code, want, out)
+		}
+	}
+	if entries, _ := os.ReadDir(root); len(entries) != 1 {
+		t.Errorf("no command may write in a 0.x bundle; it holds %d entries", len(entries))
+	}
+}
+
+// A register's INDEX.md pins nothing, so a root pointed at one used to be
+// sent to `fdf migrate`, which then built a second bundle inside the first.
+// Every command, init and migrate among them, names the bundle instead, in
+// the same words, and writes nothing.
+func TestCommandsSendARootInsideABundleToIt(t *testing.T) {
+	bundle := initBundle(t)
+	root := filepath.Join(bundle, "features")
+	t.Setenv("FDF_ROOT_DIR", root)
+	files := func() string {
+		var b strings.Builder
+		filepath.WalkDir(bundle, func(p string, d os.DirEntry, err error) error {
+			if err == nil && !d.IsDir() {
+				raw, _ := os.ReadFile(p)
+				b.WriteString("== " + p + "\n" + string(raw))
+			}
+			return nil
+		})
+		return b.String()
+	}
+	before := files()
+	want := "error: " + root + " is inside the bundle at " + bundle + ", not a bundle of its own — pass --root " + bundle + ", or leave --root out\n"
+	for _, args := range [][]string{
+		{"init"}, {"migrate"},
+		{"new", "payments/x"}, {"adopt", "--resource", "main.go", "payments/x"}, {"adopt"}, {"practice", "x"},
+		{"debt"}, {"debt", "x"}, {"bug", "--cleanup"}, {"change", "--affects", "features/p/q", "x"},
+		{"fix", "--affects", "features/p/q", "x"}, {"history", "features/p/q"},
+		{"mv", "features/a", "features/b"}, {"lexicon"}, {"log", "an entry"}, {"release", "1.0.0"},
+	} {
+		code, out, _ := fdfRun(args...)
+		if code != 1 || !strings.Contains(out, want) {
+			t.Errorf("%v: exit %d, want 1 and %q:\n%s", args, code, want, out)
+		}
+	}
+	if after := files(); after != before {
+		t.Errorf("no command may write inside the bundle:\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 }

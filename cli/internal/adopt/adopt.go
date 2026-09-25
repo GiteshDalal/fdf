@@ -18,6 +18,8 @@ import (
 	"strings"
 
 	"github.com/GiteshDalal/fdf/cli/internal/bundle"
+	"github.com/GiteshDalal/fdf/cli/internal/layout"
+	"github.com/GiteshDalal/fdf/cli/internal/scaffold"
 )
 
 var (
@@ -35,9 +37,12 @@ type feature struct {
 // `resource` paths live; empty skips the unclaimed-code section. depth is how
 // many path segments the unclaimed code is grouped by.
 func Map(root, projectRoot string, depth int, out io.Writer) int {
+	if !scaffold.RequireSupported(root, out) {
+		return 1
+	}
 	features, claims := scan(root)
 	if len(features) == 0 {
-		fmt.Fprintln(out, "no features in the bundle yet — map what the code already does with `fdf adopt --resource <path> <group>/<slug>`.")
+		fmt.Fprintln(out, "no features in the bundle yet — map what the code already does with `fdf adopt --resource <path> [<group>/…]<slug>`.")
 	} else {
 		printFeatures(features, out)
 	}
@@ -50,12 +55,26 @@ func Map(root, projectRoot string, depth int, out io.Writer) int {
 
 // scan reads every feature, and every path a document claims as code it
 // documents or built: an adopted feature's `resource`, and the `resource` of
-// every task, change and fix.
+// every task, Change and Fix. Each is found by its position, as layout reads
+// it: the documents in features/ and changes/, and their tasks.
 func scan(root string) ([]feature, []string) {
 	var features []feature
 	var claims []string
+	b := layout.New(os.DirFS(root))
 	filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".md") {
+		switch {
+		case err != nil:
+			return nil
+		case d.IsDir() && p != root && strings.HasPrefix(d.Name(), "."):
+			return filepath.SkipDir // a tool's state, not the bundle's
+		case d.IsDir() || !strings.HasSuffix(p, ".md"):
+			return nil
+		}
+		rel, _ := filepath.Rel(root, p)
+		pos := b.File(filepath.ToSlash(rel))
+		isFeature := pos.Kind == layout.Document && pos.Register == "features"
+		isClaim := pos.Kind == layout.Task || pos.Kind == layout.Document && pos.Register == "changes"
+		if !isFeature && !isClaim {
 			return nil
 		}
 		raw, rerr := os.ReadFile(p)
@@ -63,14 +82,16 @@ func scan(root string) ([]feature, []string) {
 			return nil
 		}
 		text := string(raw)
-		m := typeRe.FindStringSubmatch(text)
-		if m == nil {
-			return nil
+		if isFeature {
+			// Filed where a feature goes, but not one: an orphan task (F3),
+			// or a document of another type (F1).
+			if m := typeRe.FindStringSubmatch(text); m == nil || strings.Trim(m[1], `"'`) != "Feature" {
+				return nil
+			}
 		}
-		switch strings.Trim(m[1], `"'`) {
-		case "Feature":
-			rel, _ := filepath.Rel(root, p)
-			f := feature{id: strings.TrimSuffix(filepath.ToSlash(rel), ".md")}
+		switch {
+		case isFeature:
+			f := feature{id: pos.ID}
 			if sm := statusRe.FindStringSubmatch(text); sm != nil {
 				f.status = strings.Trim(sm[1], `"'`)
 			}
@@ -86,7 +107,7 @@ func scan(root string) ([]feature, []string) {
 			if f.status == "adopted" {
 				claims = append(claims, listField(text, "resource")...)
 			}
-		case "Task", "Change", "Fix":
+		default:
 			claims = append(claims, listField(text, "resource")...)
 		}
 		return nil
@@ -220,7 +241,7 @@ func printUnclaimed(root, projectRoot string, depth int, claims []string, out io
 		fmt.Fprintln(out, strings.TrimRight(line, " "))
 	}
 	fmt.Fprintln(out, "\nA claim is a `resource` path on an adopted feature, a task, a Change or a Fix. Map a capability")
-	fmt.Fprintln(out, "with `fdf adopt --resource <path> <group>/<slug>`; this list is a heuristic, not a verdict.")
+	fmt.Fprintln(out, "with `fdf adopt --resource <path> [<group>/…]<slug>`; this list is a heuristic, not a verdict.")
 	return 0
 }
 

@@ -15,10 +15,11 @@ import (
 // than a file an agent has to remember how to start.
 func runLog(args []string, stdout io.Writer) int {
 	fs := newFlagSet("log")
-	root, source, rest, exit, ok := resolveRootSource(fs, args, stdout)
+	r, rest, exit, ok := resolveRootSource(fs, args, stdout)
 	if !ok {
 		return exit
 	}
+	root := r.Root
 	var id, entry string
 	switch len(rest) {
 	case 1:
@@ -38,6 +39,6 @@ func runLog(args []string, stdout io.Writer) int {
 		printUsage(stdout, "log")
 		return 2
 	}
-	announce("log", root, source, stdout)
+	announce("log", r, stdout)
 	return logs.Append(root, id, entry, stdout)
 }

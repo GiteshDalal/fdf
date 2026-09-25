@@ -26,10 +26,11 @@ func runPostDelivery(cmd, docType string, args []string, stdout io.Writer) int {
 	fs := newFlagSet(cmd)
 	affects := fs.String("affects", "", "comma-separated feature ID(s) this touches (required unless --from names a bug that has them)")
 	from := fs.String("from", "", "bugs/<id> this work repairs: copies its analysis and writes `resolves`")
-	root, source, rest, exit, ok := resolveRootSource(fs, args, stdout)
+	r, rest, exit, ok := resolveRootSource(fs, args, stdout)
 	if !ok {
 		return exit
 	}
+	root := r.Root
 	if len(rest) != 1 {
 		printUsage(stdout, cmd)
 		return 2
@@ -39,7 +40,7 @@ func runPostDelivery(cmd, docType string, args []string, stdout io.Writer) int {
 		printUsage(stdout, cmd)
 		return 2
 	}
-	announce(cmd, root, source, stdout)
+	announce(cmd, r, stdout)
 	if !requireBundle(root, stdout) {
 		return 1
 	}
@@ -58,15 +59,16 @@ func runFix(args []string, stdout io.Writer) int {
 // rather than from back-links the feature would have to maintain by hand.
 func runHistory(args []string, stdout io.Writer) int {
 	fs := newFlagSet("history")
-	root, source, rest, exit, ok := resolveRootSource(fs, args, stdout)
+	r, rest, exit, ok := resolveRootSource(fs, args, stdout)
 	if !ok {
 		return exit
 	}
+	root := r.Root
 	if len(rest) != 1 {
 		printUsage(stdout, "history")
 		return 2
 	}
-	announce("history", root, source, stdout)
+	announce("history", r, stdout)
 	if !requireBundle(root, stdout) {
 		return 1
 	}

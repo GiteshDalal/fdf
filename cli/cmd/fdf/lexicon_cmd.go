@@ -18,10 +18,11 @@ func runLexicon(args []string, stdout io.Writer) int {
 	all := fs.Bool("all", false, "report every occurrence, not the first few per word")
 	fix := fs.Bool("fix", false, "replace each banned word with its term (a lexicon fix), logged in LOG.md")
 	dryRun := fs.Bool("dry-run", false, "with --fix: print the diff and change nothing")
-	root, source, _, exit, ok := resolveRootSource(fs, args, stdout)
+	r, _, exit, ok := resolveRootSource(fs, args, stdout)
 	if !ok {
 		return exit
 	}
+	root := r.Root
 	if *dryRun && !*fix {
 		t := "<Term>"
 		if *term != "" {
@@ -30,7 +31,7 @@ func runLexicon(args []string, stdout io.Writer) int {
 		fmt.Fprintf(stdout, "usage: --dry-run goes with --fix: fdf lexicon --term %s --fix --dry-run\n", t)
 		return 2
 	}
-	announce("lexicon", root, source, stdout)
+	announce("lexicon", r, stdout)
 	if !requireBundle(root, stdout) {
 		return 1
 	}

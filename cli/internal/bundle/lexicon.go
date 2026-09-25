@@ -495,9 +495,9 @@ func dirName(rootAbs, rel string) (string, bool) {
 // groupName is dirName under a 1.0 pin: the name of a group, at any depth in
 // any register. A register's own name, features/ included, is the format's,
 // a task directory is named by its document, and a directory with no
-// position has no name to scan.
+// position, or one that holds no Markdown, has no name to scan.
 func groupName(b *layout.Bundle, rel string) (string, bool) {
-	if b.Dir(rel).Kind != layout.Group {
+	if b.Dir(rel).Kind != layout.Group || !b.HoldsMarkdown(rel) {
 		return "", false
 	}
 	return path.Base(rel), true

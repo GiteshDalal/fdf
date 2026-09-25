@@ -13,6 +13,7 @@ import (
 
 	"github.com/GiteshDalal/fdf/cli/internal/bundle"
 	"github.com/GiteshDalal/fdf/cli/internal/logs"
+	"github.com/GiteshDalal/fdf/cli/internal/scaffold"
 )
 
 // LexiconOptions selects what `fdf lexicon` does.
@@ -37,6 +38,9 @@ func Lexicon(root string, opts LexiconOptions, out io.Writer) int {
 	rootAbs, err := filepath.Abs(root)
 	if err != nil {
 		fmt.Fprintln(out, "error:", err)
+		return 1
+	}
+	if !scaffold.RequireSupported(rootAbs, out) {
 		return 1
 	}
 	lex, problems := bundle.LoadLexicon(rootAbs)
