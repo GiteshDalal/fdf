@@ -91,7 +91,8 @@ var roles = map[string][]string{
 // or bug owns no directory at all.
 var ownsTasks = map[string]bool{"features": true, "changes": true}
 
-var nouns = map[string]string{"practices": "practice", "debts": "debt", "bugs": "bug"}
+// nouns name what each register files.
+var nouns = map[string]string{"features": "feature", "changes": "Change or Fix", "practices": "practice", "debts": "debt", "bugs": "bug"}
 
 // caseTwins are the file names no document takes, each with the reserved
 // file a disk that ignores case reads it as: on macOS and Windows, by
@@ -160,6 +161,15 @@ func (b *Bundle) HoldsMarkdown(rel string) bool {
 	})
 	b.markdown[rel] = held
 	return held
+}
+
+// Exists reports whether the bundle holds a file or directory at rel, a
+// slash-separated path from the bundle root, its name spelled exactly so:
+// on a disk that ignores case, os.Stat finds features/INDEX.md when asked
+// for features/index.md, and Exists does not.
+func (b *Bundle) Exists(rel string) bool {
+	dir, name := path.Split(rel)
+	return b.has(strings.TrimSuffix(dir, "/"), name)
 }
 
 // Dir returns the position of the directory at rel, a slash-separated path
@@ -231,6 +241,49 @@ func (b *Bundle) File(rel string) Position {
 		return Position{Kind: Trail, Register: d.Register, ID: d.ID + "/" + m[1], Role: m[2]}
 	}
 	return Position{Kind: Document, Register: d.Register, ID: strings.TrimSuffix(rel, ".md")}
+}
+
+// Place says why a new document cannot be filed at id, a full ID such as
+// "features/payments/instant-refunds", in the bundle as it stands, or
+// returns "". The ID starts with a register that files documents (every one
+// but releases/), and its other parts are lowercase [a-z0-9-] names; the
+// last, its slug, is not index or log. Nothing may stand in its place: no
+// document of that name, and no directory of that name that holds Markdown,
+// which the new document would own. Nor may a directory on its way belong
+// to a document: a task directory holds only tasks, and a practice, debt or
+// bug owns no directory.
+func (b *Bundle) Place(id string) string {
+	parts := strings.Split(id, "/")
+	reg := parts[0]
+	if !IsRegister(reg) || reg == "releases" || len(parts) < 2 {
+		return fmt.Sprintf("%s does not name a place in a register: a document's ID is <register>/[<group>/…]<slug>", id)
+	}
+	for _, p := range parts[1:] {
+		if !nameRe.MatchString(p) {
+			return fmt.Sprintf("%q in %s is not a name: names are lowercase [a-z0-9-]", p, id)
+		}
+	}
+	dir, name := path.Dir(id), path.Base(id)
+	if twin := caseTwins[name+".md"]; twin != "" {
+		return fmt.Sprintf("%s is not a slug: a disk that ignores case reads %s.md as the %s beside it (F3); choose another name", name, name, twin)
+	}
+	if dir != reg {
+		switch d := b.Dir(dir); d.Kind {
+		case TaskDir:
+			return fmt.Sprintf("%s/ is the task directory of %s and holds only its NN-slug.md tasks (F3); file this in a group of another name", d.ID, d.ID)
+		case Stray:
+			return fmt.Sprintf("%s: %s (F3)", d.Where, d.Problem)
+		}
+	}
+	switch {
+	case b.has(dir, name+".md"):
+		return id + ".md already exists"
+	case !b.has(dir, name) || !b.HoldsMarkdown(id):
+		return ""
+	case ownsTasks[reg]:
+		return fmt.Sprintf("%s/ is a group, and a %s named %s would make it its task directory (F3); choose another name", id, nouns[reg], name)
+	}
+	return fmt.Sprintf("%s/ is a group, and a %s named %s cannot sit beside it: a %s owns no directory (F3); choose another name", id, nouns[reg], name, nouns[reg])
 }
 
 // rootFile is the position of a Markdown file at the bundle root.

@@ -15,41 +15,48 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/GiteshDalal/fdf/cli/internal/links"
 )
 
-var listingLinkRe = regexp.MustCompile(`^\s*[-*+]\s+.*?\]\(([^)\s]+)\)`)
+var (
+	listingLinkRe = regexp.MustCompile(`^\s*[-*+]\s+.*?\]\(([^)\s]+)\)`)
+	listItemRe    = regexp.MustCompile(`^\s*[-*+]\s`)
+)
 
 // ListEntry adds `* [<title>](/<dir>/<id>.md) - <what>.` to the INDEX.md of
-// the directory the document sits in: <dir>/INDEX.md, or
-// <dir>/<group>/INDEX.md for a grouped id. A group's index is created on first
-// use and listed in <dir>/INDEX.md, so the group can be found. A document
-// already listed is left alone.
+// the directory the document sits in: <dir>/INDEX.md for an id with no group,
+// or the index of its innermost group, at any depth. A group's index is
+// created on first use and listed in its parent's, so every group can be
+// found from its register's index. A document already listed is left alone.
 func ListEntry(root, dir, id, title, what string, out io.Writer) int {
-	idxRel := dir + "/INDEX.md"
-	if group, _, grouped := strings.Cut(id, "/"); grouped {
-		idxRel = dir + "/" + group + "/INDEX.md"
+	parent := dir
+	parts := strings.Split(id, "/")
+	for _, group := range parts[:len(parts)-1] {
+		idxRel := parent + "/" + group + "/INDEX.md"
 		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(idxRel))); err != nil {
-			if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(idxRel)), []byte("# "+GroupTitle(dir, group)+"\n"), 0o644); err != nil {
+			if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(idxRel)), []byte("# "+GroupTitle(parent, group)+"\n"), 0o644); err != nil {
 				fmt.Fprintln(out, "error:", err)
 				return 1
 			}
 			fmt.Fprintf(out, "wrote %s\n", idxRel)
-			if code := ListGroup(root, dir, group, out); code != 0 {
+			if code := ListGroup(root, parent, group, out); code != 0 {
 				return code
 			}
 		}
+		parent += "/" + group
 	}
 	target := dir + "/" + id + ".md"
-	return addListing(root, idxRel, target, title, fmt.Sprintf("* [%s](/%s) - %s.\n", title, target, what), out)
+	return addListing(root, parent+"/INDEX.md", target, title, fmt.Sprintf("* [%s](/%s) - %s.\n", title, target, what), out)
 }
 
-// groupNouns say what a group of each reserved directory holds, for the
-// listing the directory's INDEX.md gives it: a changes/ group holds both
-// kinds of post-delivery work.
-var groupNouns = map[string]string{"changes": "changes and fixes", "practices": "practices", "debts": "debts", "bugs": "bugs"}
+// groupNouns say what a group in each register holds, for the listing its
+// parent's INDEX.md gives it: a changes/ group holds both kinds of
+// post-delivery work.
+var groupNouns = map[string]string{"features": "features", "changes": "changes and fixes", "practices": "practices", "debts": "debts", "bugs": "bugs"}
 
-// GroupTitle is how a new group's own INDEX.md is headed: a feature group
-// (dir "") as "<Group> features", a reserved directory's group by its name.
+// GroupTitle is how a new group's own INDEX.md is headed: a 0.7 feature group
+// (dir "") as "<Group> features", a group in a register by its name.
 func GroupTitle(dir, group string) string {
 	title, _ := groupListing(dir, group)
 	if dir == "" {
@@ -59,15 +66,16 @@ func GroupTitle(dir, group string) string {
 }
 
 // groupListing is a group's title and the line its parent index lists it
-// with: a feature group (dir "") in the bundle-root INDEX.md, a reserved
-// directory's group in that directory's.
+// with: a 0.7 feature group (dir "") in the bundle-root INDEX.md, a group in a
+// register in its parent's INDEX.md, which dir names at any depth.
 func groupListing(dir, group string) (title, line string) {
 	if dir == "" {
 		title = strings.ToUpper(group[:1]) + group[1:]
 		return title, fmt.Sprintf("* [%s](/%s/INDEX.md) - %s features.", title, group, group)
 	}
+	reg, _, _ := strings.Cut(dir, "/")
 	title = strings.ToUpper(group[:1]) + strings.ReplaceAll(group[1:], "-", " ")
-	return title, fmt.Sprintf("* [%s](/%s/%s/INDEX.md) - %s in %s.", title, dir, group, groupNouns[dir], group)
+	return title, fmt.Sprintf("* [%s](/%s/%s/INDEX.md) - %s in %s.", title, dir, group, groupNouns[reg], group)
 }
 
 // ListGroup lists a group in its parent index — a feature group (dir "") in
@@ -276,19 +284,23 @@ func unlistFrom(root, idxRel string, targets ...string) (string, error) {
 }
 
 // ListingTarget is the bundle-relative path a listing line links to, or ""
-// when the line is not a listing. A link starting with / is from the bundle
-// root; any other is from the index's own directory.
+// when the line is not a listing: a list item whose first link outside code
+// names a path. The link is read as links.Find reads it, so a title after
+// the target or a <…> destination is not part of the path. A link starting
+// with / is from the bundle root; any other is from the index's own
+// directory.
 func ListingTarget(line, idxDir string) string {
-	m := listingLinkRe.FindStringSubmatch(line)
-	if m == nil {
+	if !listItemRe.MatchString(line) {
 		return ""
 	}
-	t := m[1]
-	if i := strings.IndexAny(t, "#?"); i >= 0 {
-		t = t[:i]
+	for _, l := range links.Find(line) {
+		if l.InCode {
+			continue
+		}
+		if d, ok := links.Resolve(l.Target, path.Join(idxDir, "INDEX.md"), ""); ok {
+			return d.Path
+		}
+		return ""
 	}
-	if strings.HasPrefix(t, "/") {
-		return path.Clean(strings.TrimPrefix(t, "/"))
-	}
-	return path.Clean(path.Join(idxDir, t))
+	return ""
 }

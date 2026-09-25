@@ -89,12 +89,32 @@ func RefreshSpec(root, version string, out io.Writer) int {
 }
 func EnsureContextStubs(root string, out io.Writer) int { return writeContextStubs(root, out) }
 
-// EnsurePracticesIndex creates practices/INDEX.md if absent. Practices (v0.6)
-// are the project's binding answers to recurring mechanisms; scaffolding the
-// index makes the directory discoverable rather than something the first
-// practice has to invent.
-func EnsurePracticesIndex(root string, out io.Writer) int {
-	dir := filepath.Join(root, "practices")
+// registerIndexes are the INDEX.md fdf writes for each register but
+// releases/ (whose index `fdf release` keeps): what the register holds, and
+// how the line that reports writing it names the register.
+var registerIndexes = map[string]struct{ body, what string }{
+	"features": {"# Features\n\nWhat the software does: one document per feature, in Markdown and Gherkin,\nfiled flat here or in groups.\n\n* [Format reference](/SPEC.md) - how features are structured.\n",
+		"what the software does"},
+	"changes": {"# Changes\n\nPost-delivery changes and fixes for delivered features.\nA `Change` alters documented behavior; a `Fix` restores behavior the feature\ndocument already describes. Both may be filed flat here or in groups.\n\n* [Format reference](/SPEC.md) - how changes and fixes are structured.\n",
+		"post-delivery changes and fixes"},
+	"practices": {"# Practices\n\nHow this project does the things it does the same way every time —\nauthorization, permission checks, payment capture, database access. Each is\nbinding on all code it applies to, and changes only with human approval.\n\n* [Format reference](/SPEC.md) - how practices are structured.\n",
+		"project practices"},
+	"debts": {"# Debt\n\nKnown gaps between what this project says and what the code does — work\nleft undone, and rules the codebase does not follow everywhere yet. Run\n`fdf debt` to read the register.\n\n* [Format reference](/SPEC.md) - how debts are structured.\n",
+		"the debt register"},
+	"bugs": {"# Bugs\n\nKnown defects — the software doing something wrong that someone could\nobserve — that have not been repaired yet. Each is repaired by a Fix or a\nChange that names it in `resolves`. Run `fdf bug` to read the register.\n\n* [Format reference](/SPEC.md) - how bugs are structured.\n",
+		"the bug register"},
+}
+
+// EnsureIndex creates the INDEX.md of the register reg (features, changes,
+// practices, debts or bugs) if absent. A register with an index is found from
+// the start, rather than being something its first document has to invent.
+func EnsureIndex(root, reg string, out io.Writer) int {
+	ix, ok := registerIndexes[reg]
+	if !ok {
+		fmt.Fprintf(out, "error: %s is not a register fdf writes an index for\n", reg)
+		return 1
+	}
+	dir := filepath.Join(root, reg)
 	idx := filepath.Join(dir, "INDEX.md")
 	if _, err := os.Stat(idx); err == nil {
 		return 0
@@ -103,88 +123,29 @@ func EnsurePracticesIndex(root string, out io.Writer) int {
 		fmt.Fprintln(out, "error:", err)
 		return 1
 	}
-	body := "# Practices\n\nHow this project does the things it does the same way every time —\nauthorization, permission checks, payment capture, database access. Each is\nbinding on all code it applies to, and changes only with human approval.\n\n* [Format reference](/SPEC.md) - how practices are structured.\n"
-	if err := os.WriteFile(idx, []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(idx, []byte(ix.body), 0o644); err != nil {
 		fmt.Fprintln(out, "error:", err)
 		return 1
 	}
-	fmt.Fprintln(out, "wrote practices/INDEX.md (project practices)")
+	fmt.Fprintf(out, "wrote %s/INDEX.md (%s)\n", reg, ix.what)
 	return 0
 }
 
-// EnsureDebtsIndex creates debts/INDEX.md if absent. The debt register (v0.6)
-// records known gaps between what the project says and what the code does.
-func EnsureDebtsIndex(root string, out io.Writer) int {
-	dir := filepath.Join(root, "debts")
-	idx := filepath.Join(dir, "INDEX.md")
-	if _, err := os.Stat(idx); err == nil {
-		return 0
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		fmt.Fprintln(out, "error:", err)
-		return 1
-	}
-	body := "# Debt\n\nKnown gaps between what this project says and what the code does — work\nleft undone, and rules the codebase does not follow everywhere yet. Run\n`fdf debt` to read the register.\n\n* [Format reference](/SPEC.md) - how debts are structured.\n"
-	if err := os.WriteFile(idx, []byte(body), 0o644); err != nil {
-		fmt.Fprintln(out, "error:", err)
-		return 1
-	}
-	fmt.Fprintln(out, "wrote debts/INDEX.md (the debt register)")
-	return 0
-}
+// EnsureChangesIndex, EnsurePracticesIndex, EnsureDebtsIndex and
+// EnsureBugsIndex are EnsureIndex for one register each.
+func EnsureChangesIndex(root string, out io.Writer) int   { return EnsureIndex(root, "changes", out) }
+func EnsurePracticesIndex(root string, out io.Writer) int { return EnsureIndex(root, "practices", out) }
+func EnsureDebtsIndex(root string, out io.Writer) int     { return EnsureIndex(root, "debts", out) }
+func EnsureBugsIndex(root string, out io.Writer) int      { return EnsureIndex(root, "bugs", out) }
 
-// EnsureBugsIndex creates bugs/INDEX.md if absent. The bug register (v0.7)
-// records known defects that have not been repaired yet.
-func EnsureBugsIndex(root string, out io.Writer) int {
-	dir := filepath.Join(root, "bugs")
-	idx := filepath.Join(dir, "INDEX.md")
-	if _, err := os.Stat(idx); err == nil {
-		return 0
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		fmt.Fprintln(out, "error:", err)
-		return 1
-	}
-	body := "# Bugs\n\nKnown defects — the software doing something wrong that someone could\nobserve — that have not been repaired yet. Each is repaired by a Fix or a\nChange that names it in `resolves`. Run `fdf bug` to read the register.\n\n* [Format reference](/SPEC.md) - how bugs are structured.\n"
-	if err := os.WriteFile(idx, []byte(body), 0o644); err != nil {
-		fmt.Fprintln(out, "error:", err)
-		return 1
-	}
-	fmt.Fprintln(out, "wrote bugs/INDEX.md (the bug register)")
-	return 0
-}
-
-// ensureIndexes creates whichever of the reserved directories' indexes
-// `fdf init` scaffolds are absent.
+// ensureIndexes creates whichever of the registers' indexes `fdf init`
+// scaffolds are absent.
 func ensureIndexes(root string, out io.Writer) int {
-	for _, ensure := range []func(string, io.Writer) int{EnsureChangesIndex, EnsurePracticesIndex, EnsureDebtsIndex, EnsureBugsIndex} {
-		if code := ensure(root, out); code != 0 {
+	for _, reg := range []string{"changes", "practices", "debts", "bugs"} {
+		if code := EnsureIndex(root, reg, out); code != 0 {
 			return code
 		}
 	}
-	return 0
-}
-
-// EnsureChangesIndex creates changes/INDEX.md if absent. Post-delivery work
-// (v0.5) lives under changes/; scaffolding the index makes the directory
-// discoverable in a fresh bundle rather than something the first change has
-// to invent.
-func EnsureChangesIndex(root string, out io.Writer) int {
-	dir := filepath.Join(root, "changes")
-	idx := filepath.Join(dir, "INDEX.md")
-	if _, err := os.Stat(idx); err == nil {
-		return 0
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		fmt.Fprintln(out, "error:", err)
-		return 1
-	}
-	body := "# Changes\n\nPost-delivery changes and fixes for delivered features.\nA `Change` alters documented behavior; a `Fix` restores behavior the feature\ndocument already describes. Both may be filed flat here or in groups.\n\n* [Format reference](/SPEC.md) - how changes and fixes are structured.\n"
-	if err := os.WriteFile(idx, []byte(body), 0o644); err != nil {
-		fmt.Fprintln(out, "error:", err)
-		return 1
-	}
-	fmt.Fprintln(out, "wrote changes/INDEX.md (post-delivery changes and fixes)")
 	return 0
 }
 
