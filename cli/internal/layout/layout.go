@@ -136,6 +136,22 @@ func (b *Bundle) has(dir, name string) bool {
 	return names[name]
 }
 
+// spelled returns the name dir holds that differs from name only in case,
+// when dir holds nothing called name itself: on a disk that ignores case, a
+// path through name opens that entry.
+func (b *Bundle) spelled(dir, name string) string {
+	if b.has(dir, name) {
+		return ""
+	}
+	other := ""
+	for n := range b.names[dir] {
+		if strings.EqualFold(n, name) && (other == "" || n < other) {
+			other = n
+		}
+	}
+	return other
+}
+
 // HoldsMarkdown reports whether the directory at rel holds a Markdown file at
 // any depth, hidden files and directories aside. One that holds none is
 // outside FDF: no rule reads its position or its name.
@@ -251,7 +267,9 @@ func (b *Bundle) File(rel string) Position {
 // document of that name, and no directory of that name that holds Markdown,
 // which the new document would own. Nor may a directory on its way belong
 // to a document: a task directory holds only tasks, and a practice, debt or
-// bug owns no directory.
+// bug owns no directory. And each directory on its way that is there is
+// spelled as the ID spells it: on a disk that ignores case, one spelled
+// otherwise is where the document would land, under a name F3 rejects.
 func (b *Bundle) Place(id string) string {
 	parts := strings.Split(id, "/")
 	reg := parts[0]
@@ -266,6 +284,12 @@ func (b *Bundle) Place(id string) string {
 	dir, name := path.Dir(id), path.Base(id)
 	if twin := caseTwins[name+".md"]; twin != "" {
 		return fmt.Sprintf("%s is not a slug: a disk that ignores case reads %s.md as the %s beside it (F3); choose another name", name, name, twin)
+	}
+	for i := 0; i < len(parts)-1; i++ {
+		parent := path.Join(parts[:i]...)
+		if other := b.spelled(parent, parts[i]); other != "" {
+			return fmt.Sprintf("%s/ is already there: a disk that ignores case would file %s in it, and directory names are lowercase (F3); rename that directory, or choose another name", path.Join(parent, other), id)
+		}
 	}
 	if dir != reg {
 		switch d := b.Dir(dir); d.Kind {

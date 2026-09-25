@@ -442,6 +442,26 @@ func TestMoveRefusals(t *testing.T) {
 	}
 }
 
+// A group directory spelled in capitals that holds no Markdown is outside
+// the bundle, but on a disk that ignores case it is where a move into the
+// group spelled in lowercase would land, and the bundle would fail F3. The
+// move is refused, naming the directory as it is spelled, and nothing moves.
+func TestMoveRefusesAGroupSpelledInAnotherCase(t *testing.T) {
+	root := fixture(t, "valid-bugs-v10")
+	write(t, root, "features/Places/map.png", "PNG")
+	for _, tc := range []struct{ from, to string }{
+		{"features/venues/opening-hours", "features/places/opening-hours"},
+		{"features/venues", "features/places/venues"},
+	} {
+		var out bytes.Buffer
+		want := "error: features/Places/ is already there: a disk that ignores case would file " + tc.to + " in it, and directory names are lowercase (F3); rename that directory, or choose another name\n"
+		if code := Move(root, "", tc.from, tc.to, false, &out); code != 1 || out.String() != want {
+			t.Errorf("fdf mv %s %s: exit %d\n got: %q\nwant: %q", tc.from, tc.to, code, out.String(), want)
+		}
+	}
+	read(t, root, "features/venues/opening-hours.md")
+}
+
 // A move that changes a document's depth repairs the links that leave the
 // bundle too: the file that holds them moved, so its path to them changed,
 // even though they did not. A footnote is not a link, and a reference

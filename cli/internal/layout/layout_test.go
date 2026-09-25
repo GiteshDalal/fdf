@@ -197,6 +197,35 @@ func TestPlace(t *testing.T) {
 	}
 }
 
+// A directory on the way that the bundle holds under another spelling is the
+// one a disk that ignores case files the new document in, where its name is
+// an error (F3), though it holds no Markdown yet. Place names it as it is
+// spelled, at any depth, the register included. A directory spelled as the
+// ID spells it is the one the document goes in, whatever else is there.
+func TestPlaceRefusesADirectorySpelledInAnotherCase(t *testing.T) {
+	b := New(fstest.MapFS{
+		"Changes/notes.png":               {},
+		"features/Payments/diagram.png":   {},
+		"features/platform/INDEX.md":      {},
+		"features/platform/Payouts/a.png": {},
+		"bugs/UI/screenshot.png":          {},
+		"bugs/ui/INDEX.md":                {},
+	})
+	for _, tc := range []struct{ id, where string }{
+		{"features/payments/refunds", "features/Payments/"},
+		{"features/platform/payouts/weekly", "features/platform/Payouts/"},
+		{"changes/refund-window", "Changes/"},
+	} {
+		want := tc.where + " is already there: a disk that ignores case would file " + tc.id + " in it, and directory names are lowercase (F3); rename that directory, or choose another name"
+		if got := b.Place(tc.id); got != want {
+			t.Errorf("Place(%q) = %q; want %q", tc.id, got, want)
+		}
+	}
+	if got := b.Place("bugs/ui/label"); got != "" {
+		t.Errorf("Place(%q) = %q; want no problem: bugs/ui/ is spelled so", "bugs/ui/label", got)
+	}
+}
+
 // Exists reads names as every question here does, spelled exactly, so a
 // disk that ignores case cannot answer for another name.
 func TestExists(t *testing.T) {

@@ -347,6 +347,29 @@ func TestNewRefusesWhatTheValidatorRejects(t *testing.T) {
 	}
 }
 
+// A group directory spelled in capitals that holds no Markdown, one of
+// images, is outside FDF; but on a disk that ignores case it is where fdf new
+// would file features/payments/refunds.md, and the bundle would then fail
+// F3. fdf new refuses it, naming the directory as it is spelled, and writes
+// nothing.
+func TestNewRefusesAGroupSpelledInAnotherCase(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "docs", "fdf")
+	var out bytes.Buffer
+	Init(root, &out)
+	fillContext(t, root)
+	os.MkdirAll(filepath.Join(root, "features", "Payments"), 0o755)
+	os.WriteFile(filepath.Join(root, "features", "Payments", "diagram.png"), []byte("PNG"), 0o644)
+	before := tree(t, root)
+	out.Reset()
+	want := "error: features/Payments/ is already there: a disk that ignores case would file features/payments/refunds in it, and directory names are lowercase (F3); rename that directory, or choose another name\n"
+	if code := New(root, "payments/refunds", &out); code != 1 || out.String() != want {
+		t.Errorf("fdf new payments/refunds: exit %d\n got: %q\nwant: %q", code, out.String(), want)
+	}
+	if after := tree(t, root); after != before {
+		t.Errorf("a refused feature writes nothing:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
 // A command never writes a new document over a file that is there. Place
 // reads names exactly, and on a disk that ignores case a file whose name
 // differs only in case is where the new one would go: WriteNew leaves the
