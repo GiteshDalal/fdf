@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -272,7 +273,8 @@ func TestMigrateV03To10(t *testing.T) {
 }
 
 // The pre-0.4 steps repair links with the one link engine, as fdf mv does,
-// in the same pass as the move into features/: a link from a file that moves
+// in the same pass as the move into features/ and the move of the bundle
+// from docs/features to docs/fdf beside it: a link from a file that moves
 // deeper gains the ../ its move needs, one whose file keeps its depth stays
 // as it was, and a reference definition is repaired like an inline link.
 // migrate's own rewriters left links that leave the bundle, and every
@@ -289,6 +291,10 @@ func TestMigrateRepairsLinksWithTheEngine(t *testing.T) {
 	}
 	// The spec is lifted out of example/ and moved into features/: one
 	// level up, one down.
+	root = filepath.Join(filepath.Dir(root), "fdf")
+	if !strings.Contains(out.String(), "the bundle is not in a git repository, so nothing can undo it") {
+		t.Errorf("outside a git repository, migrate says nothing can undo it:\n%s", out.String())
+	}
 	spec := string(mustRead(t, filepath.Join(root, "features", "wdise", "example.spec.md")))
 	for _, want := range []string{"[refund.go](../../../../src/refund.go)", "[okf]: ../../../okf/index.md"} {
 		if !strings.Contains(spec, want) {
@@ -300,6 +306,9 @@ func TestMigrateRepairsLinksWithTheEngine(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("the feature should hold %q:\n%s", want, got)
 		}
+	}
+	if log := string(mustRead(t, filepath.Join(root, "LOG.md"))); !strings.Contains(log, "moved the bundle from `features/` to `fdf/`") {
+		t.Errorf("LOG.md records the move from the directory that holds the bundle, and no machine's path:\n%s", log)
 	}
 }
 
@@ -340,6 +349,16 @@ func TestMigrateRepairsA10BundleInPlace(t *testing.T) {
 	var out bytes.Buffer
 	if code := Run(Options{Root: root}, &out); code != 0 || !strings.Contains(out.String(), "restored: SPEC.md\n") {
 		t.Errorf("valid-v10: exit %d\n%s", code, out.String())
+	}
+	// Nothing moves in a bundle at 1.0, so --to is refused there.
+	out.Reset()
+	before := tree(t, root)
+	if code := Run(Options{Root: root, To: filepath.Join(t.TempDir(), "fdf")}, &out); code != 1 ||
+		!strings.Contains(out.String(), "cannot migrate: the bundle already pins fdf_version 1.0, and migrate moves nothing in a bundle at 1.0 — move it with git mv, then point --root or FDF_ROOT_DIR at it; the bundle was left as it is.\n") {
+		t.Errorf("--to on a 1.0 bundle: exit %d\n%s", code, out.String())
+	}
+	if tree(t, root) != before {
+		t.Errorf("a refused migration changes nothing")
 	}
 }
 
@@ -469,7 +488,7 @@ func TestMigrateRefusesARootFileThatIsASymlink(t *testing.T) {
 func TestMigrateNeverWritesOverAFileItDidNotRead(t *testing.T) {
 	root := t.TempDir()
 	buildV03Bundle(t, root)
-	p, problems, err := newPlan(root, "0.3")
+	p, problems, err := newPlan(root, "0.3", "", root)
 	if err != nil || len(problems) > 0 {
 		t.Fatalf("newPlan: %v %v", err, problems)
 	}
@@ -487,6 +506,13 @@ func TestMigrateNeverWritesOverAFileItDidNotRead(t *testing.T) {
 func copyFixture(t *testing.T, name string) string {
 	t.Helper()
 	dst := t.TempDir()
+	copyFixtureTo(t, name, dst)
+	return dst
+}
+
+// copyFixtureTo copies a conformance fixture's bundle to dst.
+func copyFixtureTo(t *testing.T, name, dst string) {
+	t.Helper()
 	src := filepath.Join("..", "..", "..", "testdata", name, "bundle")
 	filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {
 		if err == nil && !d.IsDir() {
@@ -495,7 +521,6 @@ func copyFixture(t *testing.T, name string) string {
 		}
 		return nil
 	})
-	return dst
 }
 
 // A register's or a group's INDEX.md pins nothing, so --root
@@ -1277,5 +1302,455 @@ func TestMigrateReadsTheRegistersOfItsPin(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(root, tc.group, "INDEX.md")); err != nil {
 			t.Errorf("%s/ is a register in 1.0, with its index: %v", tc.group, err)
 		}
+	}
+}
+
+// gitIn runs git in dir and returns what it printed.
+func gitIn(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+	return string(out)
+}
+
+// gitProject makes a git repository whose docs/features holds a copy of the
+// conformance fixture name, all committed, and returns the repository's root.
+func gitProject(t *testing.T, name string) string {
+	t.Helper()
+	return gitProjectAt(t, name, t.TempDir())
+}
+
+// gitProjectAt is gitProject, with the repository at project.
+func gitProjectAt(t *testing.T, name, project string) string {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	copyFixtureTo(t, name, filepath.Join(project, "docs", "features"))
+	write(t, project, "README.md", "# Project\n")
+	gitIn(t, project, "init", "-q")
+	gitIn(t, project, "add", "-A")
+	gitIn(t, project, "commit", "-qm", "bundle")
+	return project
+}
+
+// worktree is tree without the repository's own .git, which git status
+// touches.
+func worktree(t *testing.T, root string) string {
+	t.Helper()
+	var b strings.Builder
+	filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.Name() == ".git" {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !d.IsDir() {
+			rel, _ := filepath.Rel(root, p)
+			fmt.Fprintf(&b, "== %s\n%s", filepath.ToSlash(rel), mustRead(t, p))
+		}
+		return nil
+	})
+	return b.String()
+}
+
+// A bundle at docs/features moves to docs/fdf beside it, in the same run, and
+// migrate marks the files it wrote with git add -N, so that git diff -M shows
+// each move as a rename. The plan says where the bundle goes, and the next
+// steps how to review it, and that FDF_ROOT_DIR still names the old path.
+func TestMigrateMovesDocsFeaturesToDocsFdf(t *testing.T) {
+	project := gitProject(t, "valid-bugs-v07")
+	root := filepath.Join(project, "docs", "features")
+	dest := filepath.Join(project, "docs", "fdf")
+	var out bytes.Buffer
+	if code := Run(Options{Root: root, Project: project, EnvRoot: root}, &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
+	}
+	if _, err := os.Stat(root); err == nil {
+		t.Errorf("docs/features moved to docs/fdf, and is gone")
+	}
+	for _, p := range []string{"INDEX.md", "features/INDEX.md", "features/venues/opening-hours.md", "bugs/INDEX.md"} {
+		if _, err := os.Stat(filepath.Join(dest, p)); err != nil {
+			t.Errorf("docs/fdf/%s: %v", p, err)
+		}
+	}
+	diff := gitIn(t, project, "diff", "-M", "--name-status")
+	for _, want := range []string{
+		"R100\tdocs/features/venues/opening-hours.plan.md\tdocs/fdf/features/venues/opening-hours.plan.md\n",
+		"R100\tdocs/features/bugs/ui/unclear-error.md\tdocs/fdf/bugs/ui/unclear-error.md\n",
+		"A\tdocs/fdf/features/INDEX.md\n",
+	} {
+		if !strings.Contains(diff, want) {
+			t.Errorf("git diff -M shows %q:\n%s", want, diff)
+		}
+	}
+	for _, want := range []string{
+		"  bundle     docs/features/ → docs/fdf/\n",
+		"and moved it to " + dest + "; logged in LOG.md.\n",
+		"then review it with `git diff -M` — migrate marked the files it wrote with `git add -N`,\n",
+		"FDF_ROOT_DIR still names " + root + ": point it at " + dest + ".\n",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output should say %q:\n%s", want, out.String())
+		}
+	}
+	if log := string(mustRead(t, filepath.Join(dest, "LOG.md"))); !strings.Contains(log, "moved the bundle from `docs/features/` to `docs/fdf/`") {
+		t.Errorf("LOG.md records the move:\n%s", log)
+	}
+}
+
+// --to chooses where the bundle goes, and naming where it is keeps it there.
+func TestMigrateMovesTheBundleWhereToSays(t *testing.T) {
+	project := gitProject(t, "valid-bugs-v07")
+	root := filepath.Join(project, "docs", "features")
+	dest := filepath.Join(project, "wiki", "fdf")
+	var out bytes.Buffer
+	if code := Run(Options{Root: root, Project: project, To: dest}, &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
+	}
+	if _, err := os.Stat(filepath.Join(dest, "features", "venues", "opening-hours.md")); err != nil {
+		t.Errorf("the bundle is at --to: %v", err)
+	}
+	for _, gone := range []string{root, filepath.Join(project, "docs", "fdf")} {
+		if _, err := os.Stat(gone); err == nil {
+			t.Errorf("%s: the bundle went to --to, and nowhere else", gone)
+		}
+	}
+
+	project = gitProject(t, "valid-bugs-v07")
+	root = filepath.Join(project, "docs", "features")
+	out.Reset()
+	if code := Run(Options{Root: root, Project: project, To: root}, &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, "features", "venues", "opening-hours.md")); err != nil || strings.Contains(out.String(), "  bundle ") {
+		t.Errorf("--to naming where the bundle is keeps it there: %v\n%s", err, out.String())
+	}
+}
+
+// migrate refuses a destination it cannot take, before it writes anything:
+// one that is there and not empty, one inside the bundle, one outside the
+// project, one inside git's own directory, one a file stands in the way of,
+// and any move of a bundle that is its own repository. An empty directory
+// at the destination is no obstacle.
+func TestMigrateRefusesADestinationItCannotTake(t *testing.T) {
+	project := gitProject(t, "valid-bugs-v07")
+	root := filepath.Join(project, "docs", "features")
+	dest := filepath.Join(project, "docs", "fdf")
+	write(t, project, "docs/fdf/notes.md", "# Notes\n")
+	outside := filepath.Join(t.TempDir(), "fdf")
+	own := gitProject(t, "valid-bugs-v07")
+	ownRoot := filepath.Join(own, "docs", "features")
+	gitIn(t, ownRoot, "init", "-q")
+	gitIn(t, ownRoot, "add", "-A")
+	gitIn(t, ownRoot, "commit", "-qm", "bundle")
+	for _, tc := range []struct {
+		o    Options
+		says string
+	}{
+		{Options{Root: root, Project: project}, dest + " is there and not empty — pass --to <dir> to choose another destination, or --to " + root + " to keep the bundle where it is"},
+		{Options{Root: root, Project: project, To: filepath.Join(root, "fdf")}, filepath.Join(root, "fdf") + " is inside the bundle, which cannot move into itself"},
+		{Options{Root: root, Project: project, To: outside}, outside + " is outside the project at " + project + ", where git could neither show the move nor undo it — pass --to a directory inside the project"},
+		{Options{Root: root, Project: project, To: filepath.Join(project, ".git", "fdf")}, filepath.Join(project, ".git", "fdf") + " is inside git's own directory — pass --to <dir> to choose another destination"},
+		{Options{Root: root, Project: project, To: filepath.Join(project, "README.md", "fdf")}, filepath.Join(project, "README.md") + " is a file, where " + filepath.Join(project, "README.md", "fdf") + " needs a directory — pass --to <dir> to choose another destination"},
+		{Options{Root: ownRoot, Project: own, To: filepath.Join(own, "wiki", "fdf")}, "the bundle at " + ownRoot + " is the root of its own git repository, which migrate does not move — move it yourself, or pass --to " + ownRoot + " to keep it where it is"},
+	} {
+		before := worktree(t, project)
+		var out bytes.Buffer
+		if code := Run(tc.o, &out); code != 1 || out.String() != "cannot migrate: "+tc.says+"; the bundle was left as it is.\n" {
+			t.Errorf("exit %d\n got: %q\nwant: %q", code, out.String(), "cannot migrate: "+tc.says+"; the bundle was left as it is.\n")
+		}
+		if worktree(t, project) != before {
+			t.Errorf("a refused migration changes nothing")
+		}
+	}
+	if err := os.Remove(filepath.Join(dest, "notes.md")); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if code := Run(Options{Root: root, Project: project}, &out); code != 0 {
+		t.Errorf("an empty directory at the destination gives way: exit %d\n%s", code, out.String())
+	}
+}
+
+// Git is the migration's undo, so migrate starts only from a clean tree: a
+// change not committed in the bundle, staged or not, or a file git does not
+// track there, one it ignores included, is refused. A file outside the
+// bundle that git does not track is no obstacle, and nor is a hidden file
+// git ignores, such as a Finder .DS_Store.
+func TestMigrateStartsFromACleanTree(t *testing.T) {
+	feature := "docs/features/venues/opening-hours.md"
+	for _, tc := range []struct {
+		name  string
+		dirty func(project string)
+		shows string
+	}{
+		{"a change", func(project string) { write(t, project, feature, "changed\n") }, " M " + feature},
+		{"a staged change", func(project string) { write(t, project, feature, "changed\n"); gitIn(t, project, "add", feature) }, "M  " + feature},
+		{"a file git does not track", func(project string) { write(t, project, "docs/features/venues/draft.md", "# Draft\n") }, "?? docs/features/venues/draft.md"},
+		{"a file git ignores", func(project string) {
+			write(t, project, ".gitignore", "*.local.md\n")
+			write(t, project, "docs/features/venues/notes.local.md", "# Notes\n")
+		}, "!! docs/features/venues/notes.local.md"},
+	} {
+		project := gitProject(t, "valid-bugs-v07")
+		tc.dirty(project)
+		before := worktree(t, project)
+		var out bytes.Buffer
+		want := "cannot migrate: files migrate would change have changes not committed, or are files git does not track — commit them, stash them or move them out of the bundle first, so that git can show the migration and undo it (bundle left unchanged):\n  " + tc.shows + "\n"
+		if code := Run(Options{Root: filepath.Join(project, "docs", "features"), Project: project}, &out); code != 1 || out.String() != want {
+			t.Errorf("%s: exit %d\n got: %q\nwant: %q", tc.name, code, out.String(), want)
+		}
+		if worktree(t, project) != before {
+			t.Errorf("%s: a refused migration changes nothing", tc.name)
+		}
+	}
+	project := gitProject(t, "valid-bugs-v07")
+	write(t, project, "notes.txt", "mine\n")
+	write(t, project, ".gitignore", ".DS_Store\n")
+	write(t, project, "docs/features/venues/.DS_Store", "Finder\n")
+	var out bytes.Buffer
+	if code := Run(Options{Root: filepath.Join(project, "docs", "features"), Project: project}, &out); code != 0 {
+		t.Errorf("a file outside the bundle, and a hidden one git ignores, are no obstacle: exit %d\n%s", code, out.String())
+	}
+}
+
+// A bundle that is a git submodule moves with git mv, which updates
+// .gitmodules, and the next steps say to commit inside it first.
+func TestMigrateMovesASubmoduleWithGitMv(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	tmp := t.TempDir()
+	repo := filepath.Join(tmp, "bundle-repo")
+	copyFixtureTo(t, "valid-bugs-v07", repo)
+	gitIn(t, repo, "init", "-q")
+	gitIn(t, repo, "add", "-A")
+	gitIn(t, repo, "commit", "-qm", "bundle")
+	super := filepath.Join(tmp, "super")
+	write(t, super, "README.md", "# Super\n")
+	gitIn(t, super, "init", "-q")
+	gitIn(t, super, "add", "-A")
+	gitIn(t, super, "commit", "-qm", "code")
+	gitIn(t, super, "-c", "protocol.file.allow=always", "submodule", "add", "-q", repo, "docs/features")
+	gitIn(t, super, "commit", "-qm", "mount the bundle")
+
+	root := filepath.Join(super, "docs", "features")
+	dest := filepath.Join(super, "docs", "fdf")
+	var out bytes.Buffer
+	if code := Run(Options{Root: root, Project: super}, &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
+	}
+	if gm := string(mustRead(t, filepath.Join(super, ".gitmodules"))); !strings.Contains(gm, "[submodule \"docs/features\"]\n\tpath = docs/fdf\n") {
+		t.Errorf(".gitmodules follows the move, and the submodule keeps its name:\n%s", gm)
+	}
+	if diff := gitIn(t, dest, "diff", "-M", "--name-status"); !strings.Contains(diff, "R100\tvenues/opening-hours.plan.md\tfeatures/venues/opening-hours.plan.md\n") {
+		t.Errorf("inside the submodule, git diff -M shows the moves:\n%s", diff)
+	}
+	if !strings.Contains(out.String(), "then review it inside the submodule, with `git -C "+dest+" diff -M`, and commit it there first;\n") {
+		t.Errorf("the next steps start inside the submodule:\n%s", out.String())
+	}
+}
+
+// A bundle that is its own git repository — a documentation repository
+// checked out on its own — migrates where it is: migrate checks that
+// repository's tree, and marks its new files there, so that git diff -M
+// shows each move.
+func TestMigrateABundleThatIsItsOwnRepository(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	root := filepath.Join(t.TempDir(), "handbook")
+	copyFixtureTo(t, "valid-bugs-v07", root)
+	gitIn(t, root, "init", "-q")
+	gitIn(t, root, "add", "-A")
+	gitIn(t, root, "commit", "-qm", "bundle")
+	write(t, root, "draft.txt", "not committed\n")
+	var out bytes.Buffer
+	if code := Run(Options{Root: root, Project: root}, &out); code != 1 || !strings.HasSuffix(out.String(), "\n  ?? draft.txt\n") {
+		t.Fatalf("a file git does not track in the repository is refused: exit %d\n%s", code, out.String())
+	}
+	if err := os.Remove(filepath.Join(root, "draft.txt")); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if code := Run(Options{Root: root, Project: root}, &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
+	}
+	if diff := gitIn(t, root, "diff", "-M", "--name-status"); !strings.Contains(diff, "R100\tvenues/opening-hours.plan.md\tfeatures/venues/opening-hours.plan.md\n") {
+		t.Errorf("git diff -M shows each move:\n%s", diff)
+	}
+}
+
+// Should a migration stop partway, migrate prints the git commands that put
+// everything back, and they do: the clean tree it started from is in git.
+// Each path in them is quoted for the shell, as this project's is.
+func TestMigrateSaysHowToUndoAStoppedMigration(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root writes into any directory")
+	}
+	project := gitProjectAt(t, "valid-bugs-v07", filepath.Join(t.TempDir(), "my project"))
+	before := worktree(t, project)
+	// practices/ is a directory migrate cannot write its index into.
+	blocked := filepath.Join(project, "docs", "features", "practices")
+	if err := os.Mkdir(blocked, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(blocked, 0o755)
+	var out bytes.Buffer
+	if code := Run(Options{Root: filepath.Join(project, "docs", "features"), Project: project}, &out); code != 1 {
+		t.Fatalf("migrate exit %d, want 1\n%s", code, out.String())
+	}
+	_, undo, ok := strings.Cut(out.String(), "the migration stopped partway. To put everything back as it was:\n")
+	if !ok {
+		t.Fatalf("migrate says how to undo it:\n%s", out.String())
+	}
+	os.Chmod(blocked, 0o755)
+	for _, line := range strings.Split(strings.TrimSpace(undo), "\n") {
+		cmd := strings.TrimSpace(strings.SplitN(line, "#", 2)[0])
+		if b, err := exec.Command("sh", "-c", cmd).CombinedOutput(); err != nil {
+			t.Fatalf("%s: %v\n%s", cmd, err, b)
+		}
+	}
+	if after := worktree(t, project); after != before {
+		t.Errorf("the commands put everything back:\n%s", undo)
+	}
+	if status := gitIn(t, project, "status", "--porcelain", "--untracked-files=all"); status != "" {
+		t.Errorf("git status is clean again:\n%s", status)
+	}
+}
+
+// Git is the undo in the repository that tracks the bundle: the nearest one
+// above it, not the topmost. A repository checked out inside another tracks
+// its own files, so migrate checks, and marks, the inner one's.
+func TestMigrateChecksTheRepositoryThatTracksTheBundle(t *testing.T) {
+	outer := gitProject(t, "valid-bugs-v07")
+	inner := filepath.Join(outer, "vendor", "handbook")
+	gitProjectAt(t, "valid-bugs-v07", inner)
+	root := filepath.Join(inner, "docs", "features")
+	write(t, inner, "docs/features/venues/opening-hours.md", "changed\n")
+	var out bytes.Buffer
+	if code := Run(Options{Root: root, Project: outer}, &out); code != 1 || !strings.HasSuffix(out.String(), "\n   M docs/features/venues/opening-hours.md\n") {
+		t.Fatalf("a change in the inner repository is refused: exit %d\n%s", code, out.String())
+	}
+	gitIn(t, inner, "checkout", "--", ".")
+	out.Reset()
+	if code := Run(Options{Root: root, Project: outer}, &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
+	}
+	if diff := gitIn(t, inner, "diff", "-M", "--name-status"); !strings.Contains(diff, "R100\tdocs/features/venues/opening-hours.plan.md\tdocs/fdf/features/venues/opening-hours.plan.md\n") {
+		t.Errorf("git diff -M in the inner repository shows each move:\n%s", diff)
+	}
+}
+
+// On a disk that ignores case, a root spelled in another case finds the
+// bundle, and migrate reads it as the disk spells it, which is how git
+// knows it: a change not committed there is seen, and refused.
+func TestMigrateReadsTheRootAsTheDiskSpellsIt(t *testing.T) {
+	project := gitProject(t, "valid-bugs-v07")
+	root := filepath.Join(project, "Docs", "Features")
+	if _, err := os.Stat(root); err != nil {
+		t.Skip("the disk reads case")
+	}
+	write(t, project, "docs/features/venues/opening-hours.md", "changed\n")
+	var out bytes.Buffer
+	if code := Run(Options{Root: root, Project: project}, &out); code != 1 || !strings.HasSuffix(out.String(), "\n   M docs/features/venues/opening-hours.md\n") {
+		t.Errorf("the change is seen through a root spelled in another case: exit %d\n%s", code, out.String())
+	}
+}
+
+// v0.1's renames change only case, index.md to INDEX.md. On a disk that
+// ignores case git would not see one in a bundle that stays where it is, and
+// would commit the old name: migrate has git forget it, so what is
+// committed is spelled as the disk spells it.
+func TestMigrateRecordsARenameOnlyCaseTells(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	project := t.TempDir()
+	buildV01Bundle(t, filepath.Join(project, "handbook"))
+	gitIn(t, project, "init", "-q")
+	gitIn(t, project, "add", "-A")
+	gitIn(t, project, "commit", "-qm", "bundle")
+	var out bytes.Buffer
+	Run(Options{Root: filepath.Join(project, "handbook"), Project: project}, &out)
+	if !strings.Contains(out.String(), "\ndone: ") {
+		t.Fatalf("migrate did not finish:\n%s", out.String())
+	}
+	gitIn(t, project, "add", "-A")
+	files := gitIn(t, project, "ls-files", "handbook")
+	for _, want := range []string{"handbook/INDEX.md\n", "handbook/LOG.md\n"} {
+		if !strings.Contains(files, want) {
+			t.Errorf("git records %q:\n%s", want, files)
+		}
+	}
+	for _, old := range []string{"handbook/index.md\n", "handbook/log.md\n"} {
+		if strings.Contains(files, old) {
+			t.Errorf("git no longer records %q:\n%s", old, files)
+		}
+	}
+}
+
+// A symbolic link in the bundle that names its target by a relative path is
+// named again once it moves, so that it names the same place: one that
+// leaves the bundle gains the ../ its move needs, and one beside what it
+// names, moving with it, stays as it is. The plan lists each it names
+// again.
+func TestMigrateRepointsARelativeSymlink(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, "docs", "features")
+	copyFixtureTo(t, "valid-bugs-v07", root)
+	write(t, dir, "assets/logo.png", "PNG")
+	write(t, root, "venues/diagram.png", "PNG")
+	if err := os.Symlink("../../../assets", filepath.Join(root, "venues", "assets")); err != nil {
+		t.Skip("symlinks unavailable:", err)
+	}
+	if err := os.Symlink("diagram.png", filepath.Join(root, "venues", "current.png")); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if code := Run(Options{Root: root, To: filepath.Join(dir, "handbook", "fdf")}, &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
+	}
+	group := filepath.Join(dir, "handbook", "fdf", "features", "venues")
+	for name, want := range map[string]string{"assets": "../../../../assets", "current.png": "diagram.png"} {
+		if got, err := os.Readlink(filepath.Join(group, name)); err != nil || got != want {
+			t.Errorf("%s links to %q, want %q: %v", name, got, want, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(group, "assets", "logo.png")); err != nil {
+		t.Errorf("the repointed link names the same place: %v", err)
+	}
+	if !strings.Contains(out.String(), "\n  relink  features/venues/assets → ../../../../assets\n") {
+		t.Errorf("the plan lists the link it repoints:\n%s", out.String())
+	}
+}
+
+// A dry run changes nothing, git's own files included: git status, which
+// would refresh the index, takes no lock.
+func TestMigrateDryRunLeavesGitAsItIs(t *testing.T) {
+	project := gitProject(t, "valid-bugs-v07")
+	index := filepath.Join(project, ".git", "index")
+	before, err := os.Stat(index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := string(mustRead(t, index))
+	var out bytes.Buffer
+	if code := Run(Options{Root: filepath.Join(project, "docs", "features"), Project: project, DryRun: true}, &out); code != 0 {
+		t.Fatalf("migrate --dry-run exit %d\n%s", code, out.String())
+	}
+	after, err := os.Stat(index)
+	if err != nil || !after.ModTime().Equal(before.ModTime()) || string(mustRead(t, index)) != raw {
+		t.Errorf("a dry run leaves git's index as it was: %v", err)
 	}
 }

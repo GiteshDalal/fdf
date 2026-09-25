@@ -17,6 +17,9 @@ func (p *plan) print(out io.Writer, from string, dry bool) {
 	}
 	fmt.Fprintln(out, head)
 	row := func(label, text string) { fmt.Fprintf(out, "  %-10s %s\n", label, text) }
+	if p.relocates() {
+		row("bundle", fmt.Sprintf("%s/ → %s/", p.shown(p.old), p.shown(p.new)))
+	}
 	if s := p.layoutSummary(); s != "" {
 		row("layout", s)
 	}
@@ -60,6 +63,9 @@ func (p *plan) print(out io.Writer, from string, dry bool) {
 			line += "  (" + strings.Join(why, ", ") + ")"
 		}
 		fmt.Fprintln(out, line)
+	}
+	for _, rel := range sortedKeys(p.relinks) {
+		fmt.Fprintf(out, "  relink  %s → %s\n", rel, p.relinks[rel])
 	}
 }
 

@@ -152,7 +152,7 @@ var helpTopics = []helpTopic{
 		name:    "migrate",
 		group:   "Set up",
 		summary: "Upgrade a 0.x bundle to spec 1.0 in one run",
-		usage:   "fdf migrate [--root <dir>] [--dry-run]",
+		usage:   "fdf migrate [--root <dir>] [--dry-run] [--to <dir>]",
 		body: "Upgrade a bundle at any 0.x pin to spec 1.0, then validate it. It works\n" +
 			"out the whole migration and prints it before it writes anything; with\n" +
 			"--dry-run it stops there. Older layouts are made 0.7-shaped first (v0.1's\n" +
@@ -162,19 +162,25 @@ var helpTopics = []helpTopic{
 			"keep their words. Every link is repaired, features/INDEX.md takes the\n" +
 			"groups' listings from INDEX.md, the other registers get their indexes, and\n" +
 			"the pin, the vendored SPEC.md and any missing Context stub follow. The\n" +
-			"migration is logged in LOG.md. A pre-flight refuses what 1.0 has no place\n" +
-			"for — a stray Markdown file at the root, a document named index.md or\n" +
-			"log.md, a practice, debt or bug beside a directory of Markdown — and\n" +
-			"leaves the bundle untouched, so a refused run is safe to retry after\n" +
-			"fixing what it names. A bundle already at 1.0 moves nothing: its spec\n" +
-			"copy, indexes and Context stubs are restored. An unfilled Context stub is\n" +
-			"only a warning here; once the bundle has a feature, a plain `fdf validate`\n" +
-			"fails F9 until it is filled. Re-run `fdf install` afterwards.",
+			"migration is logged in LOG.md. A bundle at docs/features then moves to\n" +
+			"docs/fdf beside it, or where --to says; a submodule moves with git mv. In\n" +
+			"the git repository that tracks the bundle, migrate starts only from a\n" +
+			"clean tree, and marks the files it writes with `git add -N`, so that `git\n" +
+			"diff -M` shows each move; should it stop partway, it prints the commands\n" +
+			"that put everything back. A pre-flight refuses what 1.0 has no place for —\n" +
+			"a stray Markdown file at the root, a document named index.md or log.md, a\n" +
+			"practice, debt or bug beside a directory of Markdown — and leaves the\n" +
+			"bundle untouched, so a refused run is safe to retry after fixing what it\n" +
+			"names. A bundle already at 1.0 moves nothing: its spec copy, indexes and\n" +
+			"Context stubs are restored. An unfilled Context stub is only a warning\n" +
+			"here; once the bundle has a feature, a plain `fdf validate` fails F9 until\n" +
+			"it is filled. Re-run `fdf install` afterwards.",
 		flags: []flagDoc{
 			{"--dry-run", "print the plan, and change nothing"},
+			{"--to <dir>", "where the bundle goes (default docs/fdf beside a docs/features bundle, otherwise where it is)"},
 			rootFlagDoc,
 		},
-		examples: []string{"fdf migrate --dry-run", "fdf migrate", "fdf migrate --root docs/features"},
+		examples: []string{"fdf migrate --dry-run", "fdf migrate", "fdf migrate --root docs/features --to docs/fdf"},
 	},
 	{
 		name:    "new",

@@ -86,6 +86,13 @@ func linkedWorktree(dir string) bool {
 	return err == nil
 }
 
+// Submodule reports whether dir is the root of a git submodule: it holds a
+// .git file, and not one that belongs to a linked worktree.
+func Submodule(dir string) bool {
+	fi, err := os.Stat(filepath.Join(dir, ".git"))
+	return err == nil && !fi.IsDir() && !linkedWorktree(dir)
+}
+
 // NearestProjectRoot walks up from start to the NEAREST enclosing git working
 // tree — the first .git (directory or file) wins. This is what "the current
 // git project" means to a user standing in a nested repo, a git worktree

@@ -67,6 +67,33 @@ func TestProjectRootLinkedWorktreeStopsAtItsRoot(t *testing.T) {
 	}
 }
 
+// A submodule's root holds a .git file; a repository's, a .git directory;
+// and a linked worktree's, a .git file that points at an admin directory
+// holding commondir. Only the first is a submodule.
+func TestSubmodule(t *testing.T) {
+	tmp := t.TempDir()
+	sub := mk(t, tmp, "super", "docs", "features")
+	if err := os.WriteFile(filepath.Join(sub, ".git"), []byte("gitdir: ../../.git/modules/features\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	repo := mk(t, tmp, "repo")
+	mk(t, repo, ".git")
+	admin := mk(t, repo, ".git", "worktrees", "wt")
+	if err := os.WriteFile(filepath.Join(admin, "commondir"), []byte("../..\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wt := mk(t, tmp, "wt")
+	if err := os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: "+admin+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plain := mk(t, tmp, "plain")
+	for dir, want := range map[string]bool{sub: true, repo: false, wt: false, plain: false} {
+		if got := Submodule(dir); got != want {
+			t.Errorf("Submodule(%s) = %v; want %v", dir, got, want)
+		}
+	}
+}
+
 func TestProjectRootStandaloneBundleRepo(t *testing.T) {
 	tmp := t.TempDir()
 	// a bundle repo checked out alone: .git file with no enclosing repo

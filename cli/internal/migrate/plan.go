@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/GiteshDalal/fdf/cli/internal/fdfroot"
 	"github.com/GiteshDalal/fdf/cli/internal/layout"
 	"github.com/GiteshDalal/fdf/cli/internal/links"
 	"github.com/GiteshDalal/fdf/cli/internal/logs"
@@ -45,11 +46,24 @@ type plan struct {
 	root string // the bundle root, absolute
 	from string // the pin migrate found, "" for none
 
+	// The link engine reads every path from base: the project root, or,
+	// outside a git repository, the directory that holds the bundle. old and
+	// new are the bundle's path from there, before and after it moves.
+	base, old, new string
+	project        string // the project root; "" outside a git repository
+	submodule      bool   // the bundle is a git submodule, which git mv moves
+	relocated      bool   // the bundle has moved: apply got that far
+
 	// files are the bundle's files as they stand, by bundle-relative path,
 	// hidden files and directories aside; texts0 holds each Markdown file's
 	// text as it stands.
 	files  []string
 	texts0 map[string]string
+
+	// symlinks are the bundle's symbolic links that name their target by a
+	// relative path, by path -> that target; relinks are those a move would
+	// break, by path once migrated -> the target they name then.
+	symlinks, relinks map[string]string
 
 	// The older layouts' steps, which make a 0.x bundle 0.7-shaped.
 	moves   map[string]string // 0.1's case renames and 0.3's trail lift, by path before -> after
@@ -82,18 +96,26 @@ type plan struct {
 var rootWrites = map[string]bool{"INDEX.md": true, "LOG.md": true, "SPEC.md": true, "index.md": true, "log.md": true, "spec.md": true}
 
 // newPlan reads the bundle at root, pinned to pin, and works out its
-// migration to target. problems are the reasons it cannot be migrated, found
-// before anything is written.
-func newPlan(root, pin string) (p *plan, problems []string, err error) {
+// migration to target, the bundle ending at dest, in the project at project
+// ("" outside a git repository). problems are the reasons it cannot be
+// migrated, found before anything is written.
+func newPlan(root, pin, project, dest string) (p *plan, problems []string, err error) {
 	// A bundle that is a symbolic link is not where the link is, and the
 	// plan reads the files where they are: migrate works on the directory
 	// the link names.
 	if to, err := os.Readlink(root); err == nil {
 		return nil, []string{fmt.Sprintf("%s: a symbolic link to %s — migrate the directory it names, with --root", root, to)}, nil
 	}
-	p = &plan{root: root, from: pin, texts0: map[string]string{}, moves: map[string]string{},
+	p = &plan{root: root, from: pin, project: project, texts0: map[string]string{}, moves: map[string]string{},
 		aliases: map[string]string{}, stubs: map[string]int{}, isGroup: map[string]bool{},
-		ids: map[string]string{}, texts: map[string]string{}, why: map[string][]string{}}
+		ids: map[string]string{}, texts: map[string]string{}, why: map[string][]string{},
+		symlinks: map[string]string{}, relinks: map[string]string{}}
+	p.base = project
+	if project == "" || project == root {
+		p.base = filepath.Dir(root)
+	}
+	p.old, p.new = relSlash(p.base, root), relSlash(p.base, dest)
+	p.submodule = project != "" && project != root && fdfroot.Submodule(root)
 	var linked []string
 	err = filepath.WalkDir(root, func(q string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -111,12 +133,18 @@ func newPlan(root, pin string) (p *plan, problems []string, err error) {
 		rel := relSlash(root, q)
 		p.files = append(p.files, rel)
 		// A symlink moves as the link it is: migrate never writes through
-		// it into the file it names. It writes the root's INDEX.md, LOG.md
-		// and SPEC.md whatever they hold, so one of them that is a link is
-		// refused.
-		if d.Type()&os.ModeSymlink != 0 && rootWrites[rel] {
+		// it into the file it names, and names again a relative target
+		// that the move would change (relink). It writes the root's
+		// INDEX.md, LOG.md and SPEC.md whatever they hold, so one of them
+		// that is a link is refused.
+		if d.Type()&os.ModeSymlink != 0 {
 			to, _ := os.Readlink(q)
-			linked = append(linked, fmt.Sprintf("%s: a symbolic link to %s, which migrate would write through — replace it with the file it names", rel, to))
+			if rootWrites[rel] {
+				linked = append(linked, fmt.Sprintf("%s: a symbolic link to %s, which migrate would write through — replace it with the file it names", rel, to))
+			}
+			if to != "" && !filepath.IsAbs(to) {
+				p.symlinks[rel] = filepath.ToSlash(to)
+			}
 		}
 		if strings.HasSuffix(rel, ".md") && d.Type().IsRegular() {
 			raw, err := os.ReadFile(q)
@@ -158,6 +186,7 @@ func newPlan(root, pin string) (p *plan, problems []string, err error) {
 	if !stem {
 		p.stubTests()
 	}
+	p.relink()
 	p.repair()
 	if err := p.indexes(); err != nil {
 		return nil, nil, err
@@ -442,20 +471,39 @@ func (p *plan) findGroups() {
 	}
 }
 
-// move is the plan as the link engine reads it: every file the older layouts
-// move, every alias, and every group, each to where it is once migrated.
+// move is the plan as the link engine reads it, in paths from base: every
+// file the older layouts move, every alias, every group, and the bundle
+// itself, each to where it is once migrated.
 func (p *plan) move() links.Move {
 	m := links.Move{Files: map[string]string{}, Dirs: map[string]string{}}
 	for o := range p.moves {
-		m.Files[o] = p.to(o)
+		m.Files[path.Join(p.old, o)] = path.Join(p.new, p.to(o))
 	}
 	for o, a := range p.aliases {
-		m.Files[o] = p.grouped(a)
+		m.Files[path.Join(p.old, o)] = path.Join(p.new, p.grouped(a))
 	}
 	for _, g := range p.groups {
-		m.Dirs[g] = "features/" + g
+		m.Dirs[path.Join(p.old, g)] = path.Join(p.new, "features", g)
+	}
+	if p.relocates() {
+		m.Dirs[p.old] = p.new
 	}
 	return m
+}
+
+// relink plans the symbolic links a move would break: a link that names its
+// target by a relative path names it again, from where the link is once
+// migrated, at the place that target is once migrated.
+func (p *plan) relink() {
+	mv := p.move()
+	for _, f := range sortedKeys(p.symlinks) {
+		to := p.symlinks[f]
+		now, _ := mv.New(path.Join(p.old, path.Dir(f), to))
+		r, err := filepath.Rel(filepath.FromSlash(path.Join(p.new, path.Dir(p.to(f)))), filepath.FromSlash(now))
+		if nt := filepath.ToSlash(r); err == nil && nt != path.Clean(to) {
+			p.relinks[p.to(f)] = nt
+		}
+	}
 }
 
 // isLog reports whether rel is a log, whose words record what things were
@@ -494,7 +542,8 @@ func (p *plan) repair() {
 			}
 		}
 		var n int
-		if text, n = repairLinks(text, links.Site{OldPath: f, NewPath: to}, mv); n > 0 {
+		site := links.Site{OldPath: path.Join(p.old, f), NewPath: path.Join(p.new, to), OldBase: p.old, NewBase: p.new}
+		if text, n = repairLinks(text, site, mv); n > 0 {
 			p.links += n
 			p.linkFiles++
 			p.why[to] = append(p.why[to], count(n, "link"))
@@ -630,6 +679,11 @@ func (p *plan) listsGroup(t string) bool {
 func (p *plan) logEntry(from string) {
 	entry := fmt.Sprintf("**Migrated**: fdf_version %s → %s with `fdf migrate`", from, target)
 	var did []string
+	if p.relocates() {
+		// From the project root, or the directory that holds the bundle: a
+		// log records no machine's path.
+		did = append(did, fmt.Sprintf("moved the bundle from `%s/` to `%s/`", p.old, p.new))
+	}
 	if len(p.groups) > 0 {
 		did = append(did, fmt.Sprintf("moved %s into `features/` (%s)", p.groupList("`", "/`"), count(len(p.ids), "feature")))
 	}
@@ -831,8 +885,8 @@ func withCRLF(text string) string {
 // another has yet to leave (and a rename that changes only case takes on a
 // disk that ignores case), and the directories those moves leave empty go.
 // Then each removal. Then each feature group moves into features/, through a
-// hidden directory, since a group may be called features. Last, each text is
-// written where its file now is.
+// hidden directory, since a group may be called features. Then each text is
+// written where its file now is. Last, the bundle moves to its destination.
 func (p *plan) apply() error {
 	abs := func(rel string) string { return filepath.Join(p.root, filepath.FromSlash(rel)) }
 	olds := sortedKeys(p.moves)
@@ -902,7 +956,24 @@ func (p *plan) apply() error {
 			return err
 		}
 	}
-	return nil
+	for _, rel := range sortedKeys(p.relinks) {
+		if err := os.Remove(abs(rel)); err != nil {
+			return err
+		}
+		if err := os.Symlink(filepath.FromSlash(p.relinks[rel]), abs(rel)); err != nil {
+			return err
+		}
+	}
+	return p.relocate()
+}
+
+// shown is a path from base as a person reads it: from the project root, or,
+// outside a git repository, from the file system's root.
+func (p *plan) shown(rel string) string {
+	if p.project != "" {
+		return rel
+	}
+	return filepath.ToSlash(filepath.Join(p.base, filepath.FromSlash(rel)))
 }
 
 // writeFile writes text to the file at name, over the file there, or, when

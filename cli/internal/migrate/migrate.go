@@ -8,15 +8,22 @@
 //	      feature's ID gains features/ (logs keep their words); the one link
 //	      engine repairs every link; features/INDEX.md takes the groups'
 //	      listings, the other registers get their indexes; the pin, the spec
-//	      copy and any missing Context stub; the log; then validation
+//	      copy and any missing Context stub; the log
+//	then → a bundle at …/docs/features moves to …/docs/fdf beside it, or
+//	      where --to says, a submodule with git mv (relocate.go); then
+//	      validation
 //
 // The whole migration is worked out first (plan.go) and printed; a dry run
 // stops there, and nothing is written until the plan is complete, so a
-// bundle migrate refuses is left as it was. A bundle already pinned to 1.0
-// moves nothing: migrate restores its spec copy, indexes and Context stubs.
-// A root whose INDEX.md pins nothing inside a pinned bundle — a register or
-// a group of it, where the steps would build a second bundle — is refused,
-// and so is a pin that is not a version, or one newer than this fdf knows.
+// bundle migrate refuses is left as it was. In a git repository, which is
+// its undo, migrate starts only from a clean tree, marks what it wrote with
+// git add -N so that git diff -M shows every move, and, should it stop
+// partway, prints the git commands that put everything back. A bundle
+// already pinned to 1.0 moves nothing: migrate restores its spec copy,
+// indexes and Context stubs. A root whose INDEX.md pins nothing inside a
+// pinned bundle — a register or a group of it, where the steps would build a
+// second bundle — is refused, and so is a pin that is not a version, or one
+// newer than this fdf knows.
 //
 // Ends by validating the result with FreshStubsAdvisory so unfilled Context
 // stubs do not fail the migration (plain `fdf validate` will still enforce F9).
@@ -87,8 +94,10 @@ var timestampRe = regexp.MustCompile(`(?m)^timestamp:\s*(\S+)`)
 // Options are how fdf migrate was asked to run.
 type Options struct {
 	Root    string // the bundle root
-	Project string // the project root R1 checks paths against; "" outside a git repository
+	Project string // the project root: git's, which R1 checks paths against; "" outside a git repository
 	DryRun  bool   // print the plan and change nothing
+	To      string // where the bundle goes, absolute; "" for the default
+	EnvRoot string // the bundle root FDF_ROOT_DIR names, absolute; "" when it is not set
 }
 
 // Run upgrades the bundle at o.Root to target: it works out the whole
@@ -106,6 +115,7 @@ func Run(o Options, out io.Writer) int {
 	if err != nil {
 		rootAbs = root
 	}
+	rootAbs = onDisk(rootAbs)
 
 	// A bundle pinned to 0.x, or to nothing, is migrated; one at target takes
 	// the repair path.
@@ -121,6 +131,9 @@ func Run(o Options, out io.Writer) int {
 	case !ok:
 		fmt.Fprintf(out, "cannot migrate: the bundle pins fdf_version %s, which is not a MAJOR.MINOR version such as %s — correct the pin in INDEX.md; the bundle was left as it is.\n", pin, scaffold.CurrentVersion())
 		return 1
+	case pin == target && o.To != "" && onDisk(filepath.Clean(o.To)) != rootAbs:
+		fmt.Fprintf(out, "cannot migrate: the bundle already pins fdf_version %s, and migrate moves nothing in a bundle at %s — move it with git mv, then point --root or FDF_ROOT_DIR at it; the bundle was left as it is.\n", target, target)
+		return 1
 	case pin == target:
 		return repair(o, rootAbs, out)
 	case v.Major == 0 && !known0x[pin]:
@@ -131,7 +144,17 @@ func Run(o Options, out io.Writer) int {
 		return 1
 	}
 
-	p, problems, err := newPlan(rootAbs, pin)
+	// Git is the migration's undo, in the repository that tracks the bundle.
+	project := ""
+	if o.Project != "" {
+		project = repository(rootAbs)
+	}
+	dest, problem := destination(o.To, rootAbs, project)
+	if problem != "" {
+		fmt.Fprintf(out, "cannot migrate: %s; the bundle was left as it is.\n", problem)
+		return 1
+	}
+	p, problems, err := newPlan(rootAbs, pin, project, dest)
 	if err != nil {
 		fmt.Fprintf(out, "error: %v\n", err)
 		return 1
@@ -142,6 +165,25 @@ func Run(o Options, out io.Writer) int {
 			fmt.Fprintln(out, "  "+problem)
 		}
 		return 1
+	}
+	// Git is the migration's undo: it starts from a clean tree.
+	if project != "" {
+		lines, err := p.dirty(project)
+		if err != nil {
+			fmt.Fprintf(out, "error: %v\n", err)
+			return 1
+		}
+		if len(lines) > 0 {
+			fmt.Fprintln(out, "cannot migrate: files migrate would change have changes not committed, or are files git does not track — commit them, stash them or move them out of the bundle first, so that git can show the migration and undo it (bundle left unchanged):")
+			for i, l := range lines {
+				if i == 10 {
+					fmt.Fprintf(out, "  …and %d more\n", len(lines)-10)
+					break
+				}
+				fmt.Fprintln(out, "  "+l)
+			}
+			return 1
+		}
 	}
 	from := pin
 	if from == "" {
@@ -154,9 +196,23 @@ func Run(o Options, out io.Writer) int {
 	}
 	if err := p.apply(); err != nil {
 		fmt.Fprintf(out, "error: %v\n", err)
+		fmt.Fprintln(out, "the migration stopped partway. To put everything back as it was:")
+		for _, l := range p.undo(project) {
+			fmt.Fprintln(out, "  "+l)
+		}
 		return 1
 	}
-	fmt.Fprintf(out, "\ndone: migrated the bundle at %s to fdf_version %s; logged in LOG.md.\n", rootAbs, target)
+	if project != "" {
+		if err := p.markNew(project); err != nil {
+			fmt.Fprintf(out, "warning: %v — mark the new files with `git add -N` yourself, so that `git diff -M` shows each move\n", err)
+		}
+	}
+	root = p.dest()
+	if p.relocates() {
+		fmt.Fprintf(out, "\ndone: migrated the bundle at %s to fdf_version %s, and moved it to %s; logged in LOG.md.\n", rootAbs, target, root)
+	} else {
+		fmt.Fprintf(out, "\ndone: migrated the bundle at %s to fdf_version %s; logged in LOG.md.\n", rootAbs, target)
+	}
 
 	// Freshly scaffolded Context stubs are advisory here — migration
 	// succeeded; filling them is the human's next step via fdf-init.
@@ -178,7 +234,19 @@ func Run(o Options, out io.Writer) int {
 		reportV07(root, report.String(), out)
 	}
 	fmt.Fprintln(out, "\nnext: re-run `fdf install` as you installed fdf: the installed skills and primer still describe 0.7.")
-	fmt.Fprintln(out, "      then review the migration, and commit it.")
+	switch {
+	case project == "":
+		fmt.Fprintln(out, "      then review the migration: the bundle is not in a git repository, so nothing can undo it.")
+	case p.submodule:
+		fmt.Fprintf(out, "      then review it inside the submodule, with `git -C %s diff -M`, and commit it there first;\n", root)
+		fmt.Fprintln(out, "      then commit the submodule's new commit here, with .gitmodules when it moved.")
+	default:
+		fmt.Fprintln(out, "      then review it with `git diff -M` — migrate marked the files it wrote with `git add -N`,")
+		fmt.Fprintln(out, "      so each move shows as a rename — and commit it.")
+	}
+	if o.EnvRoot != "" && onDisk(o.EnvRoot) == rootAbs && p.relocates() {
+		fmt.Fprintf(out, "      FDF_ROOT_DIR still names %s: point it at %s.\n", rootAbs, root)
+	}
 	return code
 }
 
