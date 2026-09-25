@@ -58,11 +58,12 @@ func runInstall(args []string, stdout io.Writer) int {
 
 func runServe(args []string, stdout io.Writer) int {
 	fs := newFlagSet("serve")
-	root, source, _, exit, ok := resolveRootSource(fs, args, stdout)
+	r, _, exit, ok := resolveRootSource(fs, args, stdout)
 	if !ok {
 		return exit
 	}
-	announce("serve", root, source, stdout)
+	root := r.Root
+	announce("serve", r, stdout)
 	if !requireBundle(root, stdout) {
 		return 1
 	}

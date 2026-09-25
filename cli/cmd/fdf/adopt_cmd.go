@@ -17,10 +17,11 @@ func runAdopt(args []string, stdout io.Writer) int {
 	fs := newFlagSet("adopt")
 	resource := fs.String("resource", "", "comma-separated project-relative path(s) of the code the capability lives in (required when mapping one)")
 	depth := fs.Int("depth", 2, "how many directory levels the unclaimed code is grouped by in the report")
-	root, source, rest, exit, ok := resolveRootSource(fs, args, stdout)
+	r, rest, exit, ok := resolveRootSource(fs, args, stdout)
 	if !ok {
 		return exit
 	}
+	root := r.Root
 	if len(rest) > 1 {
 		printUsage(stdout, "adopt")
 		return 2
@@ -42,7 +43,7 @@ func runAdopt(args []string, stdout io.Writer) int {
 	if pr, standalone := fdfroot.ProjectRoot(root); !standalone {
 		projectRoot = pr
 	}
-	announce("adopt", root, source, stdout)
+	announce("adopt", r, stdout)
 	if !requireBundle(root, stdout) {
 		return 1
 	}

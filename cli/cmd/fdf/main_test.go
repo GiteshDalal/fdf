@@ -100,6 +100,40 @@ func TestValidateHonorsEnvAndFlagRoots(t *testing.T) {
 	}
 }
 
+// With neither --root nor FDF_ROOT_DIR, a command finds a bundle from before
+// 1.0 at docs/features and labels it so. Once docs/fdf holds a bundle too,
+// docs/fdf wins, and the header warns about the other.
+func TestDefaultRootIsLabelledAndAShadowedBundleWarned(t *testing.T) {
+	tmp, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(tmp, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old, _ := os.Getwd()
+	defer os.Chdir(old)
+	os.Chdir(tmp)
+	t.Setenv("FDF_ROOT_DIR", "")
+	features, fdf := filepath.Join(tmp, "docs", "features"), filepath.Join(tmp, "docs", "fdf")
+
+	writeMinimalBundle(t, features)
+	var out bytes.Buffer
+	runValidate(nil, &out)
+	if want := " · validate · root: " + features + " (pre-1.0 default docs/features)\n\n"; !strings.Contains(out.String(), want) {
+		t.Errorf("a bundle at docs/features is found and labelled:\n%s", out.String())
+	}
+
+	writeMinimalBundle(t, fdf)
+	out.Reset()
+	runValidate(nil, &out)
+	want := " · validate · root: " + fdf + " (default docs/fdf)\n" +
+		"warning: " + features + " holds a bundle too; docs/fdf comes first, so pass --root to work on the other\n\n"
+	if !strings.Contains(out.String(), want) {
+		t.Errorf("docs/fdf wins, and the header warns about docs/features:\n%s", out.String())
+	}
+}
+
 func TestSpecPrintsCurrentVersionByDefault(t *testing.T) {
 	var out bytes.Buffer
 	if exit := runSpec(nil, &out); exit != 0 {

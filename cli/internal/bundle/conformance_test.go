@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/GiteshDalal/fdf/cli/internal/fdfroot"
 )
 
 func TestConformanceFixtures(t *testing.T) {
@@ -19,8 +21,10 @@ func TestConformanceFixtures(t *testing.T) {
 			bundleRoot := filepath.Join(dir, "bundle")
 			repoRoot := ""
 			if fi, err := os.Stat(filepath.Join(dir, "repo")); err == nil && fi.IsDir() {
+				// A repo/ fixture's bundle is where fdf finds one by default:
+				// docs/fdf, or docs/features in one from before 1.0.
 				repoRoot = filepath.Join(dir, "repo")
-				bundleRoot = filepath.Join(repoRoot, "docs", "features")
+				bundleRoot = fdfroot.Default(repoRoot).Root
 			}
 			raw, err := os.ReadFile(filepath.Join(dir, "expect.txt"))
 			if err != nil {

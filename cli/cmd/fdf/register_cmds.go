@@ -29,10 +29,11 @@ func runRegister(k register.Kind, args []string, stdout io.Writer) int {
 		affects = fs.String("affects", "", "comma-separated feature ID(s) the defect shows up in (when filing)")
 	}
 	resource := fs.String("resource", "", "comma-separated project-relative path(s) carrying it (when filing)")
-	root, source, rest, exit, ok := resolveRootSource(fs, args, stdout)
+	r, rest, exit, ok := resolveRootSource(fs, args, stdout)
 	if !ok {
 		return exit
 	}
+	root := r.Root
 
 	var filters []string
 	for name, on := range map[string]bool{"open": *open, "accepted": *accepted, "resolved": *resolved} {
@@ -62,7 +63,7 @@ func runRegister(k register.Kind, args []string, stdout io.Writer) int {
 			fmt.Fprintf(stdout, "usage: fdf %s %s scaffolds a %s; drop the flags to read the register\n", cmd, rest[0], cmd)
 			return 2
 		}
-		announce(cmd, root, source, stdout)
+		announce(cmd, r, stdout)
 		if !requireBundle(root, stdout) {
 			return 1
 		}
@@ -91,7 +92,7 @@ func runRegister(k register.Kind, args []string, stdout io.Writer) int {
 		return 2
 	}
 
-	announce(cmd, root, source, stdout)
+	announce(cmd, r, stdout)
 	if !requireBundle(root, stdout) {
 		return 1
 	}

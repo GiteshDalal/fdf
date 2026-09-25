@@ -28,7 +28,7 @@ type flagDoc struct{ flag, text string }
 // helpWidth is the widest line the help prints.
 const helpWidth = 80
 
-var rootFlagDoc = flagDoc{"--root <dir>", "bundle root (default docs/features, or FDF_ROOT_DIR)"}
+var rootFlagDoc = flagDoc{"--root <dir>", "bundle root (default docs/fdf, or a docs/features from before 1.0; FDF_ROOT_DIR overrides it)"}
 
 var helpPreamble = banner + `
 
@@ -54,12 +54,16 @@ IDS
 BUNDLE ROOT
   Every command resolves the bundle root the same way:
 
-      --root <dir>   >   FDF_ROOT_DIR   >   docs/features
+      --root <dir>   >   FDF_ROOT_DIR   >   docs/fdf
 
-  Relative values resolve against the project root (the topmost enclosing
-  git repository, or the linked worktree you are in), so the bundle is found
-  from any subdirectory; absolute values are used as-is. A bundle may also be
-  a git submodule mounted at that path.
+  With neither set, fdf also looks in docs/features, where a bundle lived
+  before 1.0, and takes it when docs/fdf holds no bundle; when both do, it
+  warns. A bundle there is an INDEX.md that pins fdf_version, so a
+  documentation site's docs/features is left alone. Relative values
+  resolve against the project root (the topmost enclosing git repository,
+  or the linked worktree you are in), so the bundle is found from any
+  subdirectory; absolute values are used as-is. A bundle may also be a git
+  submodule mounted at that path.
 
   Flags go before arguments. A flag after an argument is refused, and fdf
   prints the command as it should have been typed:
@@ -582,9 +586,10 @@ func overview() string {
 	return banner + "\n\n" +
 		"Usage: fdf <command> [flags] [arguments]\n\n" +
 		commandIndex() + "\n" +
-		"Bundle root: --root <dir> > FDF_ROOT_DIR > docs/features. A relative path\n" +
-		"resolves against the project root, so fdf works from any subdirectory.\n" +
-		"Flags go before arguments: fdf new --root <dir> <group>/<slug>.\n\n" +
+		"Bundle root: --root <dir> > FDF_ROOT_DIR > docs/fdf (or docs/features, from\n" +
+		"before 1.0). A relative path resolves against the project root, so fdf\n" +
+		"works from any subdirectory.\n" +
+		"Flags go before arguments: fdf new --root <dir> [<group>/…]<slug>.\n\n" +
 		"Run 'fdf help <command>' for its flags and examples, or 'fdf help' for all."
 }
 

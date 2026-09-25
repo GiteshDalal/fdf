@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -13,7 +12,7 @@ import (
 
 // rootFlag registers the uniform --root override; every command uses it.
 func rootFlag(fs *flag.FlagSet) *string {
-	return fs.String("root", "", "bundle root (overrides FDF_ROOT_DIR; default docs/features)")
+	return fs.String("root", "", "bundle root (default docs/fdf, or a docs/features from before 1.0; FDF_ROOT_DIR overrides it)")
 }
 
 func runValidate(args []string, stdout io.Writer) int {
@@ -25,12 +24,9 @@ func runValidate(args []string, stdout io.Writer) int {
 		return exit
 	}
 	cwd, _ := os.Getwd()
-	bundleRoot, source, err := fdfroot.BundleRootWithSource(*root, cwd)
-	if err != nil {
-		fmt.Fprintln(stdout, "error:", err)
-		return 2
-	}
-	announce("validate", bundleRoot, source, stdout)
+	r := fdfroot.Resolve(*root, cwd)
+	bundleRoot := r.Root
+	announce("validate", r, stdout)
 	rr := *repoRoot
 	if rr == "" {
 		// A bundle at the top of its own repository — a docs repository cloned

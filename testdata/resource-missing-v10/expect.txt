@@ -1,0 +1,3 @@
+exit: 1
+contains: debts/authz-legacy-handlers.md: `resource` path does not exist in repo -> no/such/handler.go (R1)
+not-contains: -> internal/http/admin.go
