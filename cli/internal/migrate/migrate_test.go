@@ -2093,6 +2093,26 @@ func TestMigrateRewritesReferencesOutsideTheBundle(t *testing.T) {
 	}
 }
 
+// A log keeps its words, and what it says of the bundle's old path is
+// counted with them, not listed for a person to decide on: a link in it
+// that spells the path but leads elsewhere, as a mention in it.
+func TestMigrateCountsALogsLinkThatLeadsElsewhere(t *testing.T) {
+	project := gitProject(t, "valid-bugs-v07")
+	entry := "* Moved here from [the old wiki](../../wiki/docs/features/INDEX.md), once docs/features/old.\n"
+	write(t, project, "docs/features/LOG.md", string(mustRead(t, filepath.Join(project, "docs", "features", "LOG.md")))+entry)
+	gitIn(t, project, "commit", "-qam", "log")
+	var out bytes.Buffer
+	if code := Run(Options{Root: filepath.Join(project, "docs", "features"), Project: project}, &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
+	}
+	if !strings.Contains(out.String(), "  paths      0 mentions of docs/features/ in 0 documents; logs keep their words (2)\n") || strings.Contains(out.String(), "left as they are") {
+		t.Errorf("the log's link and mention are counted with its words, and neither is listed:\n%s", out.String())
+	}
+	if log := string(mustRead(t, filepath.Join(project, "docs", "fdf", "LOG.md"))); !strings.Contains(log, entry) {
+		t.Errorf("the log keeps its words:\n%s", log)
+	}
+}
+
 // A link migrate repairs inside the bundle is none it leaves behind, even
 // where its new target spells the bundle's path: a bundle at features/,
 // whose root links /venues/INDEX.md, now /features/venues/INDEX.md.

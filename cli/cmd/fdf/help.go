@@ -166,24 +166,26 @@ var helpTopics = []helpTopic{
 			"docs/fdf beside it, or where --to says; a submodule moves with git mv. In\n" +
 			"a git repository migrate also rewrites the rest of the project's\n" +
 			"git-tracked text files: each Markdown link into the bundle, and each\n" +
-			"mention of its path. Every mention of the old path it leaves — inside a\n" +
-			"URL, after a longer path, or in a link that leads elsewhere — is listed,\n" +
-			"and what `fdf install` manages is left to it. Migrate starts only from a\n" +
-			"clean tree, in the repository that tracks the bundle, refuses to put a\n" +
-			"file where git would ignore it, and marks the files it writes with\n" +
-			"`git add -N`, so that `git diff -M` shows each move. It prints the\n" +
-			"commands that put everything back should it stop partway, and, once done,\n" +
-			"those that back it out, starting with the `git reset` of those marks that\n" +
-			"git stash and git clean would trip on. A pre-flight refuses what 1.0 has\n" +
-			"no place for, and what migrate cannot move safely — a stray Markdown file\n" +
-			"at the root, a document named index.md or log.md, a practice, debt or bug\n" +
-			"beside a directory of Markdown, a register that is a symbolic link, a v0.1\n" +
-			"rename onto a file that is there — and leaves the bundle untouched, so a\n" +
-			"refused run is safe to retry after fixing what it names. A bundle already\n" +
-			"at 1.0 moves nothing: its spec copy, indexes and Context stubs are\n" +
-			"restored, never through a symbolic link. An unfilled Context stub is only\n" +
-			"a warning here; once the bundle has a feature, a plain `fdf validate`\n" +
-			"fails F9 until it is filled. Re-run `fdf install` afterwards.",
+			"mention of its path. Each mention of the old path it leaves for a person\n" +
+			"to decide on — inside a URL, after a longer path, or in a link that leads\n" +
+			"elsewhere — is listed; those in logs, which keep their words, are counted,\n" +
+			"and so are those in what `fdf install` manages, which is left to it.\n" +
+			"Migrate starts only from a clean tree, in the repository that tracks the\n" +
+			"bundle, refuses to put a file where git would ignore it, and marks the\n" +
+			"files it writes with `git add -N`, so that `git diff -M` shows each move.\n" +
+			"It prints the commands that put everything back should it stop partway,\n" +
+			"and, once done, those that back it out, starting with the `git reset` of\n" +
+			"those marks that git stash and git clean would trip on. A pre-flight\n" +
+			"refuses what 1.0 has no place for, and what migrate cannot move safely — a\n" +
+			"stray Markdown file at the root, a document named index.md or log.md, a\n" +
+			"practice, debt or bug beside a directory of Markdown, a register that is a\n" +
+			"symbolic link, a v0.1 rename onto a file that is there — and leaves the\n" +
+			"bundle untouched, so a refused run is safe to retry after fixing what it\n" +
+			"names. A bundle already at 1.0 moves nothing: its spec copy, indexes and\n" +
+			"Context stubs are restored, never through a symbolic link. An unfilled\n" +
+			"Context stub is only a warning here; once the bundle has a feature, a\n" +
+			"plain `fdf validate` fails F9 until it is filled. Re-run `fdf install`\n" +
+			"afterwards.",
 		flags: []flagDoc{
 			{"--dry-run", "print the plan, and change nothing"},
 			{"--to <dir>", "where the bundle goes (default docs/fdf beside a docs/features bundle, otherwise where it is)"},

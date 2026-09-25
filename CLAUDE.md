@@ -255,8 +255,8 @@ be corrected in `INDEX.md`, and a root inside a pinned bundle is sent to that bu
   rewrites the project's git-tracked text files — links into the bundle, and mentions
   of its path where a path begins — listing each mention of the old path it leaves for a
   person to decide on (in a URL, after a longer path, or in a link that leads
-  elsewhere), and skipping what
-  `fdf install` manages and `.gitmodules`; a bundle that is its own repository has no
+  elsewhere), counting those in logs, and skipping, and counting, what
+  `fdf install` manages, and `.gitmodules`; a bundle that is its own repository has no
   outside. Refused before anything is written: a root inside a pinned bundle, or one
   that is a symbolic link, or whose `INDEX.md`, `LOG.md` or `SPEC.md` is one; a pin that
   is not a version, a newer one or an unknown 0.x one; a v0.1 rename (`caseRenames`) or

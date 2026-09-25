@@ -593,8 +593,14 @@ func (p *plan) repair() {
 		paths := p.project != "" && p.project != p.root
 		if paths {
 			// Read before the engine repairs them: a link it repairs leads
-			// where it should.
-			p.leftLinks(text, path.Join(p.new, to), site, mv, nil)
+			// where it should. A log's is counted with its words.
+			for _, l := range p.leadsElsewhere(text, site, mv) {
+				if isLog(shaped) {
+					p.logPaths++
+				} else {
+					p.left = append(p.left, left{path.Join(p.new, to), lineOf(text, l.Start), l.Target, elsewhere})
+				}
+			}
 		}
 		if text, n = repairLinks(text, site, mv); n > 0 {
 			p.links += n

@@ -139,13 +139,14 @@ func pathTargets(text string) map[int]bool {
 	return out
 }
 
-// leftLinks lists each link in text, from the file at site, that spells the
-// bundle's path the move changes but leads somewhere else, so that the
-// engine leaves it as it is: every such occurrence of the old path is
-// listed, as a mention in a URL is. file is where the plan lists it. A URL
-// is no such link: a mention in one is listed as in a URL. One in what fdf
-// install manages (managed) is counted instead, as a mention there is.
-func (p *plan) leftLinks(text, file string, site links.Site, mv links.Move, managed map[int]bool) {
+// leadsElsewhere finds each link in text, from the file at site, that
+// spells the bundle's path the move changes but leads somewhere else, so
+// that the engine leaves it as it is: an occurrence of the old path left
+// behind. The plan lists it, as a mention in a URL, or, in a log or in what
+// fdf install manages, counts it, as a mention there. A URL is no such
+// link: a mention in one is in a URL.
+func (p *plan) leadsElsewhere(text string, site links.Site, mv links.Move) []links.Link {
+	var out []links.Link
 	for _, l := range links.Find(text) {
 		if _, ok := links.Resolve(l.Target, "x", ""); l.InCode || !ok {
 			continue
@@ -153,15 +154,11 @@ func (p *plan) leftLinks(text, file string, site links.Site, mv links.Move, mana
 		if _, ok := links.Retarget(l.Target, site, mv); ok {
 			continue
 		}
-		if len(p.pathMentions(l.Target, nil, mv)) == 0 {
-			continue
+		if len(p.pathMentions(l.Target, nil, mv)) > 0 {
+			out = append(out, l)
 		}
-		if managed[l.Start] {
-			p.managed++
-			continue
-		}
-		p.left = append(p.left, left{file, lineOf(text, l.Start), l.Target, elsewhere})
 	}
+	return out
 }
 
 // lineOf is the line text[s] is on, counting from 1.
@@ -237,7 +234,13 @@ func (p *plan) outside() error {
 					nLinks++
 				}
 			}
-			p.leftLinks(text, f, links.Site{OldPath: f, NewPath: f}, mv, managed)
+			for _, l := range p.leadsElsewhere(text, links.Site{OldPath: f, NewPath: f}, mv) {
+				if managed[l.Start] {
+					p.managed++
+				} else {
+					p.left = append(p.left, left{f, lineOf(text, l.Start), l.Target, elsewhere})
+				}
+			}
 		}
 		for _, m := range p.pathMentions(text, skip, mv) {
 			switch {
