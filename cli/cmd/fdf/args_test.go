@@ -194,10 +194,10 @@ func TestFilingFlagsWithoutASlug(t *testing.T) {
 		if code != 2 {
 			t.Errorf("%v: exit %d", tc.args, code)
 		}
-		if tc.args[0] == "debt" && out != "usage: --resource applies when filing a debt: fdf debt [--resource <paths>] [<group>/]<slug>\n" {
+		if tc.args[0] == "debt" && out != "usage: --resource applies when filing a debt: fdf debt [--resource <paths>] [<group>/…]<slug>\n" {
 			t.Errorf("debt: %q", out)
 		}
-		if tc.args[0] == "bug" && out != "usage: --affects and --resource apply when filing a bug: fdf bug [--affects <ids>] [--resource <paths>] [<group>/]<slug>\n" {
+		if tc.args[0] == "bug" && out != "usage: --affects and --resource apply when filing a bug: fdf bug [--affects <ids>] [--resource <paths>] [<group>/…]<slug>\n" {
 			t.Errorf("bug: %q", out)
 		}
 	}

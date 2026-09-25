@@ -71,9 +71,9 @@ func runRegister(k register.Kind, args []string, stdout io.Writer) int {
 	}
 	if len(affected) > 0 || *resource != "" {
 		if k.Type == "Bug" {
-			fmt.Fprintln(stdout, "usage: --affects and --resource apply when filing a bug: fdf bug [--affects <ids>] [--resource <paths>] [<group>/]<slug>")
+			fmt.Fprintln(stdout, "usage: --affects and --resource apply when filing a bug: fdf bug [--affects <ids>] [--resource <paths>] [<group>/…]<slug>")
 		} else {
-			fmt.Fprintf(stdout, "usage: --resource applies when filing a %s: fdf %s [--resource <paths>] [<group>/]<slug>\n", cmd, cmd)
+			fmt.Fprintf(stdout, "usage: --resource applies when filing a %s: fdf %s [--resource <paths>] [<group>/…]<slug>\n", cmd, cmd)
 		}
 		return 2
 	}

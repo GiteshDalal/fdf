@@ -122,21 +122,3 @@ func RequireSupported(root string, out io.Writer) bool {
 	}
 	return false
 }
-
-// RequirePin reports whether the bundle at root pins spec 0.<minor> or later,
-// and when it does not, says why the command stops and what to run instead.
-// what names what the command writes ("the bug register"); why is what goes
-// wrong under the older pin ("bugs/ is a feature group, and a Bug filed there
-// fails validation (F3)").
-func RequirePin(root string, minor int, what, why string, out io.Writer) bool {
-	if PinAtLeast(root, minor) {
-		return true
-	}
-	pinned := "no fdf_version"
-	if pin := Pin(root); pin != "" {
-		pinned = "fdf_version " + pin
-	}
-	fmt.Fprintf(out, "error: %s arrived in spec v0.%d, and this bundle pins %s: under that pin %s.\n", what, minor, pinned, why)
-	fmt.Fprintf(out, "  run `fdf migrate` to bring the bundle to v%s first.\n", currentVersion)
-	return false
-}

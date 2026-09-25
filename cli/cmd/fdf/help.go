@@ -278,23 +278,23 @@ var helpTopics = []helpTopic{
 		name:    "bug",
 		group:   "Registers and practices",
 		summary: "List the bug register (known defects), or file a bug",
-		usage:   "fdf bug [--root <dir>] [--open|--accepted|--resolved] [--cleanup [--dry-run]] [--affects <ids>] [--resource <paths>] [[<group>/]<slug>]",
-		body: "Read or file the bug register under bugs/ (v0.7): known defects — the\n" +
-			"software doing something wrong that someone could observe — that have\n" +
-			"not been repaired yet. A gap no one could observe is a debt instead.\n" +
+		usage:   "fdf bug [--root <dir>] [--open|--accepted|--resolved] [--cleanup [--dry-run]] [--affects <ids>] [--resource <paths>] [[<group>/…]<slug>]",
+		body: "Read or file the bug register under bugs/: known defects — the software\n" +
+			"doing something wrong that someone could observe — that have not been\n" +
+			"repaired yet. A gap no one could observe is a debt instead.\n" +
 			"\n" +
 			"Without a slug it prints the register. With a slug it files a new bug,\n" +
-			"status `open`, with `# Symptom` and `# Expected` to fill. When a scenario\n" +
-			"already promises the expected behavior, cite it under `# Violates`: the\n" +
-			"repair is a Fix (`fdf fix --from bugs/<id> …`). When none does, the\n" +
-			"repair is a Change that decides it (`fdf change --from bugs/<id> …`). A\n" +
-			"bug is never repaired in place: the Fix or Change that repairs it names\n" +
-			"it in `resolves`. A bug that needs no repair (not a defect, or a\n" +
-			"duplicate) is resolved with a `# Resolution` saying why.\n" +
+			"flat or in groups nested to any depth, status `open`, with `# Symptom` and\n" +
+			"`# Expected` to fill; --affects names features by their full IDs\n" +
+			"(features/…). When a scenario already promises the expected behavior, cite\n" +
+			"it under `# Violates`: the repair is a Fix (`fdf fix --from bugs/<id> …`).\n" +
+			"When none does, the repair is a Change that decides it (`fdf change --from\n" +
+			"bugs/<id> …`). A bug is never repaired in place: the Fix or Change that\n" +
+			"repairs it names it in `resolves`. A bug that needs no repair (not a\n" +
+			"defect, or a duplicate) is resolved with a `# Resolution` saying why.\n" +
 			"\n" +
 			"--cleanup clears resolved bugs as `fdf debt --cleanup` does, but always\n" +
-			"logs them: F10 checks a done Fix or Change against bugs/LOG.md. v0.7\n" +
-			"bundles and later.",
+			"logs them: F10 checks a done Fix or Change against bugs/LOG.md.",
 		flags: []flagDoc{
 			{"--open", "list only open bugs (also --accepted, --resolved)"},
 			{"--cleanup", "clear resolved bugs, recording each in bugs/LOG.md"},
@@ -305,7 +305,7 @@ var helpTopics = []helpTopic{
 		},
 		examples: []string{
 			"fdf bug --open",
-			"fdf bug --affects payments/instant-refunds --resource internal/payments/refund.go refund-split-capture",
+			"fdf bug --affects features/payments/instant-refunds --resource internal/payments/refund.go refund-split-capture",
 			"fdf bug --cleanup --dry-run",
 		},
 	},
@@ -313,22 +313,22 @@ var helpTopics = []helpTopic{
 		name:    "debt",
 		group:   "Registers and practices",
 		summary: "List the debt register (known gaps), or file a debt",
-		usage:   "fdf debt [--root <dir>] [--open|--accepted|--resolved] [--cleanup [--dry-run] [--no-log]] [--resource <paths>] [[<group>/]<slug>]",
+		usage:   "fdf debt [--root <dir>] [--open|--accepted|--resolved] [--cleanup [--dry-run] [--no-log]] [--resource <paths>] [[<group>/…]<slug>]",
 		body: "Read or file the debt register under debts/: the known gaps between what\n" +
-			"the project says and what the code does — work left undone, and rules\n" +
-			"the codebase does not follow everywhere yet.\n" +
+			"the project says and what the code does — work left undone, and rules the\n" +
+			"codebase does not follow everywhere yet.\n" +
 			"\n" +
 			"Without a slug it prints the register: status, ID, filing date (UTC) and\n" +
-			"title. With a slug it files a new debt, status `open` (later `accepted` or\n" +
-			"`resolved`), and lists it in the index beside it. Set `resource` to the\n" +
-			"paths that carry the gap: that is how later work finds the debt, and R1\n" +
-			"fails it once those paths are gone.\n" +
+			"title. With a slug it files a new debt, flat or in groups nested to any\n" +
+			"depth, status `open` (later `accepted` or `resolved`), and lists it in the\n" +
+			"index beside it. Set `resource` to the paths that carry the gap: that is\n" +
+			"how later work finds the debt, and R1 fails it once those paths are gone.\n" +
 			"\n" +
 			"--cleanup clears resolved debts: each gets one line in debts/LOG.md, and\n" +
 			"its file, its log and its index listing are removed; a group left with no\n" +
-			"entry goes too, index and listing included. Open and accepted debts are\n" +
-			"never touched. --dry-run shows the plan first; --no-log clears them\n" +
-			"without the LOG.md line. v0.6 bundles and later.",
+			"entry goes too, at any depth, index and listing included. Open and\n" +
+			"accepted debts are never touched. --dry-run shows the plan first; --no-log\n" +
+			"clears them without the LOG.md line.",
 		flags: []flagDoc{
 			{"--open", "list only open debts (also --accepted, --resolved)"},
 			{"--cleanup", "clear resolved debts, recording each in debts/LOG.md"},
