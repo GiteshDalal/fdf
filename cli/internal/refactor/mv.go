@@ -34,10 +34,6 @@ var (
 // nouns say what each register holds, for the messages that name one.
 var nouns = map[string]string{"features": "feature", "changes": "change", "practices": "practice", "debts": "debt", "bugs": "bug"}
 
-// ownsTasks: a feature, Change or Fix owns a task directory, which moves with
-// it; a practice, debt or bug owns no directory.
-func ownsTasks(reg string) bool { return reg == "features" || reg == "changes" }
-
 // kind is what a move moves.
 type kind int
 
@@ -214,16 +210,24 @@ func makePlan(rootAbs, from, to string) (*plan, error) {
 		if fromReg != toReg && !refile {
 			return nil, fmt.Errorf("a %s stays under %s/ (a debt and a bug can be re-filed as each other; nothing else changes register)%s", nouns[fromReg], fromReg, within(fromReg, to))
 		}
-		// A practice, debt or bug owns no directory, so one beside it stays
-		// where it is, and the link engine repairs the links into it. When
-		// it holds Markdown, the move is what repairs the F3.
-		if isDir(src(from)) && !ownsTasks(fromReg) {
-			p.stays = from
+		// layout says what the directory beside the document is. A task
+		// directory moves with it. A practice, debt or bug owns no directory,
+		// so one beside it stays where it is, and the link engine repairs the
+		// links into it. When it holds Markdown, the move is what repairs the
+		// F3.
+		tasks := false
+		if isDir(src(from)) {
+			switch b.Dir(from).Kind {
+			case layout.TaskDir:
+				tasks = true
+			case layout.Stray:
+				p.stays = from
+			}
 		}
 		if problem := b.Place(to); problem != "" {
 			return nil, fmt.Errorf("%s", problem)
 		}
-		p.addDoc(rootAbs, from, to, ownsTasks(fromReg))
+		p.addDoc(rootAbs, from, to, tasks)
 		if refile {
 			p.flip[to+".md"] = map[string]string{"bugs": "Bug", "debts": "Debt"}[toReg]
 		}
@@ -661,7 +665,9 @@ func apply(rootAbs string, p *plan, edits map[string]*edit) error {
 }
 
 // emptiedGroup names the group a document or group moved out of, when the
-// move left it holding only its index.
+// move left it holding only its index. The .DS_Store macOS Finder leaves in a
+// directory it has shown is not the group's, as the registers' cleanup reads
+// it.
 func emptiedGroup(rootAbs string, p *plan) string {
 	g := path.Dir(p.from)
 	if p.kind == kTask || g == path.Dir(p.to) || !strings.Contains(g, "/") {
@@ -672,7 +678,7 @@ func emptiedGroup(rootAbs string, p *plan) string {
 		return ""
 	}
 	for _, e := range entries {
-		if e.Name() != "INDEX.md" {
+		if e.Name() != "INDEX.md" && e.Name() != ".DS_Store" {
 			return ""
 		}
 	}

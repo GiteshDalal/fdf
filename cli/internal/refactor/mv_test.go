@@ -310,6 +310,9 @@ func TestMoveTreatsAGroupCalledBugsAsAnyOther(t *testing.T) {
 // leaves empty is named.
 func TestMoveBetweenFlatAndNestedGroups(t *testing.T) {
 	root := fixture(t, "valid-bugs-v10")
+	// macOS Finder leaves one in any directory it has shown. It is not the
+	// group's, so the group it is left in is emptied all the same.
+	write(t, root, "features/venues/.DS_Store", "finder")
 	out := move(t, root, "features/venues/opening-hours", "features/opening-hours")
 	if s := read(t, root, "features/INDEX.md"); !strings.Contains(s, "* [opening-hours](opening-hours.md) - a capability.\n") {
 		t.Fatalf("a flat feature is listed in features/INDEX.md:\n%s", s)
