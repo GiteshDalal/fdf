@@ -56,6 +56,23 @@ var legacyBlockRe = regexp.MustCompile(`(?s)<!-- fdf:begin v[^>]*-->.*?<!-- fdf:
 
 const primerHeading = "## Feature Document Format"
 
+// MarkerFile is the file each installed skill's directory holds, recording
+// what installed it. What a directory with one holds is install's to
+// rewrite, and so is the primer section of an instruction file.
+const MarkerFile = ".fdf-version"
+
+// InstructionFile reports whether name is the file name of an instruction
+// file some harness reads, where install places its primer: CLAUDE.md or
+// AGENTS.md.
+func InstructionFile(name string) bool {
+	for _, h := range harnesses {
+		if filepath.Base(filepath.Join(h.instrFile...)) == name || filepath.Base(filepath.Join(h.projectInstrFile...)) == name {
+			return true
+		}
+	}
+	return false
+}
+
 // harness describes per-scope destination path segments under a base directory
 // (user home for user-level installs, project root for --project).
 type harness struct {
@@ -134,7 +151,7 @@ func Run(harnessName, base, root string, project bool, out io.Writer) int {
 	upToDate := true
 	recorded := map[string]bool{}
 	for _, name := range skillNames {
-		v, err := os.ReadFile(filepath.Join(skillsDir, name, ".fdf-version"))
+		v, err := os.ReadFile(filepath.Join(skillsDir, name, MarkerFile))
 		if err != nil || string(v) != marker {
 			upToDate = false
 		}
@@ -164,7 +181,7 @@ func Run(harnessName, base, root string, project bool, out io.Writer) int {
 			}
 			// The marker is written only after SKILL.md landed, so a failed
 			// install can never masquerade as "up to date" on the next run.
-			if err := os.WriteFile(filepath.Join(dir, ".fdf-version"), []byte(marker), 0o644); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, MarkerFile), []byte(marker), 0o644); err != nil {
 				fmt.Fprintln(out, "error:", err)
 				return 1
 			}
@@ -969,9 +986,10 @@ Working in an FDF project:
 var primerHeadingRe = regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(primerHeading) + `\s*$`)
 var nextH2Re = regexp.MustCompile(`(?m)^## `)
 
-// primerSection locates the managed primer section: from the start of the
-// heading line to the start of the next `## ` heading (or EOF).
-func primerSection(content string) (start, end int, ok bool) {
+// PrimerSection locates the managed primer section in an instruction file's
+// content: from the start of the heading line to the start of the next `## `
+// heading (or EOF).
+func PrimerSection(content string) (start, end int, ok bool) {
 	loc := primerHeadingRe.FindStringIndex(content)
 	if loc == nil {
 		return 0, 0, false
@@ -1010,7 +1028,7 @@ func ensurePrimer(path, root string, recorded map[string]bool, out io.Writer) (s
 		content = legacyBlockRe.ReplaceAllString(content, "")
 		verb = "updated"
 	}
-	if s, e, ok := primerSection(content); ok {
+	if s, e, ok := PrimerSection(content); ok {
 		section := strings.TrimRight(content[s:e], "\n")
 		switch {
 		case section == strings.TrimRight(primer(root), "\n"):

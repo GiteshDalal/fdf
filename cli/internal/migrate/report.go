@@ -30,6 +30,9 @@ func (p *plan) print(out io.Writer, from string, dry bool) {
 	}
 	row("ids", fmt.Sprintf("%s in %s; logs keep their words (%d)", count(p.mentions, "mention"), count(p.idFiles, "document"), p.logIDs))
 	row("links", fmt.Sprintf("%d in %s", p.links, count(p.linkFiles, "file")))
+	if p.project != "" && p.project != p.root {
+		row("paths", fmt.Sprintf("%s of %s/ in %s; logs keep their words (%d)", count(p.paths, "mention"), p.old, count(p.pathFiles, "document"), p.logPaths))
+	}
 	indexes := fmt.Sprintf("features/INDEX.md: %s moved from INDEX.md", count(p.listings, "listing"))
 	if p.generated > 0 {
 		indexes += fmt.Sprintf(", %s written for groups INDEX.md did not list", count(p.generated, "listing"))
@@ -38,6 +41,32 @@ func (p *plan) print(out io.Writer, from string, dry bool) {
 		indexes += "; " + count(p.tags, "status tag") + " removed"
 	}
 	row("indexes", indexes)
+	switch {
+	case p.project == "":
+		row("outside", "not searched, nor its path inside it: the bundle is not in a git repository")
+	case p.project == p.root:
+		row("outside", "nothing: the bundle is its own git repository")
+	default:
+		row("outside", fmt.Sprintf("%s in %s; %s in %s", count(p.outMentions, "mention"), count(p.outMentionFiles, "file"), count(p.outLinks, "link"), count(p.outLinkFiles, "file")))
+		if len(p.left) > 0 {
+			var byWhy []string
+			for _, why := range []string{"after a longer path", "in a URL", elsewhere} {
+				n := 0
+				for _, l := range p.left {
+					if l.why == why {
+						n++
+					}
+				}
+				if n > 0 {
+					byWhy = append(byWhy, count(n, "mention")+" "+why)
+				}
+			}
+			row("", "left as they are: "+strings.Join(byWhy, ", ")+" (listed below)")
+		}
+		if p.managed > 0 {
+			row("", fmt.Sprintf("skipped: %s in what `fdf install` manages, which it rewrites", count(p.managed, "reference")))
+		}
+	}
 
 	fmt.Fprintln(out, "\nfiles:")
 	for _, g := range p.groups {
@@ -66,6 +95,18 @@ func (p *plan) print(out io.Writer, from string, dry bool) {
 	}
 	for _, rel := range sortedKeys(p.relinks) {
 		fmt.Fprintf(out, "  relink  %s → %s\n", rel, p.relinks[rel])
+	}
+	if len(p.outTexts) > 0 {
+		fmt.Fprintln(out, "\noutside the bundle:")
+		for _, f := range sortedKeys(p.outTexts) {
+			fmt.Fprintf(out, "  edit    %s  (%s)\n", f, strings.Join(p.outWhy[f], ", "))
+		}
+	}
+	if len(p.left) > 0 {
+		fmt.Fprintln(out, "\nleft as they are:")
+		for _, l := range p.left {
+			fmt.Fprintf(out, "  %s:%d  %s  (%s)\n", l.file, l.line, l.path, l.why)
+		}
 	}
 }
 

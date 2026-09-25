@@ -149,7 +149,7 @@ func (p *plan) dirty(project string) ([]string, error) {
 		}
 		return lines, nil
 	}
-	var paths []string
+	paths := sortedKeys(p.outTexts)
 	var lines []string
 	switch {
 	case p.submodule:
@@ -269,12 +269,15 @@ func (p *plan) undo(project string) []string {
 			lines = append(lines, fmt.Sprintf("git -C %s mv %s %s", q(project), q(p.new), q(p.old)),
 				fmt.Sprintf("git -C %s checkout HEAD -- .gitmodules", q(project)))
 		}
+		if len(p.outTexts) > 0 {
+			lines = append(lines, fmt.Sprintf("git -C %s checkout -- %s", q(project), quoteAll(sortedKeys(p.outTexts))))
+		}
 		return append(lines, fmt.Sprintf("git -C %s checkout -- . && git -C %s clean -fd", old, old))
 	}
 	if p.relocated {
 		lines = append(lines, fmt.Sprintf("mv %s %s", q(p.dest()), q(p.root)))
 	}
-	return append(lines, fmt.Sprintf("git -C %s checkout -- %s", q(project), q(p.old)),
+	return append(lines, fmt.Sprintf("git -C %s checkout -- %s", q(project), quoteAll(append([]string{p.old}, sortedKeys(p.outTexts)...))),
 		fmt.Sprintf("git -C %s clean -fd -- %s", q(project), q(p.old)))
 }
 
@@ -288,4 +291,13 @@ func quote(s string) string {
 		return s
 	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// quoteAll quotes each path, and joins them with spaces.
+func quoteAll(paths []string) string {
+	words := make([]string, len(paths))
+	for i, p := range paths {
+		words[i] = quote(p)
+	}
+	return strings.Join(words, " ")
 }

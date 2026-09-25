@@ -87,8 +87,20 @@ type plan struct {
 	mentions  int // feature ID mentions rewritten
 	idFiles   int // documents they are in
 	logIDs    int // feature ID mentions logs keep
+	paths     int // mentions of the bundle's path rewritten, inside the bundle
+	pathFiles int // documents they are in
+	logPaths  int // mentions of the bundle's path logs keep
 	listings  int // group listings moved from the root INDEX.md
 	generated int // listings written for groups the root never listed
+
+	// Outside the bundle (outside.go): each file rewritten, by its path from
+	// the project root, and what changes in it; what is counted; and every
+	// mention left as it is.
+	outTexts                                             map[string]string
+	outWhy                                               map[string][]string
+	outLinks, outLinkFiles, outMentions, outMentionFiles int
+	managed                                              int // mentions and links in what fdf install manages
+	left                                                 []left
 }
 
 // rootWrites are the files at the bundle root that migrate writes whatever
@@ -109,7 +121,8 @@ func newPlan(root, pin, project, dest string) (p *plan, problems []string, err e
 	p = &plan{root: root, from: pin, project: project, texts0: map[string]string{}, moves: map[string]string{},
 		aliases: map[string]string{}, stubs: map[string]int{}, isGroup: map[string]bool{},
 		ids: map[string]string{}, texts: map[string]string{}, why: map[string][]string{},
-		symlinks: map[string]string{}, relinks: map[string]string{}}
+		symlinks: map[string]string{}, relinks: map[string]string{},
+		outTexts: map[string]string{}, outWhy: map[string][]string{}}
 	p.base = project
 	if project == "" || project == root {
 		p.base = filepath.Dir(root)
@@ -190,6 +203,12 @@ func newPlan(root, pin, project, dest string) (p *plan, problems []string, err e
 	p.repair()
 	if err := p.indexes(); err != nil {
 		return nil, nil, err
+	}
+	// A bundle that is its own repository has no outside.
+	if project != "" && project != root {
+		if err := p.outside(); err != nil {
+			return nil, nil, err
+		}
 	}
 	return p, nil, nil
 }
@@ -518,10 +537,11 @@ func isLog(rel string) bool {
 // where its file was to where it is now. Outside logs, which keep their
 // words, every mention of a feature's ID gains features/ — in fields,
 // headings, prose, code spans and a Gherkin Scenario line, while the rest of
-// a code block, such as a Gherkin step or a shell sample, keeps its words: a
-// reference repair after a move, which reaches frozen documents too. The
-// vendored SPEC.md, which migrate replaces, is left to it, and a file that
-// goes is left alone.
+// a code block, such as a Gherkin step or a shell sample, keeps its words —
+// and, in a git repository the bundle is part of, every mention of the
+// bundle's path follows the move (as outside the bundle): a reference repair
+// after a move, which reaches frozen documents too. The vendored SPEC.md,
+// which migrate replaces, is left to it, and a file that goes is left alone.
 func (p *plan) repair() {
 	mv := p.move()
 	for _, f := range p.files {
@@ -543,12 +563,39 @@ func (p *plan) repair() {
 		}
 		var n int
 		site := links.Site{OldPath: path.Join(p.old, f), NewPath: path.Join(p.new, to), OldBase: p.old, NewBase: p.new}
+		paths := p.project != "" && p.project != p.root
+		if paths {
+			// Read before the engine repairs them: a link it repairs leads
+			// where it should.
+			p.leftLinks(text, path.Join(p.new, to), site, mv)
+		}
 		if text, n = repairLinks(text, site, mv); n > 0 {
 			p.links += n
 			p.linkFiles++
 			p.why[to] = append(p.why[to], count(n, "link"))
 		}
 		skip := linkTargets(text)
+		var reps []refactor.Replacement
+		if paths {
+			for _, m := range p.pathMentions(text, pathTargets(text), mv) {
+				switch {
+				case isLog(shaped):
+					p.logPaths++
+				case m.why != "":
+					p.left = append(p.left, left{path.Join(p.new, to), lineOf(text, m.start), m.path, m.why})
+				default:
+					reps = append(reps, refactor.Replacement{Start: m.start, End: m.end, Text: m.to})
+				}
+				for k := m.start; k < m.end; k++ {
+					skip[k] = true
+				}
+			}
+			if n := len(reps); n > 0 {
+				p.paths += n
+				p.pathFiles++
+				p.why[to] = append(p.why[to], count(n, "path mention"))
+			}
+		}
 		// A scenario's name is matched by its test case and by the
 		// declarations that name it, which are prose: its Scenario line is
 		// rewritten with them, and the rest of a code block keeps its words.
@@ -571,13 +618,14 @@ func (p *plan) repair() {
 			for k := range fieldPaths(text) {
 				skip[k] = true
 			}
-			if reps := refactor.IDMentions(text, p.ids, "", skip, true); len(reps) > 0 {
-				text = replace(text, reps)
-				p.mentions += len(reps)
+			if ids := refactor.IDMentions(text, p.ids, "", skip, true); len(ids) > 0 {
+				reps = append(reps, ids...)
+				p.mentions += len(ids)
 				p.idFiles++
-				p.why[to] = append(p.why[to], count(len(reps), "ID"))
+				p.why[to] = append(p.why[to], count(len(ids), "ID"))
 			}
 		}
+		text = replace(text, reps)
 		if text != p.texts0[f] {
 			p.texts[to] = text
 		}
@@ -690,6 +738,9 @@ func (p *plan) logEntry(from string) {
 	if p.mentions > 0 || p.links > 0 {
 		did = append(did, fmt.Sprintf("repaired %s in %s and %s in %s", count(p.mentions, "feature ID mention"), count(p.idFiles, "document"), count(p.links, "link"), count(p.linkFiles, "file")))
 	}
+	if n := len(p.outTexts); n > 0 {
+		did = append(did, fmt.Sprintf("rewrote %s and %s in %s outside the bundle", count(p.outMentions, "mention"), count(p.outLinks, "link"), count(n, "file")))
+	}
 	if len(did) > 0 {
 		entry += ": " + strings.Join(did, "; ")
 	}
@@ -737,8 +788,8 @@ func repairLinks(text string, s links.Site, m links.Move) (string, int) {
 	return replace(text, reps), len(reps)
 }
 
-// linkTargets marks the bytes of every link target in text, which a mention
-// never overlaps: the engine repairs them.
+// linkTargets marks the bytes of every link target in text, which an ID
+// mention never overlaps: the engine repairs them, and a URL keeps its words.
 func linkTargets(text string) map[int]bool {
 	out := map[int]bool{}
 	for _, l := range links.Find(text) {
@@ -886,7 +937,8 @@ func withCRLF(text string) string {
 // disk that ignores case), and the directories those moves leave empty go.
 // Then each removal. Then each feature group moves into features/, through a
 // hidden directory, since a group may be called features. Then each text is
-// written where its file now is. Last, the bundle moves to its destination.
+// written where its file now is, and the bundle moves to its destination.
+// Last, the files outside the bundle that name it are rewritten.
 func (p *plan) apply() error {
 	abs := func(rel string) string { return filepath.Join(p.root, filepath.FromSlash(rel)) }
 	olds := sortedKeys(p.moves)
@@ -964,7 +1016,10 @@ func (p *plan) apply() error {
 			return err
 		}
 	}
-	return p.relocate()
+	if err := p.relocate(); err != nil {
+		return err
+	}
+	return p.writeOutside()
 }
 
 // shown is a path from base as a person reads it: from the project root, or,

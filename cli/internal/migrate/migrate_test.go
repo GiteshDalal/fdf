@@ -292,8 +292,13 @@ func TestMigrateRepairsLinksWithTheEngine(t *testing.T) {
 	// The spec is lifted out of example/ and moved into features/: one
 	// level up, one down.
 	root = filepath.Join(filepath.Dir(root), "fdf")
-	if !strings.Contains(out.String(), "the bundle is not in a git repository, so nothing can undo it") {
-		t.Errorf("outside a git repository, migrate says nothing can undo it:\n%s", out.String())
+	for _, want := range []string{
+		"  outside    not searched, nor its path inside it: the bundle is not in a git repository\n",
+		"the bundle is not in a git repository, so nothing can undo it",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("outside a git repository, migrate says %q:\n%s", want, out.String())
+		}
 	}
 	spec := string(mustRead(t, filepath.Join(root, "features", "wdise", "example.spec.md")))
 	for _, want := range []string{"[refund.go](../../../../src/refund.go)", "[okf]: ../../../okf/index.md"} {
@@ -1752,5 +1757,235 @@ func TestMigrateDryRunLeavesGitAsItIs(t *testing.T) {
 	after, err := os.Stat(index)
 	if err != nil || !after.ModTime().Equal(before.ModTime()) || string(mustRead(t, index)) != raw {
 		t.Errorf("a dry run leaves git's index as it was: %v", err)
+	}
+}
+
+// The rest of the project names the bundle too, and migrate rewrites it in
+// the project's git-tracked text files: a Markdown link into the bundle,
+// whether or not it spells the bundle's path, and a mention of the bundle's
+// path where a path begins, the longest match first, a link written from the
+// project root and a reference definition among them; a link in a code
+// sample is read as the code it is. Every occurrence of the old path left as
+// it is is listed: a mention inside a URL, or after a longer path, and a link
+// that spells the path but leads elsewhere. A bare feature ID outside the
+// bundle is left alone; what fdf install manages is skipped; and a binary
+// file is not read. Inside the bundle the same rule applies, but logs keep
+// their words.
+func TestMigrateRewritesReferencesOutsideTheBundle(t *testing.T) {
+	project := gitProject(t, "valid-bugs-v07")
+	files := map[string]string{
+		"README.md": "# Project\n\nThe bundle is in docs/features; run `fdf validate --root docs/features`.\n" +
+			"Its venues are [here](docs/features/venues/INDEX.md), its practices at ./docs/features/practices/.\n" +
+			"Permalink: https://github.com/org/repo/blob/main/docs/features/venues/opening-hours.md\n" +
+			"An old plan named repo/docs/features.\n" +
+			"Its root is [here](/docs/features/INDEX.md), and [the spec][spec] is vendored.\n\n[spec]: docs/features/SPEC.md\n" +
+			"\nSee [the permalink](https://github.com/org/repo/blob/main/docs/features/venues/opening-hours.md).\n",
+		"docs/launch/plan.md": "# Launch\n\nSee [the fix](../features/changes/old-fix.md) and [hours](../features/venues/opening-hours.md).\n" +
+			"The feature venues/opening-hours ships.\n",
+		"Taskfile.yml":    "tasks:\n  docs:\n    cmds:\n      - fdf validate --root $PWD/docs/features\n      - ls ${ROOT}/docs/features/venues\n",
+		"server/hours.go": "// Opening hours follow docs/features/venues/opening-hours.md.\npackage hours\n",
+		"docs/plans/old.md": "# Old plan\n\nSee [`docs/features/INDEX.md`](docs/features/INDEX.md).\n\n" +
+			"```markdown\n[the index](docs/features/INDEX.md)\n```\n",
+		"CLAUDE.md": "# Project\n\nThe bundle: docs/features.\n\n## Feature Document Format\n\nThis project keeps docs/features.\n\n" +
+			"## Other\n\nMore in docs/features/venues.\n",
+		".claude/skills/fdf-help/SKILL.md":     "Read docs/features/INDEX.md.\n",
+		".claude/skills/fdf-help/.fdf-version": "0.7.0 skills=x primer=y root=docs/features\n",
+		"assets/logo.png":                      "PNG docs/features\x00",
+		"docs/features/STACK.md":               string(mustRead(t, filepath.Join(project, "docs", "features", "STACK.md"))) + "\nValidate with `fdf validate --root docs/features`.\n",
+		"docs/features/LOG.md":                 string(mustRead(t, filepath.Join(project, "docs", "features", "LOG.md"))) + "* Moved here from docs/features/old.\n",
+	}
+	for rel, content := range files {
+		write(t, project, rel, content)
+	}
+	gitIn(t, project, "add", "-A")
+	gitIn(t, project, "commit", "-qm", "references")
+
+	// A file migrate would rewrite, changed and not committed, stops it.
+	write(t, project, "README.md", files["README.md"]+"More.\n")
+	var out bytes.Buffer
+	if code := Run(Options{Root: filepath.Join(project, "docs", "features"), Project: project}, &out); code != 1 || !strings.HasSuffix(out.String(), "(bundle left unchanged):\n   M README.md\n") {
+		t.Fatalf("an uncommitted change outside the bundle, in a file migrate rewrites, is refused: exit %d\n%s", code, out.String())
+	}
+	gitIn(t, project, "checkout", "--", "README.md")
+
+	out.Reset()
+	if code := Run(Options{Root: filepath.Join(project, "docs", "features"), Project: project}, &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
+	}
+	for rel, wants := range map[string][]string{
+		"README.md": {
+			"The bundle is in docs/fdf; run `fdf validate --root docs/fdf`.\n",
+			"Its venues are [here](docs/fdf/features/venues/INDEX.md), its practices at ./docs/fdf/practices/.\n",
+			"https://github.com/org/repo/blob/main/docs/features/venues/opening-hours.md\n",
+			"An old plan named repo/docs/features.\n",
+			"Its root is [here](/docs/fdf/INDEX.md), and [the spec][spec] is vendored.\n\n[spec]: docs/fdf/SPEC.md\n",
+		},
+		"docs/launch/plan.md": {
+			"See [the fix](../fdf/changes/old-fix.md) and [hours](../fdf/features/venues/opening-hours.md).\n",
+			"The feature venues/opening-hours ships.\n",
+		},
+		"Taskfile.yml":                         {"--root $PWD/docs/fdf\n", "ls ${ROOT}/docs/fdf/features/venues\n"},
+		"server/hours.go":                      {"// Opening hours follow docs/fdf/features/venues/opening-hours.md.\n"},
+		"docs/plans/old.md":                    {"See [`docs/fdf/INDEX.md`](docs/features/INDEX.md).\n", "```markdown\n[the index](docs/fdf/INDEX.md)\n```\n"},
+		"CLAUDE.md":                            {"The bundle: docs/fdf.\n", "This project keeps docs/features.\n", "More in docs/fdf/features/venues.\n"},
+		".claude/skills/fdf-help/SKILL.md":     {"Read docs/features/INDEX.md.\n"},
+		".claude/skills/fdf-help/.fdf-version": {"root=docs/features\n"},
+		"assets/logo.png":                      {"PNG docs/features"},
+		"docs/fdf/STACK.md":                    {"Validate with `fdf validate --root docs/fdf`.\n"},
+		"docs/fdf/LOG.md":                      {"* Moved here from docs/features/old.\n"},
+	} {
+		got := string(mustRead(t, filepath.Join(project, rel)))
+		for _, want := range wants {
+			if !strings.Contains(got, want) {
+				t.Errorf("%s should hold %q:\n%s", rel, want, got)
+			}
+		}
+	}
+	for _, want := range []string{
+		"  paths      1 mention of docs/features/ in 1 document; logs keep their words (1)\n",
+		"  outside    10 mentions in 5 files; 5 links in 2 files\n",
+		"             left as they are: 1 mention after a longer path, 2 mentions in a URL, 1 mention in a link that leads elsewhere (listed below)\n",
+		"             skipped: 3 references in what `fdf install` manages, which it rewrites\n",
+		"\noutside the bundle:\n",
+		"  edit    README.md  (3 links, 3 mentions)\n",
+		"  edit    docs/launch/plan.md  (2 links)\n",
+		"\nleft as they are:\n",
+		"  README.md:5  docs/features/venues/opening-hours.md  (in a URL)\n",
+		"  README.md:6  docs/features  (after a longer path)\n",
+		"  README.md:11  docs/features/venues/opening-hours.md  (in a URL)\n",
+		"  docs/plans/old.md:3  docs/features/INDEX.md  (in a link that leads elsewhere)\n",
+		"  edit    docs/plans/old.md  (2 mentions)\n",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("the plan should say %q:\n%s", want, out.String())
+		}
+	}
+	if diff := gitIn(t, project, "diff", "--name-only"); !strings.Contains(diff, "README.md\n") || !strings.Contains(diff, "Taskfile.yml\n") || strings.Contains(diff, ".claude/") {
+		t.Errorf("git diff shows what migrate rewrote outside the bundle, and nothing install manages:\n%s", diff)
+	}
+}
+
+// A link migrate repairs inside the bundle is none it leaves behind, even
+// where its new target spells the bundle's path: a bundle at features/,
+// whose root links /venues/INDEX.md, now /features/venues/INDEX.md.
+func TestMigrateListsNoRepairedLinkAsLeftBehind(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	project := t.TempDir()
+	copyFixtureTo(t, "valid-bugs-v07", filepath.Join(project, "features"))
+	gitIn(t, project, "init", "-q")
+	gitIn(t, project, "add", "-A")
+	gitIn(t, project, "commit", "-qm", "bundle")
+	var out bytes.Buffer
+	if code := Run(Options{Root: filepath.Join(project, "features"), Project: project}, &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
+	}
+	if idx := string(mustRead(t, filepath.Join(project, "features", "INDEX.md"))); !strings.Contains(idx, "(/features/INDEX.md)") {
+		t.Errorf("the root links the Features register:\n%s", idx)
+	}
+	if strings.Contains(out.String(), "left as they are") {
+		t.Errorf("a link migrate repairs is none it leaves behind:\n%s", out.String())
+	}
+}
+
+// A bundle that is its own repository has no outside: nothing beyond it is
+// searched, and the name of its directory is no path in it, so a mention of
+// handbook/… is left as it is, while its IDs are rewritten as in any bundle.
+func TestMigrateABundleThatIsItsOwnRepositoryHasNoOutside(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	root := filepath.Join(t.TempDir(), "handbook")
+	copyFixtureTo(t, "valid-bugs-v07", root)
+	spec := filepath.Join(root, "venues", "opening-hours.spec.md")
+	write(t, root, "venues/opening-hours.spec.md", string(mustRead(t, spec))+"\nSee handbook/venues/opening-hours.md.\n")
+	gitIn(t, root, "init", "-q")
+	gitIn(t, root, "add", "-A")
+	gitIn(t, root, "commit", "-qm", "bundle")
+	var out bytes.Buffer
+	if code := Run(Options{Root: root, Project: root}, &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
+	}
+	if s := string(mustRead(t, filepath.Join(root, "features", "venues", "opening-hours.spec.md"))); !strings.Contains(s, "\nSee handbook/venues/opening-hours.md.\n") {
+		t.Errorf("a mention of the repository's own directory is left as it is:\n%s", s)
+	}
+	if s := string(mustRead(t, filepath.Join(root, "changes", "closed-hours-fix.md"))); !strings.Contains(s, "affects: features/venues/opening-hours\n") {
+		t.Errorf("the IDs are rewritten:\n%s", s)
+	}
+	if !strings.Contains(out.String(), "  outside    nothing: the bundle is its own git repository\n") || strings.Contains(out.String(), "  paths ") {
+		t.Errorf("the plan says there is no outside:\n%s", out.String())
+	}
+}
+
+// gitSuperproject makes a git repository whose docs/features is a submodule
+// holding a copy of the conformance fixture name, all committed, and returns
+// the superproject's root.
+func gitSuperproject(t *testing.T, name string) string {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	tmp := t.TempDir()
+	repo := filepath.Join(tmp, "bundle-repo")
+	copyFixtureTo(t, name, repo)
+	gitIn(t, repo, "init", "-q")
+	gitIn(t, repo, "add", "-A")
+	gitIn(t, repo, "commit", "-qm", "bundle")
+	super := filepath.Join(tmp, "super")
+	write(t, super, "README.md", "# Super\n")
+	gitIn(t, super, "init", "-q")
+	gitIn(t, super, "add", "-A")
+	gitIn(t, super, "commit", "-qm", "code")
+	gitIn(t, super, "-c", "protocol.file.allow=always", "submodule", "add", "-q", repo, "docs/features")
+	gitIn(t, super, "commit", "-qm", "mount the bundle")
+	return super
+}
+
+// Should a migration stop once the bundle has moved, the commands migrate
+// prints move it back first — a plain directory with mv, a submodule with
+// git mv and .gitmodules as it was — and then put everything back.
+func TestMigrateSaysHowToUndoAMigrationStoppedAfterTheMove(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root writes any file")
+	}
+	for _, submodule := range []bool{false, true} {
+		var project string
+		if submodule {
+			project = gitSuperproject(t, "valid-bugs-v07")
+		} else {
+			project = gitProject(t, "valid-bugs-v07")
+		}
+		write(t, project, "README.md", "# Project\n\nThe bundle is in docs/features.\n")
+		gitIn(t, project, "commit", "-qam", "readme")
+		before := worktree(t, project)
+		// README.md, which migrate rewrites last, once the bundle has
+		// moved, is a file it cannot write.
+		readme := filepath.Join(project, "README.md")
+		if err := os.Chmod(readme, 0o444); err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		if code := Run(Options{Root: filepath.Join(project, "docs", "features"), Project: project}, &out); code != 1 {
+			t.Fatalf("submodule %v: migrate exit %d, want 1\n%s", submodule, code, out.String())
+		}
+		_, undo, ok := strings.Cut(out.String(), "the migration stopped partway. To put everything back as it was:\n")
+		if !ok {
+			t.Fatalf("submodule %v: migrate says how to undo it:\n%s", submodule, out.String())
+		}
+		os.Chmod(readme, 0o644)
+		for _, line := range strings.Split(strings.TrimSpace(undo), "\n") {
+			if b, err := exec.Command("sh", "-c", strings.TrimSpace(line)).CombinedOutput(); err != nil {
+				t.Fatalf("submodule %v: %s: %v\n%s", submodule, line, err, b)
+			}
+		}
+		if after := worktree(t, project); after != before {
+			t.Errorf("submodule %v: the commands put everything back:\n%s", submodule, undo)
+		}
+		for _, dir := range []string{project, filepath.Join(project, "docs", "features")} {
+			if status := gitIn(t, dir, "status", "--porcelain", "--untracked-files=all"); status != "" {
+				t.Errorf("submodule %v: git status is clean again in %s:\n%s", submodule, dir, status)
+			}
+		}
 	}
 }

@@ -10,8 +10,9 @@
 //	      listings, the other registers get their indexes; the pin, the spec
 //	      copy and any missing Context stub; the log
 //	then → a bundle at …/docs/features moves to …/docs/fdf beside it, or
-//	      where --to says, a submodule with git mv (relocate.go); then
-//	      validation
+//	      where --to says, a submodule with git mv (relocate.go); the rest of
+//	      the project's git-tracked text files follow it, links into it and
+//	      mentions of its path (outside.go); then validation
 //
 // The whole migration is worked out first (plan.go) and printed; a dry run
 // stops there, and nothing is written until the plan is complete, so a

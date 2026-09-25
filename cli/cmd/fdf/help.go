@@ -164,17 +164,22 @@ var helpTopics = []helpTopic{
 			"the pin, the vendored SPEC.md and any missing Context stub follow. The\n" +
 			"migration is logged in LOG.md. A bundle at docs/features then moves to\n" +
 			"docs/fdf beside it, or where --to says; a submodule moves with git mv. In\n" +
-			"the git repository that tracks the bundle, migrate starts only from a\n" +
-			"clean tree, and marks the files it writes with `git add -N`, so that `git\n" +
-			"diff -M` shows each move; should it stop partway, it prints the commands\n" +
-			"that put everything back. A pre-flight refuses what 1.0 has no place for —\n" +
-			"a stray Markdown file at the root, a document named index.md or log.md, a\n" +
-			"practice, debt or bug beside a directory of Markdown — and leaves the\n" +
-			"bundle untouched, so a refused run is safe to retry after fixing what it\n" +
-			"names. A bundle already at 1.0 moves nothing: its spec copy, indexes and\n" +
-			"Context stubs are restored. An unfilled Context stub is only a warning\n" +
-			"here; once the bundle has a feature, a plain `fdf validate` fails F9 until\n" +
-			"it is filled. Re-run `fdf install` afterwards.",
+			"a git repository migrate also rewrites the rest of the project's\n" +
+			"git-tracked text files: each Markdown link into the bundle, and each\n" +
+			"mention of its path. Every mention of the old path it leaves — inside a\n" +
+			"URL, after a longer path, or in a link that leads elsewhere — is listed,\n" +
+			"and what `fdf install` manages is left to it. Migrate starts only from a\n" +
+			"clean tree, in the repository that tracks the bundle, and marks the files\n" +
+			"it writes with `git add -N`, so that `git diff -M` shows each move; should\n" +
+			"it stop partway, it prints the commands that put everything back. A\n" +
+			"pre-flight refuses what 1.0 has no place for — a stray Markdown file at\n" +
+			"the root, a document named index.md or log.md, a practice, debt or bug\n" +
+			"beside a directory of Markdown — and leaves the bundle untouched, so a\n" +
+			"refused run is safe to retry after fixing what it names. A bundle already\n" +
+			"at 1.0 moves nothing: its spec copy, indexes and Context stubs are\n" +
+			"restored. An unfilled Context stub is only a warning here; once the bundle\n" +
+			"has a feature, a plain `fdf validate` fails F9 until it is filled. Re-run\n" +
+			"`fdf install` afterwards.",
 		flags: []flagDoc{
 			{"--dry-run", "print the plan, and change nothing"},
 			{"--to <dir>", "where the bundle goes (default docs/fdf beside a docs/features bundle, otherwise where it is)"},
