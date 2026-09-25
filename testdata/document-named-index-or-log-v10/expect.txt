@@ -1,0 +1,3 @@
+exit: 1
+contains: practices/log.md: no document is named log.md: a disk that ignores case reads it as the LOG.md beside it — rename it (F3)
+contains: features/payments/index.md: no document is named index.md: a disk that ignores case reads it as the INDEX.md beside it — rename it (F3)

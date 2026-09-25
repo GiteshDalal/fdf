@@ -1,0 +1,5 @@
+exit: 0
+contains: features/shop-admin/: name uses banned "shop" → "Venue" — rename it with `fdf mv` (F12)
+not-contains: shop-images
+not-contains: Shop_Assets
+not-contains: debts/rounding/

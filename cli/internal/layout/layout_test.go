@@ -102,6 +102,11 @@ func TestFileStray(t *testing.T) {
 		{"practices/auth/permission-checks/examples.md", "practices/auth/permission-checks/", "shares its name with the practice practices/auth/permission-checks.md, and a practice owns no directory"},
 		{"bugs/x.spec.md", "bugs/x.spec.md", `unknown trail role "spec" under bugs/ — a bug is a register entry`},
 		{"releases/2026/1.3.0.md", "releases/2026/", "releases/ is flat"},
+		// A disk that ignores case reads these as the reserved files beside
+		// them, so they are never a document's name, wherever they are.
+		{"features/index.md", "features/index.md", "no document is named index.md: a disk that ignores case reads it as the INDEX.md beside it"},
+		{"debts/a/log.md", "debts/a/log.md", "no document is named log.md: a disk that ignores case reads it as the LOG.md beside it"},
+		{"releases/index.md", "releases/index.md", "no document is named index.md"},
 	} {
 		got := sample.File(tc.rel)
 		if got.Kind != Stray || got.Where != tc.where || !strings.Contains(got.Problem, tc.problem) {
@@ -131,6 +136,30 @@ func TestDir(t *testing.T) {
 	for _, rel := range []string{"drafts", "assets", "releases/2026", "practices/auth/permission-checks", "features/Payments"} {
 		if got := sample.Dir(rel); got.Kind != Stray {
 			t.Errorf("Dir(%q) = %+v; want a Stray", rel, got)
+		}
+	}
+}
+
+// A directory that holds no Markdown at any depth, hidden files aside, is
+// outside FDF, however deep its files are.
+func TestHoldsMarkdown(t *testing.T) {
+	b := New(fstest.MapFS{
+		"features/shop-images/logo.png":        {},
+		"features/shop-images/raw/logo.psd":    {},
+		"features/shop-images/.cache/notes.md": {},
+		"features/platform/payments/x.md":      {},
+		"debts/rounding/diagram.png":           {},
+	})
+	for rel, want := range map[string]bool{
+		"features/shop-images":     false,
+		"features/shop-images/raw": false,
+		"features/platform":        true,
+		"features":                 true,
+		"debts/rounding":           false,
+		"debts/nowhere":            false,
+	} {
+		if got := b.HoldsMarkdown(rel); got != want {
+			t.Errorf("HoldsMarkdown(%q) = %v; want %v", rel, got, want)
 		}
 	}
 }
