@@ -215,49 +215,49 @@ var helpTopics = []helpTopic{
 		name:    "change",
 		group:   "Features",
 		summary: "Start a Change: a delivered feature must behave differently",
-		usage:   "fdf change [--root <dir>] [--from bugs/<id>] [--affects <group>/<slug>[,…]] [<group>/]<slug>",
+		usage:   "fdf change [--root <dir>] [--from bugs/<id>] [--affects <feature-id>[,…]] [<group>/…]<slug>",
 		body: "Scaffold a Change under changes/: a request to alter what a delivered\n" +
 			"(done or adopted) feature does. Use it when the feature's Gherkin has to\n" +
 			"change, including when its document was silent on a case nobody foresaw.\n" +
 			"A Change passes the design gate — an approved <slug>.spec.md — and\n" +
 			"declares under `# Scenario changes` the scenarios it will add, modify or\n" +
-			"remove; F10 will not let it reach `done` until they have. --affects may\n" +
-			"name several features: one Change can span them. --from bugs/<id> starts\n" +
-			"from a filed bug that no scenario covers yet: it copies the bug's\n" +
-			"`# Symptom` and `# Expected` into `# Problem`, takes its `affects`, and\n" +
-			"names it in `resolves`. v0.5 bundles and later.",
+			"remove; F10 will not let it reach `done` until they have. --affects\n" +
+			"takes features' full IDs (features/…), and may name several: one Change\n" +
+			"can span them. --from bugs/<id> starts from a filed bug that no scenario\n" +
+			"covers yet: it copies the bug's `# Symptom` and `# Expected` into\n" +
+			"`# Problem`, takes its `affects`, and names it in `resolves`.",
 		flags: []flagDoc{
 			{"--affects <ids>", "comma-separated feature IDs this touches (required unless --from supplies them)"},
 			{"--from bugs/<id>", "the bug this repairs: copies its analysis, writes `resolves`"},
 			rootFlagDoc,
 		},
 		examples: []string{
-			"fdf change --affects payments/instant-refunds refund-window",
+			"fdf change --affects features/payments/instant-refunds refund-window",
 			"fdf change --from bugs/refund-to-closed-card refund-to-closed-card",
-			"fdf change --affects payments/instant-refunds,payments/card-payments payments/partial-refunds",
+			"fdf change --affects features/payments/refunds,features/payments/cards payments/partial-refunds",
 		},
 	},
 	{
 		name:    "fix",
 		group:   "Features",
 		summary: "Start a Fix: the code drifted from what its feature says",
-		usage:   "fdf fix [--root <dir>] [--from bugs/<id>] [--affects <group>/<slug>[,…]] [<group>/]<slug>",
+		usage:   "fdf fix [--root <dir>] [--from bugs/<id>] [--affects <feature-id>[,…]] [<group>/…]<slug>",
 		body: "Scaffold a Fix under changes/: the feature document was right and the\n" +
 			"code drifted from it. It has no design gate — restoring documented\n" +
 			"behavior needs no approval — and needs no spec, plan or tasks, so the\n" +
 			"smallest Fix is a single file. It lists under `# Regression cases` the\n" +
 			"existing scenarios it proves, each with its verification; the lasting\n" +
-			"record is each case in the affected feature's slug.test.md. --from\n" +
-			"bugs/<id> takes over a bug's `# Symptom` and `# Root cause`, turns its\n" +
-			"`# Violates` scenarios into regression cases, and names it in `resolves`.\n" +
-			"v0.5 bundles and later.",
+			"record is each case in the affected feature's slug.test.md. --affects\n" +
+			"takes features' full IDs (features/…). --from bugs/<id> takes over a\n" +
+			"bug's `# Symptom` and `# Root cause`, turns its `# Violates` scenarios\n" +
+			"into regression cases, and names it in `resolves`.",
 		flags: []flagDoc{
 			{"--affects <ids>", "comma-separated feature IDs this touches (required unless --from supplies them)"},
 			{"--from bugs/<id>", "the bug this repairs: copies its analysis, writes `resolves`"},
 			rootFlagDoc,
 		},
 		examples: []string{
-			"fdf fix --affects payments/instant-refunds refund-rounding",
+			"fdf fix --affects features/payments/instant-refunds refund-rounding",
 			"fdf fix --from bugs/refund-split-capture refund-split-capture",
 		},
 	},
@@ -265,13 +265,14 @@ var helpTopics = []helpTopic{
 		name:    "history",
 		group:   "Features",
 		summary: "Show a feature's Changes, Fixes and known bugs",
-		usage:   "fdf history [--root <dir>] <group>/<slug>",
+		usage:   "fdf history [--root <dir>] <feature-id>",
 		body: "Show what has happened to a feature since it was delivered: every Change\n" +
 			"and Fix that names it in `affects`, the bugs each one resolves, and the\n" +
 			"bugs on the register that name it. It is computed from those documents'\n" +
-			"frontmatter, so the feature never has to keep back-links by hand.",
+			"frontmatter, so the feature never has to keep back-links by hand. It\n" +
+			"takes the feature's full ID, features/[<group>/…]<slug>.",
 		flags:    []flagDoc{rootFlagDoc},
-		examples: []string{"fdf history payments/instant-refunds"},
+		examples: []string{"fdf history features/payments/instant-refunds"},
 	},
 	{
 		name:    "bug",

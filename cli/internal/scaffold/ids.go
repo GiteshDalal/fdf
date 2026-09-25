@@ -52,3 +52,23 @@ func WriteNew(root, id, text string) error {
 	}
 	return f.Close()
 }
+
+// IsFeature reports whether id is the ID of a feature of the bundle at root:
+// a document filed in features/ that exists, its name spelled exactly so: on
+// a disk that ignores case, os.Stat takes a stray features/Refunds.md for
+// features/refunds.
+func IsFeature(root, id string) bool {
+	b := layout.New(os.DirFS(root))
+	pos := b.File(id + ".md")
+	return pos.Kind == layout.Document && pos.Register == "features" && b.Exists(id+".md")
+}
+
+// FeatureHint is what a command adds when id names no feature: the full ID,
+// when id is a feature's written the 0.7 way, without the features/ every
+// 1.0 feature ID starts with, as the validator's F10 and F14 suggest it.
+func FeatureHint(root, id string) string {
+	if !strings.HasPrefix(id, "features/") && IsFeature(root, "features/"+id) {
+		return " — did you mean features/" + id + "?"
+	}
+	return ""
+}
