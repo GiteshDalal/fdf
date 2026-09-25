@@ -3,6 +3,7 @@ package migrate
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -139,6 +140,9 @@ func TestMigrateChainsToItsTarget(t *testing.T) {
 	if !strings.Contains(string(idx), "(/LOG.md)") {
 		t.Fatalf("root-absolute link not rewritten to /LOG.md:\n%s", idx)
 	}
+	if !strings.Contains(string(idx), "* [FDF format](/SPEC.md) - vendored spec.") {
+		t.Fatalf("a link to the vendored fdf-spec.md names the vendored SPEC.md:\n%s", idx)
+	}
 	if !strings.Contains(string(idx), "(https://example.com/a/log.md)") {
 		t.Fatalf("external URL was modified:\n%s", idx)
 	}
@@ -263,6 +267,31 @@ func TestMigrateV03ToV04StemLayout(t *testing.T) {
 	}
 }
 
+// The pre-0.4 steps repair links with the one link engine, as fdf mv does: a
+// link that leaves the bundle from a lifted trail file gains the ../ its
+// move needs, and a reference definition is repaired like an inline link.
+// migrate's own rewriters left both behind.
+func TestMigrateRepairsLinksWithTheEngine(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "docs", "features")
+	buildV03Bundle(t, root)
+	write(t, root, "wdise/example/SPEC.md", "---\ntype: Spec\ntitle: Example spec\ndescription: Design.\ntimestamp: 2026-07-06T00:00:00Z\n---\n\n# Design\n\nThe handler is [refund.go](../../../../src/refund.go), beside [the map][okf].\n\n[okf]: ../../../okf/index.md\n")
+	feature := filepath.Join(root, "wdise", "example.md")
+	write(t, root, "wdise/example.md", string(mustRead(t, feature))+"\nSee [the plan][plan].\n\n[plan]: example/PLAN.md\n")
+	var out bytes.Buffer
+	if code := Run(root, "", &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
+	}
+	spec := string(mustRead(t, filepath.Join(root, "wdise", "example.spec.md")))
+	for _, want := range []string{"[refund.go](../../../src/refund.go)", "[okf]: ../../okf/index.md"} {
+		if !strings.Contains(spec, want) {
+			t.Errorf("the lifted spec should hold %q:\n%s", want, spec)
+		}
+	}
+	if got := string(mustRead(t, feature)); !strings.Contains(got, "[plan]: example.plan.md") {
+		t.Errorf("a reference definition to a lifted file is repaired:\n%s", got)
+	}
+}
+
 func TestMigrateAlready04IsNoop(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "features")
 	// Minimal already-current draft-only bundle (no features → no F9 hard fail).
@@ -321,6 +350,115 @@ func TestMigrateLeavesA10BundleAsItIs(t *testing.T) {
 		if after := tree(t, r.root); after != before {
 			t.Errorf("a refused migration changes nothing:\nbefore:\n%s\nafter:\n%s", before, after)
 		}
+	}
+}
+
+// migrate changes what it must, and keeps the rest of each file's form: a
+// root INDEX.md whose frontmatter carries no pin gets it in that
+// frontmatter, not a second block above it; a file written with CRLF line
+// endings keeps them on every line, the lines migrate adds included, and a
+// CRLF log takes the migration's entry above its older days; and a document
+// that is a symlink moves as the link it is, without migrate writing through
+// it into the file it names.
+func TestMigrateKeepsTheFormOfWhatItRewrites(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, "handbook")
+	buildV03Bundle(t, root)
+	crlf := func(s string) string { return strings.ReplaceAll(s, "\n", "\r\n") }
+	write(t, root, "INDEX.md", crlf("---\ntitle: Handbook\n---\n\n# Handbook\n\n* [Wdise](/wdise/INDEX.md) - group.\n"))
+	write(t, root, "LOG.md", crlf("# Bundle Update Log\n\n## 2026-07-06\n* **Initialization**: v0.3.\n"))
+	shared := "---\ntype: Feature\nstatus: draft\ntitle: Shared\ndescription: d.\ntimestamp: 2026-07-06T00:00:00Z\n---\n\n# Feature\n\n```gherkin\nFeature: Shared\n  As a user\n  I want it\n  So that it helps\n```\n\n```gherkin\nScenario: It is shared\n  Given a\n  When b\n  Then c\n```\n\nSee [the example](example.md) and `wdise/example`.\n"
+	write(t, dir, "shared.md", shared)
+	if err := os.Symlink(filepath.Join(dir, "shared.md"), filepath.Join(root, "wdise", "shared.md")); err != nil {
+		t.Skip("symlinks unavailable:", err)
+	}
+	var out bytes.Buffer
+	if code := Run(root, "", &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
+	}
+	idx := string(mustRead(t, filepath.Join(root, "INDEX.md")))
+	if !strings.HasPrefix(idx, "---\r\nfdf_version: \""+target+"\"\r\ntitle: Handbook\r\n---\r\n") {
+		t.Errorf("the pin joins the frontmatter INDEX.md has:\n%q", idx)
+	}
+	for _, rel := range []string{"INDEX.md", "LOG.md"} {
+		if text := string(mustRead(t, filepath.Join(root, rel))); strings.Count(text, "\n") != strings.Count(text, "\r\n") {
+			t.Errorf("%s keeps its CRLF line endings, on every line:\n%q", rel, text)
+		}
+	}
+	if log := string(mustRead(t, filepath.Join(root, "LOG.md"))); strings.Index(log, "**Migrated**") > strings.Index(log, "## 2026-07-06") {
+		t.Errorf("the migration's entry goes above the older days:\n%q", log)
+	}
+	if fi, err := os.Lstat(filepath.Join(root, "wdise", "shared.md")); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("the symlink stays in its group, as a symlink: %v", err)
+	}
+	if got := string(mustRead(t, filepath.Join(dir, "shared.md"))); got != shared {
+		t.Errorf("migrate writes nothing through a symlink:\n%s", got)
+	}
+}
+
+// A bundle that is a symbolic link is not where the link is: migrate refuses
+// it, names the directory it links to, and writes nothing in it.
+func TestMigrateRefusesABundleThatIsASymlink(t *testing.T) {
+	dir := t.TempDir()
+	bundle := filepath.Join(dir, "shared", "handbook")
+	buildV03Bundle(t, bundle)
+	link := filepath.Join(dir, "docs", "features")
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(bundle, link); err != nil {
+		t.Skip("symlinks unavailable:", err)
+	}
+	before := tree(t, bundle)
+	var out bytes.Buffer
+	if code := Run(link, "", &out); code != 1 || !strings.Contains(out.String(), "  "+link+": a symbolic link to "+bundle+" — migrate the directory it names, with --root\n") {
+		t.Fatalf("a bundle that is a symlink is refused: exit %d\n%s", code, out.String())
+	}
+	if tree(t, bundle) != before {
+		t.Error("migrate wrote into the directory the link names")
+	}
+}
+
+// migrate writes the root's INDEX.md, LOG.md and SPEC.md whatever they hold,
+// so one that is a symbolic link is refused, and the file it names keeps its
+// words.
+func TestMigrateRefusesARootFileThatIsASymlink(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, "handbook")
+	buildV03Bundle(t, root)
+	log := string(mustRead(t, filepath.Join(root, "LOG.md")))
+	write(t, dir, "shared/LOG.md", log)
+	if err := os.Remove(filepath.Join(root, "LOG.md")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join("..", "shared", "LOG.md"), filepath.Join(root, "LOG.md")); err != nil {
+		t.Skip("symlinks unavailable:", err)
+	}
+	var out bytes.Buffer
+	if code := Run(root, "", &out); code != 1 || !strings.Contains(out.String(), "  LOG.md: a symbolic link to ../shared/LOG.md, which migrate would write through — replace it with the file it names\n") {
+		t.Fatalf("a root LOG.md that is a symlink is refused: exit %d\n%s", code, out.String())
+	}
+	if got := string(mustRead(t, filepath.Join(dir, "shared", "LOG.md"))); got != log {
+		t.Errorf("the file the link names keeps its words:\n%s", got)
+	}
+}
+
+// migrate never writes over a file its plan did not read: a file it would
+// write new that is there after all stops it, and keeps its words.
+func TestMigrateNeverWritesOverAFileItDidNotRead(t *testing.T) {
+	root := t.TempDir()
+	buildV03Bundle(t, root)
+	p, problems, err := newPlan(root, "0.3")
+	if err != nil || len(problems) > 0 {
+		t.Fatalf("newPlan: %v %v", err, problems)
+	}
+	p.texts["NOTES.md"] = "migrate's\n"
+	write(t, root, "NOTES.md", "mine\n")
+	if err := p.apply(io.Discard); err == nil || !os.IsExist(err) {
+		t.Errorf("a file the plan writes new that is there stops it: %v", err)
+	}
+	if got := string(mustRead(t, filepath.Join(root, "NOTES.md"))); got != "mine\n" {
+		t.Errorf("the file keeps its words: %q", got)
 	}
 }
 

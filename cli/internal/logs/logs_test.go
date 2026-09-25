@@ -119,6 +119,19 @@ func TestRootEntryGoesAboveOlderDays(t *testing.T) {
 	validates(t, root, "LOG.md")
 }
 
+// A log written with CRLF line endings reads its date headings as any log
+// does: a new day goes above the older ones, not at the end, and an entry of
+// a day that has one goes under it.
+func TestInsertReadsTheDatesOfACRLFLog(t *testing.T) {
+	today := Today()
+	if got := Insert("# Log\r\n\r\n## 2020-01-01\r\n* older.\r\n", "* newer.\n"); !strings.HasPrefix(got, "# Log\r\n\r\n## "+today+"\n* newer.\n\n## 2020-01-01\r\n") {
+		t.Errorf("a new day goes above the older ones:\n%q", got)
+	}
+	if got := Insert("# Log\r\n\r\n## "+today+"\r\n* first.\r\n", "* second.\n"); !strings.Contains(got, "## "+today+"\r\n* second.\n* first.\r\n") {
+		t.Errorf("an entry goes under its day's heading:\n%q", got)
+	}
+}
+
 // A date written by hand ahead of UTC can already head a log; today's UTC
 // entry goes below it, so the log stays newest first.
 func TestEntryKeepsDateOrderBelowALaterDate(t *testing.T) {
