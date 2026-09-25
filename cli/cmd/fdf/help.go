@@ -398,16 +398,16 @@ var helpTopics = []helpTopic{
 			"entry goes in the log of the one document it is about: a feature, Change,\n" +
 			"Fix, practice, debt or bug ID puts it in that document's <slug>.log.md,\n" +
 			"created on first use, and a task or trail document's entry goes in its\n" +
-			"owner's log. A group ID puts it in the group's LOG.md. With no ID, or for\n" +
-			"a Context document or a release, it goes in the bundle-root LOG.md, which\n" +
-			"is for the bundle as a whole. A log is the one sibling a draft feature\n" +
-			"may have (v0.7). Start an entry with a bold label naming the event\n" +
-			"(**Specified**, **Decision**, **Done**), then say what happened and, for\n" +
-			"a decision, why. fdf adds the list bullet itself; an entry that starts\n" +
-			"with \"-\" goes after --, so it is not read as a flag: fdf log -- \"- …\".",
+			"owner's log. A group ID puts it in the group's LOG.md, at any depth. With\n" +
+			"no ID, or for a Context document or a release, it goes in the bundle-root\n" +
+			"LOG.md, which is for the bundle as a whole. A log is the one sibling a\n" +
+			"draft feature may have. Start an entry with a bold label naming the event\n" +
+			"(**Specified**, **Decision**, **Done**), then say what happened and, for a\n" +
+			"decision, why. fdf adds the list bullet itself; an entry that starts with\n" +
+			"\"-\" goes after --, so it is not read as a flag: fdf log -- \"- …\".",
 		flags: []flagDoc{rootFlagDoc},
 		examples: []string{
-			"fdf log payments/instant-refunds \"**Specified**: design approved.\"",
+			"fdf log features/payments/instant-refunds \"**Specified**: design approved.\"",
 			"fdf log changes/refund-window \"**Decision**: refunds in flight keep the old window.\"",
 			"fdf log \"**Checkpoint**: Context documents re-read against the code.\"",
 		},
@@ -447,15 +447,15 @@ var helpTopics = []helpTopic{
 		group:   "Check and maintain",
 		summary: "List banned domain words (F12), or replace them with their term",
 		usage:   "fdf lexicon [--root <dir>] [--term <Term>] [--all] [--fix [--dry-run]]",
-		body: "Report every banned word F12 sees (v0.7) — file:line:col and the line\n" +
-			"around it, grouped by word — and every name using one, with a suggested\n" +
-			"`fdf mv`. Triage first: a word used in another sense is qualified and\n" +
-			"listed under the term's `except:`; a mention of a word goes in a code\n" +
-			"span. Then --fix replaces the rest with the term, one term at a time:\n" +
-			"plurals, capitals and a/an are kept right, and a scenario name is renamed\n" +
-			"everywhere it is a join, slug.test.md included. Italic mentions, labels\n" +
-			"quoted in Gherkin steps, table cells and names are left for a person and\n" +
-			"listed. The sweep is logged in LOG.md and validated.",
+		body: "Report every banned word F12 sees — file:line:col and the line around it,\n" +
+			"grouped by word — and every name using one, with a suggested `fdf mv`.\n" +
+			"Triage first: a word used in another sense is qualified and listed under\n" +
+			"the term's `except:`; a mention of a word goes in a code span. Then --fix\n" +
+			"replaces the rest with the term, one term at a time: plurals, capitals and\n" +
+			"a/an are kept right, and a scenario name is renamed everywhere it is a\n" +
+			"join, slug.test.md included. Italic mentions, labels quoted in Gherkin\n" +
+			"steps, table cells and names are left for a person and listed. The sweep\n" +
+			"is logged in LOG.md and validated.",
 		flags: []flagDoc{
 			{"--term <Term>", "only that term's banned words (required with --fix)"},
 			{"--all", "list every occurrence, not the first few per word"},
@@ -475,11 +475,12 @@ var helpTopics = []helpTopic{
 		group:   "Check and maintain",
 		summary: "Write releases/<version>.md from the documents' version: fields",
 		usage:   "fdf release [--root <dir>] [--date <YYYY-MM-DD>] [--ship] <version>",
-		body: "Create or refresh releases/<version>.md, listing the features, Changes\n" +
-			"and Fixes whose `version:` is <version>. The lists are derived, never\n" +
+		body: "Create or refresh releases/<version>.md, listing the features, Changes and\n" +
+			"Fixes whose `version:` is <version>. The lists are derived, never\n" +
 			"hand-written; `# Notes` is yours and is kept as it is. fdf never decides\n" +
-			"what ships: set `version:` on each document that does. --ship marks the\n" +
-			"release shipped, and refuses while any listed document is not `done`.",
+			"what ships: set `version:` on each document that does. The first release\n" +
+			"creates releases/INDEX.md and lists it in the root INDEX.md. --ship marks\n" +
+			"the release shipped, and refuses while any listed document is not `done`.",
 		flags: []flagDoc{
 			{"--date <YYYY-MM-DD>", "target date while planned, actual date once shipped"},
 			{"--ship", "mark the release shipped once every listed document is done"},

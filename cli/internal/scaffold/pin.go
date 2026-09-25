@@ -42,22 +42,6 @@ func Pin(root string) string {
 	return ""
 }
 
-// PinAtLeast reports whether the bundle at root pins spec 0.<minor> or later.
-// A missing pin, or one this fdf does not support, is below every gate: the
-// validator then checks the bundle under v0.2 rules.
-func PinAtLeast(root string, minor int) bool { return pinAtLeast(Pin(root), minor) }
-
-// pinAtLeast is PinAtLeast for a pin already read. A supported pin is one
-// whose spec this binary embeds, which are the versions its validator checks.
-func pinAtLeast(pin string, minor int) bool {
-	supported := false
-	for _, v := range SpecVersions() {
-		supported = supported || v == pin
-	}
-	v, ok := specver.Parse(pin)
-	return supported && ok && v.AtLeast(specver.Version{Major: 0, Minor: minor})
-}
-
 // Supported lists the spec versions the commands work on: the embedded ones of
 // the current major version, oldest first. A minor version only adds, so the
 // commands read a bundle pinned to any of them. They must not write into one

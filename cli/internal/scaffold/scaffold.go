@@ -322,8 +322,15 @@ TODO — why it is this way, so a later change knows what it is trading away. Op
 }
 
 // rootIndex is the root INDEX.md `fdf init` writes: the pin, the registers
-// it creates, the Context documents and the vendored spec.
+// it creates (every one but releases/, which `fdf release` lists with the
+// first release), the Context documents and the vendored spec.
 func rootIndex() string {
+	var registers strings.Builder
+	for _, r := range registerListings {
+		if r.reg != "releases" {
+			registers.WriteString(r.line + "\n")
+		}
+	}
 	return fmt.Sprintf(`---
 fdf_version: %q
 ---
@@ -333,17 +340,12 @@ fdf_version: %q
 This bundle conforms to [FDF v%s](/SPEC.md). A document's ID is its path from
 here without `+"`.md`"+`, such as `+"`features/payments/instant-refunds`"+`.
 
-* [Features](/features/INDEX.md) - what the software does.
-* [Changes](/changes/INDEX.md) - work on delivered features.
-* [Practices](/practices/INDEX.md) - how recurring mechanisms are done.
-* [Debts](/debts/INDEX.md) - known gaps between the documents and the code.
-* [Bugs](/bugs/INDEX.md) - known defects not repaired yet.
-* [Stack](/STACK.md), [Architecture](/ARCHITECTURE.md), [Surfaces](/SURFACES.md),
+%s* [Stack](/STACK.md), [Architecture](/ARCHITECTURE.md), [Surfaces](/SURFACES.md),
   [Infrastructure](/INFRA.md), [Domain](/DOMAIN.md) - the project's context.
 * [Format reference](/SPEC.md) - the spec this bundle pins ([upstream](%s)).
 
 Validate with `+"`fdf validate`"+`; [LOG.md](/LOG.md) records what happened to the bundle.
-`, currentVersion, currentVersion, specURL)
+`, currentVersion, currentVersion, registers.String(), specURL)
 }
 
 func Init(root string, out io.Writer) int {

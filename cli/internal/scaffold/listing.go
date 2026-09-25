@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/GiteshDalal/fdf/cli/internal/layout"
 	"github.com/GiteshDalal/fdf/cli/internal/links"
 )
 
@@ -65,6 +66,57 @@ func groupListing(dir, group string) (title, line string) {
 	reg, _, _ := strings.Cut(dir, "/")
 	title = strings.ToUpper(group[:1]) + strings.ReplaceAll(group[1:], "-", " ")
 	return title, fmt.Sprintf("* [%s](/%s/%s/INDEX.md) - %s in %s.", title, dir, group, groupNouns[reg], group)
+}
+
+// registerListings are the lines the root INDEX.md lists each register with,
+// in the order it lists them.
+var registerListings = []struct{ reg, title, line string }{
+	{"features", "Features", "* [Features](/features/INDEX.md) - what the software does."},
+	{"changes", "Changes", "* [Changes](/changes/INDEX.md) - work on delivered features."},
+	{"practices", "Practices", "* [Practices](/practices/INDEX.md) - how recurring mechanisms are done."},
+	{"debts", "Debts", "* [Debts](/debts/INDEX.md) - known gaps between the documents and the code."},
+	{"bugs", "Bugs", "* [Bugs](/bugs/INDEX.md) - known defects not repaired yet."},
+	{"releases", "Releases", "* [Releases](/releases/INDEX.md) - what shipped in each version."},
+}
+
+// ListRegister lists a register in the root INDEX.md, after the registers it
+// lists already, unless it lists this one, and says so the way ListEntry
+// does. A root index that lists no register gets the line at its end.
+func ListRegister(root, reg string, out io.Writer) int {
+	var title, line string
+	for _, r := range registerListings {
+		if r.reg == reg {
+			title, line = r.title, r.line
+		}
+	}
+	p := filepath.Join(root, "INDEX.md")
+	raw, err := os.ReadFile(p)
+	if err != nil || line == "" {
+		return 0
+	}
+	lines := strings.Split(string(raw), "\n")
+	after := -1 // the line the listing goes after
+	for i, l := range lines {
+		t := ListingTarget(l, ".")
+		if t == reg+"/INDEX.md" || t == reg {
+			return 0
+		}
+		if r, ok := strings.CutSuffix(t, "/INDEX.md"); ok && layout.IsRegister(r) {
+			after = i
+		}
+	}
+	var text string
+	if after < 0 {
+		text = strings.TrimRight(string(raw), "\n") + "\n\n" + line + "\n"
+	} else {
+		text = strings.Join(append(lines[:after+1], append([]string{line}, lines[after+1:]...)...), "\n")
+	}
+	if err := os.WriteFile(p, []byte(text), 0o644); err != nil {
+		fmt.Fprintln(out, "error:", err)
+		return 1
+	}
+	fmt.Fprintf(out, "updated INDEX.md (now lists %q)\n", title)
+	return 0
 }
 
 // ListGroup lists a group in its parent's INDEX.md, dir, unless it is listed

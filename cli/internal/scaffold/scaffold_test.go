@@ -413,9 +413,6 @@ func TestPinReadsTheFrontmatterAsTheValidatorDoes(t *testing.T) {
 			t.Errorf("Pin(%q) = %q, want %q", index, got, want)
 		}
 	}
-	if PinAtLeast(pinned(t, "0.9"), 5) {
-		t.Error("a pin this fdf does not support is below every gate, as the validator treats it")
-	}
 }
 
 // Re-running init on a current bundle adds back what is missing — the

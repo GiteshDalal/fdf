@@ -19,18 +19,19 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/GiteshDalal/fdf/cli/internal/layout"
+	"github.com/GiteshDalal/fdf/cli/internal/scaffold"
 )
 
 var (
-	versionRe   = regexp.MustCompile(`(?m)^version:\s*"?([^"\s]+)"?`)
-	typeRe      = regexp.MustCompile(`(?m)^type:\s*(\S+)`)
-	statusRe    = regexp.MustCompile(`(?m)^status:\s*(\S+)`)
-	titleRe     = regexp.MustCompile(`(?m)^title:\s*(.+)$`)
-	descRe      = regexp.MustCompile(`(?m)^description:\s*(.+)$`)
-	dateRe      = regexp.MustCompile(`(?m)^date:\s*(\S+)`)
-	notesRe     = regexp.MustCompile(`(?ms)^# Notes\s*$.*`)
-	reservedMd  = map[string]bool{"INDEX.md": true, "LOG.md": true, "SPEC.md": true, "README.md": true}
-	contextName = map[string]bool{"STACK.md": true, "ARCHITECTURE.md": true, "SURFACES.md": true, "INFRA.md": true}
+	versionRe = regexp.MustCompile(`(?m)^version:\s*"?([^"\s]+)"?`)
+	typeRe    = regexp.MustCompile(`(?m)^type:\s*(\S+)`)
+	statusRe  = regexp.MustCompile(`(?m)^status:\s*(\S+)`)
+	titleRe   = regexp.MustCompile(`(?m)^title:\s*(.+)$`)
+	descRe    = regexp.MustCompile(`(?m)^description:\s*(.+)$`)
+	dateRe    = regexp.MustCompile(`(?m)^date:\s*(\S+)`)
+	notesRe   = regexp.MustCompile(`(?ms)^# Notes\s*$.*`)
 )
 
 type member struct {
@@ -45,6 +46,14 @@ func Sync(root, version, date string, ship bool, out io.Writer) int {
 	if strings.TrimSpace(version) == "" {
 		fmt.Fprintln(out, "error: a release needs a version, such as 1.2.0")
 		return 2
+	}
+	// The version names the release's file, which layout must place.
+	if pos := layout.New(os.DirFS(root)).File("releases/" + version + ".md"); pos.Kind != layout.Document {
+		fmt.Fprintf(out, "error: %s cannot name a release — %s: %s (F3)\n", version, pos.Where, pos.Problem)
+		return 2
+	}
+	if !scaffold.RequireSupported(root, out) {
+		return 1
 	}
 	feats, chgs := scan(root, version)
 	if len(feats)+len(chgs) == 0 {
@@ -142,49 +151,46 @@ func Sync(root, version, date string, ship bool, out io.Writer) int {
 	return 0
 }
 
-// scan collects every feature, change and fix whose `version` matches.
+// scan collects every feature, Change and Fix whose `version` matches: the
+// documents filed in features/ and changes/, as layout reads them.
 func scan(root, version string) (feats, chgs []member) {
-	filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".md") {
+	b := layout.New(os.DirFS(root))
+	for _, reg := range []string{"features", "changes"} {
+		filepath.WalkDir(filepath.Join(root, reg), func(p string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() || !strings.HasSuffix(p, ".md") {
+				return nil
+			}
+			rel, _ := filepath.Rel(root, p)
+			slash := filepath.ToSlash(rel)
+			if b.File(slash).Kind != layout.Document {
+				return nil
+			}
+			raw, rerr := os.ReadFile(p)
+			if rerr != nil {
+				return nil
+			}
+			text := string(raw)
+			tm := typeRe.FindStringSubmatch(text)
+			vm := versionRe.FindStringSubmatch(text)
+			if tm == nil || vm == nil || vm[1] != version {
+				return nil
+			}
+			m := member{id: strings.TrimSuffix(slash, ".md"), docType: tm[1], title: strings.TrimSuffix(d.Name(), ".md")}
+			if t := titleRe.FindStringSubmatch(text); t != nil {
+				m.title = strings.TrimSpace(t[1])
+			}
+			if s := statusRe.FindStringSubmatch(text); s != nil {
+				m.status = s[1]
+			}
+			switch tm[1] {
+			case "Feature":
+				feats = append(feats, m)
+			case "Change", "Fix":
+				chgs = append(chgs, m)
+			}
 			return nil
-		}
-		name := d.Name()
-		if reservedMd[name] || contextName[name] {
-			return nil
-		}
-		rel, _ := filepath.Rel(root, p)
-		slash := filepath.ToSlash(rel)
-		if strings.HasPrefix(slash, "releases/") {
-			return nil
-		}
-		raw, rerr := os.ReadFile(p)
-		if rerr != nil {
-			return nil
-		}
-		text := string(raw)
-		tm := typeRe.FindStringSubmatch(text)
-		if tm == nil {
-			return nil
-		}
-		vm := versionRe.FindStringSubmatch(text)
-		if vm == nil || vm[1] != version {
-			return nil
-		}
-		m := member{id: strings.TrimSuffix(slash, ".md"), docType: tm[1], title: strings.TrimSuffix(name, ".md")}
-		if t := titleRe.FindStringSubmatch(text); t != nil {
-			m.title = strings.TrimSpace(t[1])
-		}
-		if s := statusRe.FindStringSubmatch(text); s != nil {
-			m.status = s[1]
-		}
-		switch tm[1] {
-		case "Feature":
-			feats = append(feats, m)
-		case "Change", "Fix":
-			chgs = append(chgs, m)
-		}
-		return nil
-	})
+		})
+	}
 	sort.Slice(feats, func(i, j int) bool { return feats[i].id < feats[j].id })
 	sort.Slice(chgs, func(i, j int) bool { return chgs[i].id < chgs[j].id })
 	return feats, chgs
@@ -193,7 +199,8 @@ func scan(root, version string) (feats, chgs []member) {
 var listingRe = regexp.MustCompile(`^\s*[-*+]\s+.*\]\(`)
 
 // ensureIndex lists the release in releases/INDEX.md, newest first: a new
-// release goes above the first one listed.
+// release goes above the first one listed. The first release creates the
+// index, and lists the releases register in the root INDEX.md.
 func ensureIndex(root, version string, out io.Writer) int {
 	idx := filepath.Join(root, "releases", "INDEX.md")
 	entry := fmt.Sprintf("* [%s](/releases/%s.md) - release.", version, version)
@@ -203,6 +210,9 @@ func ensureIndex(root, version string, out io.Writer) int {
 	}
 	if err != nil {
 		raw = []byte("# Releases\n\nNewest first.\n")
+		if code := scaffold.ListRegister(root, "releases", out); code != 0 {
+			return code
+		}
 	}
 	lines := strings.Split(strings.TrimRight(string(raw), "\n"), "\n")
 	at := -1
