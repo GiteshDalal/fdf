@@ -211,3 +211,38 @@ func TestCheckBundleWantsAnIndex(t *testing.T) {
 		t.Fatalf("a bundle with its INDEX.md: %v", err)
 	}
 }
+
+// A register's or a group's INDEX.md pins nothing: a root there is inside
+// the bundle whose INDEX.md pins its version, the nearest one above it, and
+// every command says so in the same words. An INDEX.md that pins nothing,
+// such as a documentation site's, is no bundle to be inside.
+func TestBundleAboveFindsTheNearestPinnedIndex(t *testing.T) {
+	tmp := t.TempDir()
+	bundle := mk(t, tmp, "docs", "fdf")
+	group := mk(t, bundle, "features", "payments")
+	for p, text := range map[string]string{
+		filepath.Join(tmp, "docs", "INDEX.md"):        "# Docs\n",
+		filepath.Join(bundle, "INDEX.md"):             "---\nfdf_version: \"1.0\"\n---\n",
+		filepath.Join(bundle, "features", "INDEX.md"): "# Features\n",
+		filepath.Join(group, "INDEX.md"):              "# Payments\n",
+	} {
+		if err := os.WriteFile(p, []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, root := range []string{filepath.Join(bundle, "features"), group, filepath.Join(group, "refunds")} {
+		if got := BundleAbove(root); got != bundle {
+			t.Errorf("BundleAbove(%s) = %q; want %s", root, got, bundle)
+		}
+	}
+	for _, root := range []string{bundle, mk(t, tmp, "docs", "site")} {
+		if got := BundleAbove(root); got != "" {
+			t.Errorf("BundleAbove(%s) = %q; want none: no INDEX.md above it pins a version", root, got)
+		}
+	}
+	root := filepath.Join(bundle, "features")
+	want := root + " is inside the bundle at " + bundle + ", not a bundle of its own — pass --root " + bundle + ", or leave --root out"
+	if err := InsideBundle(root, bundle); err == nil || err.Error() != want {
+		t.Errorf("InsideBundle: %v\nwant: %s", err, want)
+	}
+}

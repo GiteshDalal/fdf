@@ -251,3 +251,41 @@ func TestCommandsPointA0xBundleAtMigrate(t *testing.T) {
 		t.Errorf("no command may write in a 0.x bundle; it holds %d entries", len(entries))
 	}
 }
+
+// A register's INDEX.md pins nothing, so a root pointed at one used to be
+// sent to `fdf migrate`, which then built a second bundle inside the first.
+// Every command, init and migrate among them, names the bundle instead, in
+// the same words, and writes nothing.
+func TestCommandsSendARootInsideABundleToIt(t *testing.T) {
+	bundle := initBundle(t)
+	root := filepath.Join(bundle, "features")
+	t.Setenv("FDF_ROOT_DIR", root)
+	files := func() string {
+		var b strings.Builder
+		filepath.WalkDir(bundle, func(p string, d os.DirEntry, err error) error {
+			if err == nil && !d.IsDir() {
+				raw, _ := os.ReadFile(p)
+				b.WriteString("== " + p + "\n" + string(raw))
+			}
+			return nil
+		})
+		return b.String()
+	}
+	before := files()
+	want := "error: " + root + " is inside the bundle at " + bundle + ", not a bundle of its own — pass --root " + bundle + ", or leave --root out\n"
+	for _, args := range [][]string{
+		{"init"}, {"migrate"},
+		{"new", "payments/x"}, {"adopt", "--resource", "main.go", "payments/x"}, {"adopt"}, {"practice", "x"},
+		{"debt"}, {"debt", "x"}, {"bug", "--cleanup"}, {"change", "--affects", "features/p/q", "x"},
+		{"fix", "--affects", "features/p/q", "x"}, {"history", "features/p/q"},
+		{"mv", "features/a", "features/b"}, {"lexicon"}, {"log", "an entry"}, {"release", "1.0.0"},
+	} {
+		code, out, _ := fdfRun(args...)
+		if code != 1 || !strings.Contains(out, want) {
+			t.Errorf("%v: exit %d, want 1 and %q:\n%s", args, code, want, out)
+		}
+	}
+	if after := files(); after != before {
+		t.Errorf("no command may write inside the bundle:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}

@@ -8,8 +8,12 @@
 //	any → pin 0.7, RefreshSpec, EnsureContextStubs, changes/, practices/,
 //	      debts/ and bugs/ INDEX.md, drop index status tags, log, validate
 //
-// A bundle pinned to 1.0 or later is refused: its layout is not one these
-// steps know, and running them over it would pin it back to 0.7.
+// Only a bundle pinned to 0.x, or to nothing, is migrated. A bundle pinned to
+// 1.0 or later is refused: its layout is not one these steps know, and
+// running them over it would pin it back to 0.7. So is a pin that is not a
+// version, such as 1.0.0, and a root whose INDEX.md pins nothing inside a
+// pinned bundle: a register or a group of it, where the steps would build a
+// second bundle.
 //
 // Ends by validating the result with FreshStubsAdvisory so unfilled Context
 // stubs do not fail the migration (plain `fdf validate` will still enforce F9).
@@ -89,8 +93,20 @@ func Run(root, repoRoot string, out io.Writer) int {
 		rootAbs = root
 	}
 
+	// Only a bundle pinned to 0.x, or to nothing, goes ahead.
 	pin := readPin(root)
-	if v, ok := specver.Parse(pin); ok && v.Major >= 1 {
+	switch v, ok := specver.Parse(pin); {
+	case pin == "":
+		// A register's or a group's INDEX.md pins nothing: the steps would
+		// build a second bundle inside the pinned one.
+		if bundle := fdfroot.BundleAbove(root); bundle != "" {
+			fmt.Fprintln(out, "error:", fdfroot.InsideBundle(root, bundle))
+			return 1
+		}
+	case !ok:
+		fmt.Fprintf(out, "cannot migrate: the bundle pins fdf_version %s, which is not a MAJOR.MINOR version such as %s — correct the pin in INDEX.md; the bundle was left as it is.\n", pin, scaffold.CurrentVersion())
+		return 1
+	case v.Major != 0:
 		fmt.Fprintf(out, "cannot migrate: the bundle pins fdf_version %s, and %s upgrades a 0.x bundle to %s — the bundle was left as it is.\n", pin, binaryName(), target)
 		return 1
 	}

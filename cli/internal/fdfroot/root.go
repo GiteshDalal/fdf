@@ -17,6 +17,14 @@ func NoBundle(root string) error {
 	return fmt.Errorf("no bundle at %s (no INDEX.md) — run `fdf init` first, or point --root at the bundle", root)
 }
 
+// InsideBundle is what every command, fdf migrate included, says when root is
+// a directory inside the bundle at bundle — one of its registers or groups,
+// whose INDEX.md pins nothing — so the slip reads the same whichever command
+// met it first.
+func InsideBundle(root, bundle string) error {
+	return fmt.Errorf("%s is inside the bundle at %s, not a bundle of its own — pass --root %s, or leave --root out", root, bundle, bundle)
+}
+
 // CheckBundle returns NoBundle unless root holds a bundle: an INDEX.md at its
 // top.
 func CheckBundle(root string) error {
@@ -162,4 +170,23 @@ func pinned(dir string) bool {
 		}
 	}
 	return false
+}
+
+// BundleAbove returns the nearest directory above root whose INDEX.md pins an
+// fdf_version, as pinned reads it, or "" when there is none. A root whose own
+// INDEX.md pins nothing, below such a directory, is no bundle but a register
+// or a group of that one: --root docs/fdf/features, meant for docs/fdf.
+func BundleAbove(root string) string {
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return ""
+	}
+	for dir := filepath.Dir(abs); ; dir = filepath.Dir(dir) {
+		if pinned(dir) {
+			return dir
+		}
+		if dir == filepath.Dir(dir) {
+			return ""
+		}
+	}
 }

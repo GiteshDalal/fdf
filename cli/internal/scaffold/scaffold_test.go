@@ -372,13 +372,16 @@ func TestWriteNewNeverOverwrites(t *testing.T) {
 
 // The commands write spec 1.x, so they refuse any other bundle before they
 // write anything, and name the fix: `fdf migrate` for a 0.x pin or none, a
-// newer fdf for a newer pin.
+// newer fdf for a newer pin, and the pin itself when it is not a version.
 func TestScaffoldsPointA0xBundleAtMigrate(t *testing.T) {
 	for _, tc := range []struct{ pin, says string }{
 		{"0.7", "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0 bundles — run `fdf migrate` to upgrade it first\n"},
 		{"0.5", "error: this bundle pins fdf_version 0.5; fdf's commands work on spec 1.0 bundles — run `fdf migrate` to upgrade it first\n"},
 		{"", "error: this bundle's INDEX.md pins no fdf_version; fdf's commands work on spec 1.0 bundles — run `fdf migrate` to upgrade it first\n"},
 		{"1.3", "error: this bundle pins fdf_version 1.3, newer than any spec this fdf knows (1.0) — upgrade fdf\n"},
+		// A pin that is almost 1.0 is no 0.x version to migrate.
+		{"1.0.0", "error: this bundle pins fdf_version 1.0.0, which is not a MAJOR.MINOR version such as " + currentVersion + " — correct the pin in INDEX.md\n"},
+		{"v1.0", "error: this bundle pins fdf_version v1.0, which is not a MAJOR.MINOR version such as " + currentVersion + " — correct the pin in INDEX.md\n"},
 	} {
 		for name, run := range map[string]func(root string, out *bytes.Buffer) int{
 			"new": func(root string, out *bytes.Buffer) int { return New(root, "payments/refunds", out) },
@@ -397,6 +400,55 @@ func TestScaffoldsPointA0xBundleAtMigrate(t *testing.T) {
 			}
 		}
 	}
+}
+
+// A register's or a group's INDEX.md pins nothing, so a root pointed at one,
+// --root docs/fdf/features for docs/fdf, used to be sent to `fdf migrate`,
+// which built a second bundle inside the first. The commands, fdf init among
+// them, name the bundle instead, and write nothing.
+func TestScaffoldsSendARootInsideABundleToIt(t *testing.T) {
+	bundle := filepath.Join(t.TempDir(), "docs", "fdf")
+	var out bytes.Buffer
+	Init(bundle, &out)
+	fillContext(t, bundle)
+	if code := New(bundle, "payments/refunds", &out); code != 0 {
+		t.Fatalf("fdf new: exit %d\n%s", code, out.String())
+	}
+	before := tree(t, bundle)
+	for _, root := range []string{filepath.Join(bundle, "features"), filepath.Join(bundle, "features", "payments")} {
+		want := "error: " + root + " is inside the bundle at " + bundle + ", not a bundle of its own — pass --root " + bundle + ", or leave --root out\n"
+		for name, run := range map[string]func(root string, out *bytes.Buffer) int{
+			"init": func(root string, out *bytes.Buffer) int { return Init(root, out) },
+			"new":  func(root string, out *bytes.Buffer) int { return New(root, "cards", out) },
+			"adopt": func(root string, out *bytes.Buffer) int {
+				return Adopt(root, "", "cards", []string{"main.go"}, out)
+			},
+			"practice": func(root string, out *bytes.Buffer) int { return Practice(root, "permission-checks", out) },
+		} {
+			out.Reset()
+			if code := run(root, &out); code != 1 || out.String() != want {
+				t.Errorf("fdf %s on %s: exit %d\n got: %q\nwant: %q", name, root, code, out.String(), want)
+			}
+		}
+	}
+	if after := tree(t, bundle); after != before {
+		t.Errorf("nothing is written inside the bundle:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+// tree lists every file under root with its content, in path order.
+func tree(t *testing.T, root string) string {
+	t.Helper()
+	var b strings.Builder
+	filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			raw, _ := os.ReadFile(p)
+			rel, _ := filepath.Rel(root, p)
+			b.WriteString("== " + filepath.ToSlash(rel) + "\n" + string(raw))
+		}
+		return nil
+	})
+	return b.String()
 }
 
 func TestPinReadsTheFrontmatterAsTheValidatorDoes(t *testing.T) {

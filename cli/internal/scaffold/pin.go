@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/GiteshDalal/fdf/cli/internal/fdfroot"
 	"github.com/GiteshDalal/fdf/cli/internal/specver"
 )
 
@@ -61,7 +62,10 @@ func Supported() []string {
 // RequireSupported reports whether the commands can work on the bundle at
 // root, and when they cannot, says why and what to run: a bundle that pins a
 // 0.x version, or none, is upgraded with `fdf migrate` first, and one that
-// pins a version newer than this fdf knows needs a newer fdf.
+// pins a version newer than this fdf knows needs a newer fdf. A pin that is
+// not a version is corrected in INDEX.md. A root whose INDEX.md pins nothing
+// inside a pinned bundle is a register or a group of that bundle, which is
+// the root to pass.
 func RequireSupported(root string, out io.Writer) bool {
 	pin := Pin(root)
 	supported := Supported()
@@ -70,12 +74,20 @@ func RequireSupported(root string, out io.Writer) bool {
 			return true
 		}
 	}
+	if pin == "" {
+		if bundle := fdfroot.BundleAbove(root); bundle != "" {
+			fmt.Fprintln(out, "error:", fdfroot.InsideBundle(root, bundle))
+			return false
+		}
+	}
 	list := strings.Join(supported, ", ")
 	newest, _ := specver.Parse(supported[len(supported)-1])
 	switch v, ok := specver.Parse(pin); {
 	case pin == "":
 		fmt.Fprintf(out, "error: this bundle's INDEX.md pins no fdf_version; fdf's commands work on spec %s bundles — run `fdf migrate` to upgrade it first\n", list)
-	case ok && newest.Less(v):
+	case !ok:
+		fmt.Fprintf(out, "error: this bundle pins fdf_version %s, which is not a MAJOR.MINOR version such as %s — correct the pin in INDEX.md\n", pin, currentVersion)
+	case newest.Less(v):
 		fmt.Fprintf(out, "error: this bundle pins fdf_version %s, newer than any spec this fdf knows (%s) — upgrade fdf\n", pin, list)
 	default:
 		fmt.Fprintf(out, "error: this bundle pins fdf_version %s; fdf's commands work on spec %s bundles — run `fdf migrate` to upgrade it first\n", pin, list)

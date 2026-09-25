@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/GiteshDalal/fdf/cli/internal/bundle"
+	"github.com/GiteshDalal/fdf/cli/internal/scaffold"
 )
 
 func write(t *testing.T, root, rel, content string) {
@@ -290,31 +291,72 @@ func TestMigrateAlready04IsNoop(t *testing.T) {
 // another with messages about v0.4. It is refused before anything is read
 // or written, whatever it holds, and however its pin is quoted.
 func TestMigrateLeavesA10BundleAsItIs(t *testing.T) {
-	var roots []string
-	for _, pin := range []string{`"1.0"`, `'1.0'`, `1.0`} {
+	const at10 = "cannot migrate: the bundle pins fdf_version 1.0, and this binary upgrades a 0.x bundle to 0.7 — the bundle was left as it is."
+	notAVersion := func(pin string) string {
+		return "cannot migrate: the bundle pins fdf_version " + pin + ", which is not a MAJOR.MINOR version such as " + scaffold.CurrentVersion() + " — correct the pin in INDEX.md; the bundle was left as it is."
+	}
+	type refusal struct{ root, says string }
+	var refusals []refusal
+	// A pin that is almost 1.0 is no 0.x version either: migrate used to
+	// take it for one, and pin the bundle back to 0.7.
+	for _, tc := range []struct{ pin, says string }{
+		{`"1.0"`, at10}, {`'1.0'`, at10}, {`1.0`, at10},
+		{`"1.0.0"`, notAVersion("1.0.0")}, {`"v1.0"`, notAVersion("v1.0")},
+	} {
 		flat := t.TempDir()
-		write(t, flat, "INDEX.md", "---\nfdf_version: "+pin+"\n---\n\n# Bundle\n\n* [Features](/features/INDEX.md) - features.\n")
+		write(t, flat, "INDEX.md", "---\nfdf_version: "+tc.pin+"\n---\n\n# Bundle\n\n* [Features](/features/INDEX.md) - features.\n")
 		write(t, flat, "LOG.md", "# Bundle Update Log\n\n## 2026-09-25\n* **Initialization**: created.\n")
 		write(t, flat, "features/INDEX.md", "# Features\n\n* [Onboarding](/features/onboarding.md) - feature.\n")
 		write(t, flat, "features/onboarding.md", "---\ntype: Feature\nstatus: draft\ntitle: Onboarding\ndescription: d.\ntimestamp: 2026-09-25T00:00:00Z\n---\n\n# Feature\n\n```gherkin\nFeature: Onboarding\n  As a user\n  I want to sign up\n  So that I can start\n```\n\n```gherkin\nScenario: It works\n  Given a\n  When b\n  Then c\n```\n")
-		roots = append(roots, flat)
+		refusals = append(refusals, refusal{flat, tc.says})
 	}
-	full := t.TempDir()
-	src := filepath.Join("..", "..", "..", "testdata", "valid-v10", "bundle")
+	refusals = append(refusals, refusal{copyFixture(t, "valid-v10"), at10})
+	for _, r := range refusals {
+		before := tree(t, r.root)
+		var out bytes.Buffer
+		if code := Run(r.root, "", &out); code != 1 || !strings.Contains(out.String(), r.says) {
+			t.Errorf("a 1.0 bundle is refused: exit %d, want 1 saying %q:\n%s", code, r.says, out.String())
+		}
+		if after := tree(t, r.root); after != before {
+			t.Errorf("a refused migration changes nothing:\nbefore:\n%s\nafter:\n%s", before, after)
+		}
+	}
+}
+
+// copyFixture copies a conformance fixture's bundle into a temp dir.
+func copyFixture(t *testing.T, name string) string {
+	t.Helper()
+	dst := t.TempDir()
+	src := filepath.Join("..", "..", "..", "testdata", name, "bundle")
 	filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {
 		if err == nil && !d.IsDir() {
 			rel, _ := filepath.Rel(src, p)
-			write(t, full, rel, string(mustRead(t, p)))
+			write(t, dst, rel, string(mustRead(t, p)))
 		}
 		return nil
 	})
-	for _, root := range append(roots, full) {
-		before := tree(t, root)
+	return dst
+}
+
+// A register's or a group's INDEX.md pins nothing, so --root
+// docs/fdf/features used to be read as a bundle with no pin, and migrate
+// built a 0.7 bundle inside the register. A root inside a pinned bundle is
+// refused, in the words every command uses for it, and nothing changes.
+func TestMigrateRefusesARootInsideABundle(t *testing.T) {
+	v03 := t.TempDir()
+	buildV03Bundle(t, v03)
+	for _, tc := range []struct{ bundle, root string }{
+		{copyFixture(t, "valid-v10"), "features"},
+		{v03, "wdise"},
+	} {
+		root := filepath.Join(tc.bundle, tc.root)
+		before := tree(t, tc.bundle)
 		var out bytes.Buffer
-		if code := Run(root, "", &out); code != 1 || !strings.Contains(out.String(), "cannot migrate: the bundle pins fdf_version 1.0, and this binary upgrades a 0.x bundle to 0.7 — the bundle was left as it is.") {
-			t.Errorf("a 1.0 bundle is refused: exit %d\n%s", code, out.String())
+		want := "error: " + root + " is inside the bundle at " + tc.bundle + ", not a bundle of its own — pass --root " + tc.bundle + ", or leave --root out\n"
+		if code := Run(root, "", &out); code != 1 || out.String() != want {
+			t.Errorf("fdf migrate --root %s: exit %d\n got: %q\nwant: %q", root, code, out.String(), want)
 		}
-		if after := tree(t, root); after != before {
+		if after := tree(t, tc.bundle); after != before {
 			t.Errorf("a refused migration changes nothing:\nbefore:\n%s\nafter:\n%s", before, after)
 		}
 	}
