@@ -117,7 +117,8 @@ var helpTopics = []helpTopic{
 			"SURFACES.md, INFRA.md, DOMAIN.md), and the indexes of features/,\n" +
 			"changes/, practices/, debts/ and bugs/. It never overwrites: on a bundle\n" +
 			"already at this version it only adds what is missing, and on an older\n" +
-			"one it points you to `fdf migrate`. Fill the Context stubs with the\n" +
+			"one it points you to `fdf migrate`. A directory inside a bundle, one of\n" +
+			"its registers or groups, is refused. Fill the Context stubs with the\n" +
 			"fdf-init skill before feature work: once a feature exists, F9 fails while\n" +
 			"any of them is still a stub.",
 		flags:    []flagDoc{rootFlagDoc},

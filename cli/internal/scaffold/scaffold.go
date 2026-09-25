@@ -12,6 +12,7 @@ import (
 	"time"
 
 	fdf "github.com/GiteshDalal/fdf"
+	"github.com/GiteshDalal/fdf/cli/internal/fdfroot"
 	"github.com/GiteshDalal/fdf/cli/internal/layout"
 	"github.com/GiteshDalal/fdf/cli/internal/specver"
 )
@@ -376,6 +377,12 @@ func Init(root string, out io.Writer) int {
 		fmt.Fprintf(out, "\ndone: bundle at %s was already initialized and up to date (fdf_version %s)\n", root, Pin(root))
 		fmt.Fprintln(out, "  nothing was overwritten; only missing files above were added")
 		return 0
+	}
+	// No bundle here yet. A directory inside a pinned bundle is one of its
+	// registers or groups, not the place for a second bundle.
+	if bundle := fdfroot.BundleAbove(root); bundle != "" {
+		fmt.Fprintln(out, "error:", fdfroot.InsideBundle(root, bundle))
+		return 1
 	}
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		fmt.Fprintln(out, "error:", err)
