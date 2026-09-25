@@ -17,14 +17,14 @@
 // The whole migration is worked out first (plan.go) and printed; a dry run
 // stops there, and nothing is written until the plan is complete, so a
 // bundle migrate refuses is left as it was. In a git repository, which is
-// its undo, migrate starts only from a clean tree, marks what it wrote with
-// git add -N so that git diff -M shows every move, and, should it stop
-// partway, prints the git commands that put everything back. A bundle
-// already pinned to 1.0 moves nothing: migrate restores its spec copy,
-// indexes and Context stubs. A root whose INDEX.md pins nothing inside a
-// pinned bundle — a register or a group of it, where the steps would build a
-// second bundle — is refused, and so is a pin that is not a version, or one
-// newer than this fdf knows.
+// its undo, migrate starts only from a clean tree, puts no file where git
+// would ignore it, marks what it wrote with git add -N so that git diff -M
+// shows every move, and, should it stop partway, prints the git commands
+// that put everything back. A bundle already pinned to 1.0 moves nothing:
+// migrate restores its spec copy, indexes and Context stubs. A root whose
+// INDEX.md pins nothing inside a pinned bundle — a register or a group of
+// it, where the steps would build a second bundle — is refused, and so is a
+// pin that is not a version, or one newer than this fdf knows.
 //
 // Ends by validating the result with FreshStubsAdvisory so unfilled Context
 // stubs do not fail the migration (plain `fdf validate` will still enforce F9).

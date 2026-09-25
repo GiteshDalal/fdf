@@ -169,16 +169,17 @@ var helpTopics = []helpTopic{
 			"mention of its path. Every mention of the old path it leaves — inside a\n" +
 			"URL, after a longer path, or in a link that leads elsewhere — is listed,\n" +
 			"and what `fdf install` manages is left to it. Migrate starts only from a\n" +
-			"clean tree, in the repository that tracks the bundle, and marks the files\n" +
-			"it writes with `git add -N`, so that `git diff -M` shows each move; should\n" +
-			"it stop partway, it prints the commands that put everything back. A\n" +
-			"pre-flight refuses what 1.0 has no place for — a stray Markdown file at\n" +
-			"the root, a document named index.md or log.md, a practice, debt or bug\n" +
-			"beside a directory of Markdown — and leaves the bundle untouched, so a\n" +
-			"refused run is safe to retry after fixing what it names. A bundle already\n" +
-			"at 1.0 moves nothing: its spec copy, indexes and Context stubs are\n" +
-			"restored. An unfilled Context stub is only a warning here; once the bundle\n" +
-			"has a feature, a plain `fdf validate` fails F9 until it is filled. Re-run\n" +
+			"clean tree, in the repository that tracks the bundle, refuses to put a\n" +
+			"file where git would ignore it, and marks the files it writes with\n" +
+			"`git add -N`, so that `git diff -M` shows each move; should it stop\n" +
+			"partway, it prints the commands that put everything back. A pre-flight\n" +
+			"refuses what 1.0 has no place for — a stray Markdown file at the root, a\n" +
+			"document named index.md or log.md, a practice, debt or bug beside a\n" +
+			"directory of Markdown — and leaves the bundle untouched, so a refused run\n" +
+			"is safe to retry after fixing what it names. A bundle already at 1.0 moves\n" +
+			"nothing: its spec copy, indexes and Context stubs are restored. An\n" +
+			"unfilled Context stub is only a warning here; once the bundle has a\n" +
+			"feature, a plain `fdf validate` fails F9 until it is filled. Re-run\n" +
 			"`fdf install` afterwards.",
 		flags: []flagDoc{
 			{"--dry-run", "print the plan, and change nothing"},

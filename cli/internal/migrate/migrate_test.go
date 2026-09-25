@@ -1529,6 +1529,87 @@ func TestMigrateStartsFromACleanTree(t *testing.T) {
 	}
 }
 
+// Git skips a path it ignores when migrate marks the files it wrote, so a
+// file whose new path git ignores would drop out of git, which could neither
+// show nor undo the move. migrate refuses it before it writes anything, as
+// the mirror of the rule it applies at the old paths, and names the path and
+// the rule: a destination git ignores as a whole once (a local fdf binary's
+// rule), a file git tracks where a rule ignores it once moved, a tracked
+// hidden file too, and, in a submodule, a path inside it. A hidden file git
+// ignores, which git never tracked, still moves, and stays ignored.
+func TestMigrateRefusesAPlaceGitIgnores(t *testing.T) {
+	const where = ", so it could neither show nor undo what migrate puts there — change the rule, or pass --to <dir> to choose another destination"
+	for _, tc := range []struct {
+		name  string
+		setup func(project string)
+		says  string
+	}{
+		{"the destination", func(project string) {
+			write(t, project, ".gitignore", "fdf\n")
+		}, "docs/fdf/: git would ignore it and every file in it, by the rule fdf on line 1 of .gitignore" + where},
+		{"a file where it goes", func(project string) {
+			write(t, project, ".gitignore", "*.local\n*.png\n")
+			write(t, project, "docs/features/venues/diagram.png", "PNG")
+			gitIn(t, project, "add", "-f", "docs/features/venues/diagram.png")
+		}, "docs/fdf/features/venues/diagram.png: git would ignore it, by the rule *.png on line 2 of .gitignore" + where},
+		{"a hidden file git tracks", func(project string) {
+			write(t, project, ".gitignore", ".obsidian/\n")
+			write(t, project, "docs/features/.obsidian/app.json", "{}\n")
+			gitIn(t, project, "add", "-f", "docs/features/.obsidian/app.json")
+		}, "docs/fdf/.obsidian/: git would ignore it and every file in it, by the rule .obsidian/ on line 1 of .gitignore" + where},
+	} {
+		project := gitProject(t, "valid-bugs-v07")
+		tc.setup(project)
+		gitIn(t, project, "add", ".gitignore")
+		gitIn(t, project, "commit", "-qm", "ignore")
+		before := worktree(t, project)
+		var out bytes.Buffer
+		want := "cannot migrate — fix these first (bundle left unchanged):\n  " + tc.says + "\n"
+		if code := Run(Options{Root: filepath.Join(project, "docs", "features"), Project: project}, &out); code != 1 || out.String() != want {
+			t.Errorf("%s: exit %d\n got: %q\nwant: %q", tc.name, code, out.String(), want)
+		}
+		if worktree(t, project) != before {
+			t.Errorf("%s: a refused migration changes nothing", tc.name)
+		}
+		if status := gitIn(t, project, "status", "--porcelain", "--untracked-files=all"); status != "" {
+			t.Errorf("%s: git status is as it was:\n%s", tc.name, status)
+		}
+	}
+
+	// In a submodule, migrate marks the files inside it, where its own rules
+	// apply, and a path there is named as the submodule's git reads it.
+	super := gitSuperproject(t, "valid-bugs-v07")
+	sub := filepath.Join(super, "docs", "features")
+	write(t, sub, ".gitignore", "*.png\n")
+	write(t, sub, "venues/diagram.png", "PNG")
+	gitIn(t, sub, "add", ".gitignore")
+	gitIn(t, sub, "add", "-f", "venues/diagram.png")
+	gitIn(t, sub, "commit", "-qm", "diagram")
+	gitIn(t, super, "commit", "-qam", "diagram")
+	before := worktree(t, super)
+	var out bytes.Buffer
+	want := "cannot migrate — fix these first (bundle left unchanged):\n  features/venues/diagram.png: git would ignore it, by the rule *.png on line 1 of .gitignore, so it could neither show nor undo what migrate puts there — change the rule\n"
+	if code := Run(Options{Root: sub, Project: super}, &out); code != 1 || out.String() != want {
+		t.Errorf("a submodule: exit %d\n got: %q\nwant: %q", code, out.String(), want)
+	}
+	if worktree(t, super) != before {
+		t.Errorf("a submodule: a refused migration changes nothing")
+	}
+
+	project := gitProject(t, "valid-bugs-v07")
+	write(t, project, ".gitignore", ".DS_Store\n")
+	gitIn(t, project, "add", ".gitignore")
+	gitIn(t, project, "commit", "-qm", "ignore")
+	write(t, project, "docs/features/venues/.DS_Store", "Finder\n")
+	out.Reset()
+	if code := Run(Options{Root: filepath.Join(project, "docs", "features"), Project: project}, &out); code != 0 {
+		t.Fatalf("a hidden file git ignores is no obstacle: exit %d\n%s", code, out.String())
+	}
+	if status := gitIn(t, project, "status", "--porcelain", "--ignored", "--", "docs/fdf/features/venues/.DS_Store"); status != "!! docs/fdf/features/venues/.DS_Store\n" {
+		t.Errorf("the hidden file moves with its group, and git still ignores it: %q", status)
+	}
+}
+
 // A bundle that is a git submodule moves with git mv, which updates
 // .gitmodules, and the next steps say to commit inside it first.
 func TestMigrateMovesASubmoduleWithGitMv(t *testing.T) {

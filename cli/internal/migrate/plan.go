@@ -210,6 +210,10 @@ func newPlan(root, pin, project, dest string) (p *plan, problems []string, err e
 			return nil, nil, err
 		}
 	}
+	// Git must see every file where migrate puts it (relocate.go).
+	if problems, err := p.ignored(); err != nil || len(problems) > 0 {
+		return nil, problems, err
+	}
 	return p, nil, nil
 }
 

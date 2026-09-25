@@ -244,9 +244,12 @@ be corrected in `INDEX.md`, and a root inside a pinned bundle is sent to that bu
   Git is its undo, in the repository that tracks the bundle (`repository`: the nearest
   above it, or, for a submodule, the superproject): migrate reads the root as the disk
   spells it (`onDisk`), starts only from a clean tree (a file git ignores counts, a
-  hidden one aside), marks what it wrote with `git add --intent-to-add --ignore-removal`
-  so that `git diff -M` shows each move, and prints the commands, each path quoted, that
-  restore everything should it stop partway: the bundle moved back first. `outside.go`
+  hidden one aside), refuses a place git would ignore (`ignored`: `git check-ignore` of
+  the new path of each tracked file that moves and each file written new, a directory
+  ignored whole named once), marks what it wrote with
+  `git add --intent-to-add --ignore-removal` so that `git diff -M` shows each move, and
+  prints the commands, each path quoted, that restore everything should it stop
+  partway: the bundle moved back first. `outside.go`
   rewrites the project's git-tracked text files — links into the bundle, and mentions
   of its path where a path begins — listing each mention of the old path it leaves for a
   person to decide on (in a URL, after a longer path, or in a link that leads
@@ -259,10 +262,10 @@ be corrected in `INDEX.md`, and a root inside a pinned bundle is sent to that bu
   Markdown, a group whose place in `features/` is taken or a `features` that is no
   directory, a directory of Markdown that is a symbolic link; a destination
   that is not empty, inside the bundle, outside the project or inside `.git`, or behind
-  a file; and a tree that is not clean. A bundle at 1.0 moves nothing: its spec
-  copy, indexes and Context stubs are restored. Validation runs with
-  `FreshStubsAdvisory`, and a bundle from before 0.7 hears 0.7's F12, F8, surface and
-  timestamp counts and the debts that may be bugs).
+  a file; a tree that is not clean; and a place git would ignore. A bundle at 1.0
+  moves nothing: its spec copy, indexes and Context stubs are restored. Validation runs
+  with `FreshStubsAdvisory`, and a bundle from before 0.7 hears 0.7's F12, F8, surface
+  and timestamp counts and the debts that may be bugs).
   **`cli/internal/register`** (`fdf debt` and `fdf bug`: `register.Debt` and
   `register.Bug` are two `Kind`s over one implementation — the documents `layout` files
   in the register, listed with an optional status filter, scaffolded, and `--cleanup`,

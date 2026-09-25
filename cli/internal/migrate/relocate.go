@@ -3,9 +3,10 @@ package migrate
 // Where the bundle goes, and git, which is the migration's undo: a bundle at
 // …/docs/features moves to …/docs/fdf beside it, --to chooses another
 // destination, and a submodule moves with git mv. In the git repository
-// that tracks the bundle, migrate starts only from a clean tree, marks the
-// files it writes so that `git diff -M` shows every move, and, should it
-// stop partway, says which commands put everything back.
+// that tracks the bundle, migrate starts only from a clean tree, puts no file
+// where git would ignore it, marks the files it writes so that `git diff -M`
+// shows every move, and, should it stop partway, says which commands put
+// everything back.
 
 import (
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/GiteshDalal/fdf/cli/internal/fdfroot"
@@ -178,6 +180,126 @@ func (p *plan) dirty(project string) ([]string, error) {
 		lines = append(lines, out...)
 	}
 	return lines, nil
+}
+
+// ignored lists, as the plan's refusals, what git would ignore of what
+// migrate puts in a new place, in the repository where markNew marks it:
+// the new path of each file git tracks that moves, and each file migrate
+// writes new. Git skips a path it ignores when it marks them, so such a file
+// would drop out of git, which could neither show nor undo the move. It is
+// the mirror of dirty, which refuses a file git ignores at its old path; a
+// hidden one there, which dirty lets move, is none git tracks, and stays
+// ignored. A directory git would ignore as a whole, the destination among
+// them, is named once, not each file in it. Nothing is force-added: a bundle
+// in a directory git ignores would hide every file written there later.
+func (p *plan) ignored() ([]string, error) {
+	if p.project == "" {
+		return nil, nil
+	}
+	// In a submodule's repository, or the bundle's own, the bundle is the
+	// root, wherever it goes: its paths are its own, and --to moves none.
+	repo, old, now, advice := p.project, p.old, p.new, "change the rule, or pass --to <dir> to choose another destination"
+	if p.submodule || p.project == p.root {
+		repo, old, now, advice = p.root, "", "", "change the rule"
+	}
+	spec := old
+	if spec == "" {
+		spec = "."
+	}
+	tracked, err := git(repo, "ls-files", "-z", "--", spec)
+	if err != nil {
+		return nil, err
+	}
+	var paths []string
+	for _, t := range strings.Split(tracked, "\x00") {
+		rel, ok := t, t != ""
+		if ok && old != "" {
+			rel, ok = strings.CutPrefix(t, old+"/")
+		}
+		if n := path.Join(now, p.to(rel)); ok && !p.goes(rel) && n != t {
+			paths = append(paths, n)
+		}
+	}
+	for rel := range p.texts {
+		if p.source(rel) == "" {
+			paths = append(paths, path.Join(now, rel))
+		}
+	}
+	sort.Strings(paths)
+	// Each directory the paths are in, from the bundle's root once migrated
+	// down, is asked about too, as a directory: git reads a trailing slash
+	// so.
+	query, asked := append([]string{}, paths...), map[string]bool{}
+	for _, n := range paths {
+		for d := path.Dir(n); d != "." && !asked[d] && (now == "" || within(now, d)); d = path.Dir(d) {
+			asked[d] = true
+			query = append(query, d+"/")
+		}
+	}
+	rules, err := checkIgnore(repo, query)
+	if err != nil || len(rules) == 0 {
+		return nil, err
+	}
+	var out []string
+	named := map[string]bool{}
+	for _, n := range paths {
+		r, ok := rules[n]
+		if !ok {
+			continue
+		}
+		// The directory nearest the bundle's root that git ignores whole.
+		top := ""
+		for d := path.Dir(n); asked[d]; d = path.Dir(d) {
+			if _, ok := rules[d+"/"]; ok {
+				top = d
+			}
+		}
+		switch {
+		case top == "":
+			out = append(out, fmt.Sprintf("%s: git would ignore it, by %s, so it could neither show nor undo what migrate puts there — %s", n, r, advice))
+		case !named[top]:
+			named[top] = true
+			out = append(out, fmt.Sprintf("%s/: git would ignore it and every file in it, by %s, so it could neither show nor undo what migrate puts there — %s", top, rules[top+"/"], advice))
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// rule is an ignore rule, as git check-ignore -v reports it.
+type rule struct{ source, line, pattern string }
+
+func (r rule) String() string {
+	return fmt.Sprintf("the rule %s on line %s of %s", r.pattern, r.line, r.source)
+}
+
+// checkIgnore asks git, in the repository at dir, which of paths its rules
+// ignore, as they read now, whether git tracks the path or not: by path, the
+// rule that ignores it. A path ending in / is a directory. A path a negated
+// rule matches is not ignored.
+func checkIgnore(dir string, paths []string) (map[string]rule, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	cmd := exec.Command("git", "--no-optional-locks", "-C", dir, "check-ignore", "--no-index", "--stdin", "-z", "-v")
+	cmd.Stdin = strings.NewReader(strings.Join(paths, "\x00") + "\x00")
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if e, ok := err.(*exec.ExitError); ok && e.ExitCode() == 1 {
+		return nil, nil // git ignores none of them
+	}
+	if err != nil {
+		return nil, fmt.Errorf("git check-ignore: %v: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	rules := map[string]rule{}
+	fields := strings.Split(string(out), "\x00")
+	for i := 0; i+3 < len(fields); i += 4 {
+		if r := (rule{fields[i], fields[i+1], fields[i+2]}); !strings.HasPrefix(r.pattern, "!") {
+			rules[fields[i+3]] = r
+		}
+	}
+	return rules, nil
 }
 
 // hidden reports whether a path git names is a hidden file, or one in a
