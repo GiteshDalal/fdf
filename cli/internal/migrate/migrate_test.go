@@ -1715,6 +1715,64 @@ func TestMigrateSaysHowToUndoAStoppedMigration(t *testing.T) {
 	}
 }
 
+// A migration that went through leaves the files it wrote marked with git
+// add -N, which git's usual ways of backing out stumble on: git stash -u
+// stops at them, and git clean leaves them. So the next steps also print the
+// commands that back it out, the first of which takes the marks back, in the
+// repository that holds them, and the commands do put everything back: for
+// a plain directory and for a submodule, with a file outside the bundle
+// rewritten.
+func TestMigrateSaysHowToBackOutAMigration(t *testing.T) {
+	const says = "      to back the migration out instead, run these commands; the first takes back the\n" +
+		"      marks of `git add -N`, on which git stash and git clean would trip:\n"
+	for _, submodule := range []bool{false, true} {
+		var project string
+		if submodule {
+			project = gitSuperproject(t, "valid-bugs-v07")
+		} else {
+			project = gitProject(t, "valid-bugs-v07")
+		}
+		write(t, project, "README.md", "# Project\n\nThe bundle is in docs/features.\n")
+		gitIn(t, project, "commit", "-qam", "readme")
+		before := worktree(t, project)
+		var out bytes.Buffer
+		if code := Run(Options{Root: filepath.Join(project, "docs", "features"), Project: project}, &out); code != 0 {
+			t.Fatalf("submodule %v: migrate exit %d\n%s", submodule, code, out.String())
+		}
+		if readme := string(mustRead(t, filepath.Join(project, "README.md"))); !strings.Contains(readme, "docs/fdf") {
+			t.Fatalf("submodule %v: the test needs a file outside the bundle rewritten:\n%s", submodule, readme)
+		}
+		_, rest, ok := strings.Cut(out.String(), says)
+		if !ok {
+			t.Fatalf("submodule %v: the next steps say how to back the migration out:\n%s", submodule, out.String())
+		}
+		var cmds []string
+		for _, line := range strings.Split(rest, "\n") {
+			cmd, ok := strings.CutPrefix(line, "        ")
+			if !ok {
+				break
+			}
+			cmds = append(cmds, cmd)
+		}
+		if len(cmds) == 0 || !strings.Contains(cmds[0], " reset -q -- ") {
+			t.Fatalf("submodule %v: the commands start by taking back the marks:\n%s", submodule, rest)
+		}
+		for _, cmd := range cmds {
+			if b, err := exec.Command("sh", "-c", cmd).CombinedOutput(); err != nil {
+				t.Fatalf("submodule %v: %s: %v\n%s", submodule, cmd, err, b)
+			}
+		}
+		if after := worktree(t, project); after != before {
+			t.Errorf("submodule %v: the commands put everything back:\n%s", submodule, strings.Join(cmds, "\n"))
+		}
+		for _, dir := range []string{project, filepath.Join(project, "docs", "features")} {
+			if status := gitIn(t, dir, "status", "--porcelain", "--untracked-files=all", "--ignored"); status != "" {
+				t.Errorf("submodule %v: git status is clean again in %s:\n%s", submodule, dir, status)
+			}
+		}
+	}
+}
+
 // Git is the undo in the repository that tracks the bundle: the nearest one
 // above it, not the topmost. A repository checked out inside another tracks
 // its own files, so migrate checks, and marks, the inner one's.

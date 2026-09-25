@@ -171,16 +171,18 @@ var helpTopics = []helpTopic{
 			"and what `fdf install` manages is left to it. Migrate starts only from a\n" +
 			"clean tree, in the repository that tracks the bundle, refuses to put a\n" +
 			"file where git would ignore it, and marks the files it writes with\n" +
-			"`git add -N`, so that `git diff -M` shows each move; should it stop\n" +
-			"partway, it prints the commands that put everything back. A pre-flight\n" +
-			"refuses what 1.0 has no place for — a stray Markdown file at the root, a\n" +
-			"document named index.md or log.md, a practice, debt or bug beside a\n" +
-			"directory of Markdown — and leaves the bundle untouched, so a refused run\n" +
-			"is safe to retry after fixing what it names. A bundle already at 1.0 moves\n" +
-			"nothing: its spec copy, indexes and Context stubs are restored. An\n" +
-			"unfilled Context stub is only a warning here; once the bundle has a\n" +
-			"feature, a plain `fdf validate` fails F9 until it is filled. Re-run\n" +
-			"`fdf install` afterwards.",
+			"`git add -N`, so that `git diff -M` shows each move. It prints the\n" +
+			"commands that put everything back should it stop partway, and, once done,\n" +
+			"those that back it out, starting with the `git reset` of those marks that\n" +
+			"git stash and git clean would trip on. A pre-flight refuses what 1.0 has\n" +
+			"no place for — a stray Markdown file at the root, a document named\n" +
+			"index.md or log.md, a practice, debt or bug beside a directory of\n" +
+			"Markdown — and leaves the bundle untouched, so a refused run is safe to\n" +
+			"retry after fixing what it names. A bundle already at 1.0 moves nothing:\n" +
+			"its spec copy, indexes and Context stubs are restored. An unfilled Context\n" +
+			"stub is only a warning here; once the bundle has a feature, a plain\n" +
+			"`fdf validate` fails F9 until it is filled. Re-run `fdf install`\n" +
+			"afterwards.",
 		flags: []flagDoc{
 			{"--dry-run", "print the plan, and change nothing"},
 			{"--to <dir>", "where the bundle goes (default docs/fdf beside a docs/features bundle, otherwise where it is)"},

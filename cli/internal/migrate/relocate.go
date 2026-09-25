@@ -351,10 +351,7 @@ func (p *plan) relocate() error {
 // the file: git forgets the old name first, so that the new one is marked,
 // and committed, as it is spelled.
 func (p *plan) markNew(project string) error {
-	dir, at := project, p.new
-	if p.submodule || project == p.root {
-		dir, at = p.dest(), "."
-	}
+	dir, at := p.marked(project)
 	for _, o := range sortedKeys(p.moves) {
 		if n := p.to(o); p.relocates() || o == n || !strings.EqualFold(o, n) {
 			continue
@@ -370,12 +367,33 @@ func (p *plan) markNew(project string) error {
 	return err
 }
 
-// undo is what puts everything back after a migration that stopped partway:
-// in a git repository, the clean tree migrate started from is there to
-// restore. A bundle that moved goes back first: a plain directory with mv,
-// which takes back the files git ignores too, and a submodule with git mv,
-// then .gitmodules as it was. Then git restores what migrate changed, and
-// removes what it wrote.
+// marked is where markNew marks the files of the migrated bundle: the
+// repository, and the bundle's path in it. A submodule's own repository, or
+// the bundle's, holds the bundle at its root, once moved.
+func (p *plan) marked(project string) (dir, at string) {
+	if p.submodule || project == p.root {
+		return p.dest(), "."
+	}
+	return project, p.new
+}
+
+// backOut is what puts everything back after a migration that went through.
+// git stash and git clean trip on the entries git add -N left in the index,
+// so git reset takes them back first, in the repository that holds them;
+// then undo's commands put everything back, as after a migration that
+// stopped partway.
+func (p *plan) backOut(project string) []string {
+	dir, at := p.marked(project)
+	return append([]string{fmt.Sprintf("git -C %s reset -q -- %s", quote(dir), quote(at))}, p.undo(project)...)
+}
+
+// undo is what puts everything back after a migration that stopped partway,
+// and, once backOut has taken back the marks of git add -N, after one that
+// went through: in a git repository, the clean tree migrate started from is
+// there to restore. A bundle that moved goes back first: a plain directory
+// with mv, which takes back the files git ignores too, and a submodule with
+// git mv, then .gitmodules as it was. Then git restores what migrate
+// changed, and removes what it wrote.
 func (p *plan) undo(project string) []string {
 	q := quote
 	switch {

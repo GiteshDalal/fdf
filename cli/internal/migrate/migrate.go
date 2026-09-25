@@ -19,8 +19,9 @@
 // bundle migrate refuses is left as it was. In a git repository, which is
 // its undo, migrate starts only from a clean tree, puts no file where git
 // would ignore it, marks what it wrote with git add -N so that git diff -M
-// shows every move, and, should it stop partway, prints the git commands
-// that put everything back. A bundle already pinned to 1.0 moves nothing:
+// shows every move, and prints the git commands that put everything back,
+// should it stop partway, or, once done, that back it out, after a git
+// reset of those marks. A bundle already pinned to 1.0 moves nothing:
 // migrate restores its spec copy, indexes and Context stubs. A root whose
 // INDEX.md pins nothing inside a pinned bundle — a register or a group of
 // it, where the steps would build a second bundle — is refused, and so is a
@@ -247,6 +248,13 @@ func Run(o Options, out io.Writer) int {
 	}
 	if o.EnvRoot != "" && onDisk(o.EnvRoot) == rootAbs && p.relocates() {
 		fmt.Fprintf(out, "      FDF_ROOT_DIR still names %s: point it at %s.\n", rootAbs, root)
+	}
+	if project != "" {
+		fmt.Fprintln(out, "      to back the migration out instead, run these commands; the first takes back the")
+		fmt.Fprintln(out, "      marks of `git add -N`, on which git stash and git clean would trip:")
+		for _, l := range p.backOut(project) {
+			fmt.Fprintln(out, "        "+l)
+		}
 	}
 	return code
 }
