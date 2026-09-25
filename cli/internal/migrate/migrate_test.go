@@ -2,6 +2,7 @@ package migrate
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -85,7 +86,7 @@ Trail: [spec](example/SPEC.md), [plan](example/PLAN.md), [test](example/TEST.md)
 	write(t, root, "wdise/example/LOG.md", "# Example feature log\n\n## 2026-07-06\n* Completed.\n")
 }
 
-func TestMigrateChainsToCurrentVersion(t *testing.T) {
+func TestMigrateChainsToItsTarget(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "features")
 	buildV01Bundle(t, root)
 	var out bytes.Buffer
@@ -110,8 +111,8 @@ func TestMigrateChainsToCurrentVersion(t *testing.T) {
 		t.Fatal("vendored fdf-spec.md must be deleted")
 	}
 	idx, _ := os.ReadFile(filepath.Join(root, "INDEX.md"))
-	if !strings.Contains(string(idx), `fdf_version: "`+currentVersion+`"`) {
-		t.Fatalf("pin not upgraded to current version:\n%s", idx)
+	if !strings.Contains(string(idx), `fdf_version: "`+target+`"`) {
+		t.Fatalf("pin not upgraded to the target, %s:\n%s", target, idx)
 	}
 	// v0.4: migration scaffolds the spec copy and the four Context stubs.
 	for _, p := range []string{"SPEC.md", "STACK.md", "ARCHITECTURE.md", "SURFACES.md", "INFRA.md"} {
@@ -121,8 +122,8 @@ func TestMigrateChainsToCurrentVersion(t *testing.T) {
 	}
 	// The vendored spec must match the target version, not a stale one.
 	spec, _ := os.ReadFile(filepath.Join(root, "SPEC.md"))
-	if !strings.Contains(string(spec), "v"+currentVersion) {
-		t.Fatalf("vendored SPEC.md not the v%s spec:\n%.200s", currentVersion, spec)
+	if !strings.Contains(string(spec), "v"+target) {
+		t.Fatalf("vendored SPEC.md not the v%s spec:\n%.200s", target, spec)
 	}
 	// Unfilled stubs are advisory during migrate, so it still exits 0 and
 	// points the user at the fdf-init interview — and warns about plain validate.
@@ -178,8 +179,8 @@ func TestMigrateRefreshesStaleVendoredSpec(t *testing.T) {
 	if strings.Contains(string(spec), "OLD VENDORED TEXT") {
 		t.Fatalf("stale vendored spec was not refreshed:\n%.200s", spec)
 	}
-	if !strings.Contains(string(spec), "v"+currentVersion) {
-		t.Fatalf("refreshed spec is not v%s:\n%.200s", currentVersion, spec)
+	if !strings.Contains(string(spec), "v"+target) {
+		t.Fatalf("refreshed spec is not v%s:\n%.200s", target, spec)
 	}
 }
 
@@ -192,8 +193,8 @@ func TestMigrateV03ToV04StemLayout(t *testing.T) {
 	}
 
 	idx, _ := os.ReadFile(filepath.Join(root, "INDEX.md"))
-	if !strings.Contains(string(idx), `fdf_version: "`+currentVersion+`"`) {
-		t.Fatalf("pin not upgraded to %s:\n%s", currentVersion, idx)
+	if !strings.Contains(string(idx), `fdf_version: "`+target+`"`) {
+		t.Fatalf("pin not upgraded to %s:\n%s", target, idx)
 	}
 
 	// Stem trail present; nested trail gone.
@@ -265,7 +266,7 @@ func TestMigrateV03ToV04StemLayout(t *testing.T) {
 func TestMigrateAlready04IsNoop(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "features")
 	// Minimal already-current draft-only bundle (no features → no F9 hard fail).
-	write(t, root, "INDEX.md", "---\nfdf_version: \""+currentVersion+"\"\n---\n\n# Bundle\n\n* [Log](/LOG.md) - log.\n")
+	write(t, root, "INDEX.md", "---\nfdf_version: \""+target+"\"\n---\n\n# Bundle\n\n* [Log](/LOG.md) - log.\n")
 	write(t, root, "LOG.md", "# Bundle Update Log\n\n## 2026-07-06\n* Already current.\n")
 	var out bytes.Buffer
 	if code := Run(root, "", &out); code != 0 {
@@ -280,9 +281,58 @@ func TestMigrateAlready04IsNoop(t *testing.T) {
 		t.Fatalf("already-current must not run layout transform:\n%s", msg)
 	}
 	idx, _ := os.ReadFile(filepath.Join(root, "INDEX.md"))
-	if !strings.Contains(string(idx), `fdf_version: "`+currentVersion+`"`) {
+	if !strings.Contains(string(idx), `fdf_version: "`+target+`"`) {
 		t.Fatalf("pin changed unexpectedly:\n%s", idx)
 	}
+}
+
+// migrate upgrades a 0.x bundle to 0.7, and a bundle pinned to 1.0 is not
+// one: its steps would pin a conformant 1.0 bundle back to 0.7, and refuse
+// another with messages about v0.4. It is refused before anything is read
+// or written, whatever it holds, and however its pin is quoted.
+func TestMigrateLeavesA10BundleAsItIs(t *testing.T) {
+	var roots []string
+	for _, pin := range []string{`"1.0"`, `'1.0'`, `1.0`} {
+		flat := t.TempDir()
+		write(t, flat, "INDEX.md", "---\nfdf_version: "+pin+"\n---\n\n# Bundle\n\n* [Features](/features/INDEX.md) - features.\n")
+		write(t, flat, "LOG.md", "# Bundle Update Log\n\n## 2026-09-25\n* **Initialization**: created.\n")
+		write(t, flat, "features/INDEX.md", "# Features\n\n* [Onboarding](/features/onboarding.md) - feature.\n")
+		write(t, flat, "features/onboarding.md", "---\ntype: Feature\nstatus: draft\ntitle: Onboarding\ndescription: d.\ntimestamp: 2026-09-25T00:00:00Z\n---\n\n# Feature\n\n```gherkin\nFeature: Onboarding\n  As a user\n  I want to sign up\n  So that I can start\n```\n\n```gherkin\nScenario: It works\n  Given a\n  When b\n  Then c\n```\n")
+		roots = append(roots, flat)
+	}
+	full := t.TempDir()
+	src := filepath.Join("..", "..", "..", "testdata", "valid-v10", "bundle")
+	filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			rel, _ := filepath.Rel(src, p)
+			write(t, full, rel, string(mustRead(t, p)))
+		}
+		return nil
+	})
+	for _, root := range append(roots, full) {
+		before := tree(t, root)
+		var out bytes.Buffer
+		if code := Run(root, "", &out); code != 1 || !strings.Contains(out.String(), "cannot migrate: the bundle pins fdf_version 1.0, and this binary upgrades a 0.x bundle to 0.7 — the bundle was left as it is.") {
+			t.Errorf("a 1.0 bundle is refused: exit %d\n%s", code, out.String())
+		}
+		if after := tree(t, root); after != before {
+			t.Errorf("a refused migration changes nothing:\nbefore:\n%s\nafter:\n%s", before, after)
+		}
+	}
+}
+
+// tree lists every file under root with its content, in path order.
+func tree(t *testing.T, root string) string {
+	t.Helper()
+	var b strings.Builder
+	filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			rel, _ := filepath.Rel(root, p)
+			fmt.Fprintf(&b, "== %s\n%s", filepath.ToSlash(rel), mustRead(t, p))
+		}
+		return nil
+	})
+	return b.String()
 }
 
 // A root with no bundle in it is refused before anything is written: a
@@ -436,14 +486,14 @@ func TestMigrateIsIdempotent(t *testing.T) {
 
 func TestMigrateReadsUnquotedPin(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "features")
-	write(t, root, "INDEX.md", "---\nfdf_version: "+currentVersion+"\n---\n\n# Bundle\n\n* [log](/LOG.md) - history.\n")
+	write(t, root, "INDEX.md", "---\nfdf_version: "+target+"\n---\n\n# Bundle\n\n* [log](/LOG.md) - history.\n")
 	write(t, root, "LOG.md", "# Bundle Update Log\n\n## 2026-07-06\n* Init.\n")
 
 	var out bytes.Buffer
 	if code := Run(root, "", &out); code != 0 {
 		t.Fatalf("migrate exit %d\n%s", code, out.String())
 	}
-	if !strings.Contains(out.String(), "already pins fdf_version "+currentVersion) {
+	if !strings.Contains(out.String(), "already pins fdf_version "+target) {
 		t.Fatalf("unquoted pin must hit the already-current path:\n%s", out.String())
 	}
 }
@@ -454,7 +504,7 @@ func TestMigrateReadsUnquotedPin(t *testing.T) {
 // message must name the binary so the user can tell those apart.
 func TestNoOpMigrateNamesTheBinaryVersion(t *testing.T) {
 	root := t.TempDir()
-	write(t, root, "INDEX.md", "---\nfdf_version: \""+currentVersion+"\"\n---\n\n# Bundle\n")
+	write(t, root, "INDEX.md", "---\nfdf_version: \""+target+"\"\n---\n\n# Bundle\n")
 	write(t, root, "LOG.md", "# Log\n\n## 2026-09-15\n* init.\n")
 	Version = "9.9.9-test"
 	defer func() { Version = "" }()
@@ -489,7 +539,7 @@ func TestMigrateSummaryReportsTransitionAndCount(t *testing.T) {
 		t.Fatalf("expected exit 0, got %d\n%s", code, out.String())
 	}
 	msg := out.String()
-	if !strings.Contains(msg, "fdf_version 0.3 -> "+currentVersion) {
+	if !strings.Contains(msg, "fdf_version 0.3 -> "+target) {
 		t.Errorf("summary should state the version transition:\n%s", msg)
 	}
 	if !strings.Contains(msg, "trail file(s) lifted to stem-qualified siblings") {

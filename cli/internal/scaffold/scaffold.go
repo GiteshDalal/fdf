@@ -60,16 +60,16 @@ const domainTermsStub = "# Terms\n\n" +
 	"- code: `Venue` (model), `venues` (table)\n" +
 	"-->\n"
 
-// specDoc renders the embedded spec for the current version as a bundle-root
-// Reference document. Agents and readers of the bundle need no external
-// context to learn the format: the pinned version's spec travels with the
-// bundle at /SPEC.md.
-func specDoc() ([]byte, error) {
-	raw, err := fs.ReadFile(fdf.Assets, "spec/"+currentVersion+".md")
+// specDoc renders the embedded spec of a version as a bundle-root Reference
+// document. Agents and readers of the bundle need no external context to
+// learn the format: the pinned version's spec travels with the bundle at
+// /SPEC.md.
+func specDoc(version string) ([]byte, error) {
+	raw, err := fs.ReadFile(fdf.Assets, "spec/"+version+".md")
 	if err != nil {
 		return nil, err
 	}
-	fm := fmt.Sprintf("---\ntype: Reference\ntitle: Feature Document Format spec\ndescription: The FDF v%s specification this bundle conforms to.\ntimestamp: %s\n---\n\n", currentVersion, time.Now().UTC().Format("2006-01-02T15:04:05Z"))
+	fm := fmt.Sprintf("---\ntype: Reference\ntitle: Feature Document Format spec\ndescription: The FDF v%s specification this bundle conforms to.\ntimestamp: %s\n---\n\n", version, time.Now().UTC().Format("2006-01-02T15:04:05Z"))
 	return append([]byte(fm), raw...), nil
 }
 
@@ -79,11 +79,14 @@ const stubSentinel = "<!-- fdf:stub -->"
 
 // EnsureSpec, RefreshSpec, and EnsureContextStubs let other commands (e.g.
 // migrate) place the bundle-root spec copy and Context stubs without
-// re-implementing them. EnsureSpec writes only if absent (init); RefreshSpec
-// overwrites to the current version's spec (migrate), so a bumped pin never
-// leaves a stale vendored spec behind.
-func EnsureSpec(root string, out io.Writer) int         { return writeSpec(root, false, out) }
-func RefreshSpec(root string, out io.Writer) int        { return writeSpec(root, true, out) }
+// re-implementing them. EnsureSpec writes the current version's spec only if
+// absent (init); RefreshSpec overwrites it with the spec of the version a
+// bundle now pins (migrate), so a bumped pin never leaves a stale vendored
+// spec behind.
+func EnsureSpec(root string, out io.Writer) int { return writeSpec(root, currentVersion, false, out) }
+func RefreshSpec(root, version string, out io.Writer) int {
+	return writeSpec(root, version, true, out)
+}
 func EnsureContextStubs(root string, out io.Writer) int { return writeContextStubs(root, out) }
 
 // EnsurePracticesIndex creates practices/INDEX.md if absent. Practices (v0.6)
@@ -279,17 +282,17 @@ timestamp: %s
 	return 0
 }
 
-// writeSpec places /SPEC.md. With force=false it is a no-op when a copy
-// already exists (init); with force=true it overwrites to the current
-// version's spec (migrate), reporting whether it wrote or refreshed.
-func writeSpec(root string, force bool, out io.Writer) int {
+// writeSpec places the spec of version at /SPEC.md. With force=false it is a
+// no-op when a copy already exists (init); with force=true it overwrites
+// (migrate), reporting whether it wrote or refreshed.
+func writeSpec(root, version string, force bool, out io.Writer) int {
 	specPath := filepath.Join(root, "SPEC.md")
 	_, statErr := os.Stat(specPath)
 	existed := statErr == nil
 	if existed && !force {
 		return 0
 	}
-	doc, err := specDoc()
+	doc, err := specDoc(version)
 	if err != nil {
 		fmt.Fprintln(out, "error:", err)
 		return 1
@@ -302,7 +305,7 @@ func writeSpec(root string, force bool, out io.Writer) int {
 	if existed {
 		verb = "refreshed"
 	}
-	fmt.Fprintf(out, "%s %s (FDF v%s spec copy)\n", verb, filepath.Base(specPath), currentVersion)
+	fmt.Fprintf(out, "%s %s (FDF v%s spec copy)\n", verb, filepath.Base(specPath), version)
 	return 0
 }
 
@@ -425,7 +428,7 @@ func Init(root string, out io.Writer) int {
 		if m := pinRe.FindSubmatch(raw); m != nil && string(m[1]) == currentVersion {
 			// Backfill what a bundle initialized before it existed, or since
 			// lost, is missing: the spec copy, Context stubs and indexes.
-			if code := writeSpec(root, false, out); code != 0 {
+			if code := EnsureSpec(root, out); code != 0 {
 				return code
 			}
 			if code := writeContextStubs(root, out); code != 0 {
@@ -460,7 +463,7 @@ func Init(root string, out io.Writer) int {
 		fmt.Fprintln(out, "error:", err)
 		return 1
 	}
-	if code := writeSpec(root, false, out); code != 0 {
+	if code := EnsureSpec(root, out); code != 0 {
 		return code
 	}
 	if code := writeContextStubs(root, out); code != 0 {
