@@ -1768,9 +1768,9 @@ func TestMigrateDryRunLeavesGitAsItIs(t *testing.T) {
 // sample is read as the code it is. Every occurrence of the old path left as
 // it is is listed: a mention inside a URL, or after a longer path, and a link
 // that spells the path but leads elsewhere. A bare feature ID outside the
-// bundle is left alone; what fdf install manages is skipped; and a binary
-// file is not read. Inside the bundle the same rule applies, but logs keep
-// their words.
+// bundle is left alone; what fdf install manages is skipped and counted, a
+// link in it that leads elsewhere too; and a binary file is not read. Inside
+// the bundle the same rule applies, but logs keep their words.
 func TestMigrateRewritesReferencesOutsideTheBundle(t *testing.T) {
 	project := gitProject(t, "valid-bugs-v07")
 	files := map[string]string{
@@ -1788,7 +1788,7 @@ func TestMigrateRewritesReferencesOutsideTheBundle(t *testing.T) {
 			"```markdown\n[the index](docs/features/INDEX.md)\n```\n",
 		"CLAUDE.md": "# Project\n\nThe bundle: docs/features.\n\n## Feature Document Format\n\nThis project keeps docs/features.\n\n" +
 			"## Other\n\nMore in docs/features/venues.\n",
-		".claude/skills/fdf-help/SKILL.md":     "Read docs/features/INDEX.md.\n",
+		".claude/skills/fdf-help/SKILL.md":     "Read docs/features/INDEX.md.\nSee [the spec](docs/features/SPEC.md).\n",
 		".claude/skills/fdf-help/.fdf-version": "0.7.0 skills=x primer=y root=docs/features\n",
 		"assets/logo.png":                      "PNG docs/features\x00",
 		"docs/features/STACK.md":               string(mustRead(t, filepath.Join(project, "docs", "features", "STACK.md"))) + "\nValidate with `fdf validate --root docs/features`.\n",
@@ -1828,7 +1828,7 @@ func TestMigrateRewritesReferencesOutsideTheBundle(t *testing.T) {
 		"server/hours.go":                      {"// Opening hours follow docs/fdf/features/venues/opening-hours.md.\n"},
 		"docs/plans/old.md":                    {"See [`docs/fdf/INDEX.md`](docs/features/INDEX.md).\n", "```markdown\n[the index](docs/fdf/INDEX.md)\n```\n"},
 		"CLAUDE.md":                            {"The bundle: docs/fdf.\n", "This project keeps docs/features.\n", "More in docs/fdf/features/venues.\n"},
-		".claude/skills/fdf-help/SKILL.md":     {"Read docs/features/INDEX.md.\n"},
+		".claude/skills/fdf-help/SKILL.md":     {"Read docs/features/INDEX.md.\nSee [the spec](docs/features/SPEC.md).\n"},
 		".claude/skills/fdf-help/.fdf-version": {"root=docs/features\n"},
 		"assets/logo.png":                      {"PNG docs/features"},
 		"docs/fdf/STACK.md":                    {"Validate with `fdf validate --root docs/fdf`.\n"},
@@ -1845,7 +1845,7 @@ func TestMigrateRewritesReferencesOutsideTheBundle(t *testing.T) {
 		"  paths      1 mention of docs/features/ in 1 document; logs keep their words (1)\n",
 		"  outside    10 mentions in 5 files; 5 links in 2 files\n",
 		"             left as they are: 1 mention after a longer path, 2 mentions in a URL, 1 mention in a link that leads elsewhere (listed below)\n",
-		"             skipped: 3 references in what `fdf install` manages, which it rewrites\n",
+		"             skipped: 4 references in what `fdf install` manages, which it rewrites\n",
 		"\noutside the bundle:\n",
 		"  edit    README.md  (3 links, 3 mentions)\n",
 		"  edit    docs/launch/plan.md  (2 links)\n",
@@ -1859,6 +1859,9 @@ func TestMigrateRewritesReferencesOutsideTheBundle(t *testing.T) {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("the plan should say %q:\n%s", want, out.String())
 		}
+	}
+	if strings.Contains(out.String(), ".claude/") {
+		t.Errorf("the plan lists nothing in what fdf install manages:\n%s", out.String())
 	}
 	if diff := gitIn(t, project, "diff", "--name-only"); !strings.Contains(diff, "README.md\n") || !strings.Contains(diff, "Taskfile.yml\n") || strings.Contains(diff, ".claude/") {
 		t.Errorf("git diff shows what migrate rewrote outside the bundle, and nothing install manages:\n%s", diff)

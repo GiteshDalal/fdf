@@ -143,8 +143,9 @@ func pathTargets(text string) map[int]bool {
 // bundle's path the move changes but leads somewhere else, so that the
 // engine leaves it as it is: every such occurrence of the old path is
 // listed, as a mention in a URL is. file is where the plan lists it. A URL
-// is no such link: a mention in one is listed as in a URL.
-func (p *plan) leftLinks(text, file string, site links.Site, mv links.Move) {
+// is no such link: a mention in one is listed as in a URL. One in what fdf
+// install manages (managed) is counted instead, as a mention there is.
+func (p *plan) leftLinks(text, file string, site links.Site, mv links.Move, managed map[int]bool) {
 	for _, l := range links.Find(text) {
 		if _, ok := links.Resolve(l.Target, "x", ""); l.InCode || !ok {
 			continue
@@ -152,9 +153,14 @@ func (p *plan) leftLinks(text, file string, site links.Site, mv links.Move) {
 		if _, ok := links.Retarget(l.Target, site, mv); ok {
 			continue
 		}
-		if ms := p.pathMentions(l.Target, nil, mv); len(ms) > 0 {
-			p.left = append(p.left, left{file, lineOf(text, l.Start), l.Target, elsewhere})
+		if len(p.pathMentions(l.Target, nil, mv)) == 0 {
+			continue
 		}
+		if managed[l.Start] {
+			p.managed++
+			continue
+		}
+		p.left = append(p.left, left{file, lineOf(text, l.Start), l.Target, elsewhere})
 	}
 }
 
@@ -231,7 +237,7 @@ func (p *plan) outside() error {
 					nLinks++
 				}
 			}
-			p.leftLinks(text, f, links.Site{OldPath: f, NewPath: f}, mv)
+			p.leftLinks(text, f, links.Site{OldPath: f, NewPath: f}, mv, managed)
 		}
 		for _, m := range p.pathMentions(text, skip, mv) {
 			switch {

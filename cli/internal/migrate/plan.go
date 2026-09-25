@@ -567,7 +567,7 @@ func (p *plan) repair() {
 		if paths {
 			// Read before the engine repairs them: a link it repairs leads
 			// where it should.
-			p.leftLinks(text, path.Join(p.new, to), site, mv)
+			p.leftLinks(text, path.Join(p.new, to), site, mv, nil)
 		}
 		if text, n = repairLinks(text, site, mv); n > 0 {
 			p.links += n
