@@ -91,7 +91,9 @@ be corrected in `INDEX.md`, and a root inside a pinned bundle is sent to that bu
   marks a boundary but the walk continues to the superproject — so `resource:` paths always
   verify against the real project root even when the bundle is a git submodule. A `.git`
   file whose gitdir holds `commondir` is a **linked worktree** and ends the walk there:
-  the worktree is its own checkout, even inside the main repo's directory.
+  the worktree is its own checkout, even inside the main repo's directory. `Submodule`
+  tells a submodule's root (a `.git` file, not a linked worktree's) from the rest, for
+  `fdf migrate`, which moves one with `git mv`.
 
 - **`cli/internal/specver`** — spec versions: `Parse` reads `MAJOR.MINOR` (a bundle's
   `fdf_version`, a `spec/<version>.md` name), and versions compare by number, so 1.0
@@ -100,15 +102,22 @@ be corrected in `INDEX.md`, and a root inside a pinned bundle is sent to that bu
   it.
 
 - **`cli/internal/links`** — the one link-repair engine. `Find` returns a Markdown text's
-  link targets as CommonMark reads them (inline links and images, with any title or `<…>`
-  destination, and reference definitions; a footnote is not a link, and a target in a
-  fenced or indented code block or a code span is marked as a sample), `Code` returns the
-  byte ranges `Find` reads as code (`[]Span`), `Resolve` reads one target as a path, and
-  `Retarget` recomputes one after a `Move`: a relative link changes whenever its file or
-  its target moves, wherever the target is, inside the bundle or outside it. A link
-  written from the bundle root changes only when its target moves. `fdf mv` uses it, and
-  so does the validator under a 1.0 pin (`sectionTargets` also skips a heading line that
-  starts in `Code`).
+  link targets as CommonMark reads them (inline links and images, with any title, a
+  `<…>` destination or one in which parentheses balance, and reference definitions,
+  never one that would interrupt a paragraph; a footnote is not a link, nor is a bracket
+  a backslash escapes or one in a code span, and a target in a fenced or indented code
+  block or a code span is marked as a sample; it reads a text in one pass, `closers`
+  counting the brackets still open), `Code` returns the byte ranges `Find` reads as code
+  (`[]Span`: a fence indented four columns opens none, a heading is a block of its own,
+  and an indented line after a heading or a closing fence is code), `Blocks` just the
+  code blocks, `Resolve` reads one target as a path, and `Retarget` recomputes one after
+  a `Move`: a relative link changes whenever its file or its target moves, wherever the
+  target is, inside the bundle or outside it, and keeps a `./` it was written with. A
+  link written from the bundle root changes only when its target moves, or the bundle
+  does; one whose target then leaves the bundle is written relative, as spec 1.0's
+  *Cross-linking* writes a link out of the bundle.
+  `fdf mv` and `fdf migrate` use it, and so does the validator under a 1.0 pin
+  (`sectionTargets` also skips a heading line that starts in `Code`).
 
 - **`cli/internal/layout`** — the one source of 1.0 positions: the closed root (its own
   files, the five Context documents and the six `Registers`), groups nested to any depth in
@@ -120,8 +129,8 @@ be corrected in `INDEX.md`, and a root inside a pinned bundle is sent to that bu
   path at fault (`Where`) and its `Problem`; `Bundle.Dir` does the same for a directory,
   and `Bundle.Place` says why a new document cannot be filed at an ID. No document is
   named `index.md` or `log.md`, which a disk that ignores case reads as the `INDEX.md` or
-  `LOG.md` beside it. `Bundle.Exists` reads a name exactly, as `os.Stat` does not on such
-  a disk. The validator and every command read positions here.
+  `LOG.md` beside it (`CaseTwin` says so). `Bundle.Exists` reads a name exactly, as
+  `os.Stat` does not on such a disk. The validator and every command read positions here.
   It reads names through an `fs.FS` and matches them exactly, so a case-insensitive disk
   cannot change a result.
 
@@ -205,24 +214,55 @@ be corrected in `INDEX.md`, and a root inside a pinned bundle is sent to that bu
   gate, `RequireSupported`, a pin among `Supported()`, which `fdf init` asks too;
   `listing.go` keeps the indexes: `EnsureIndex` for a register's, `ListEntry`/`Unlist`
   for a document, listing each new group on the way in its parent's index, `ListGroup`
-  for a group, and `ListRegister` for a register in the root `INDEX.md`),
+  for a group, and `ListRegister` for a register in the root `INDEX.md`, over
+  `WithRegisterListing`; `IndexText`, `ContextStub`, `SpecDoc`, `RegisterLine` and
+  `WithGroupListing` give `fdf migrate` the texts they write, so that it plans them),
   **`cli/internal/install`** (skills + a
   `## Feature Document Format` primer, idempotent, never clobbers user edits; each
   skill's `.fdf-version` reads `<version> skills=<digest> primer=<digest> root=<root>`, so
   another build of the same version upgrades, and a primer an earlier install recorded
-  counts as fdf's own; also removes the superseded slash commands by exact name), and **`cli/internal/migrate`** (mechanical upgrades of a 0.x bundle to 0.7, its
-  `target`; it goes ahead only on a 0.x pin or none: a bundle pinned to 1.0 or later, or
-  to anything that is not a version, is refused before migrate reads anything but that
-  pin, or writes anything, and so is a root inside a pinned bundle.
-  0.3→0.4 rewrites nested trail files to stem siblings and scaffolds
-  `SURFACES.md`; 0.4→0.5, 0.5→0.6 and 0.6→0.7 are **additive**, so the pre-0.4 layout
-  transform — pre-flight included — is skipped for bundles already in the stem layout.
-  0.5→0.6 moves nothing but adds a fifth Context stub, so F9 holds the bundle to filling
-  `DOMAIN.md` before its next feature; migrate itself passes via `FreshStubsAdvisory`.
-  0.6→0.7 scaffolds `bugs/INDEX.md`, refuses a bundle whose `bugs/` is a feature group,
-  drops the status tags older tools wrote after index listings, logs the migration in
-  the root `LOG.md`, and reports the new F12, F8, surface and timestamp counts and the
-  debts that may be bugs).
+  counts as fdf's own; also removes the superseded slash commands by exact name;
+  `MarkerFile`, `PrimerSection` and `InstructionFile` say what it manages, which
+  `fdf migrate` leaves to it), and **`cli/internal/migrate`** (`fdf migrate`: any 0.x
+  bundle, pinned 0.1 to 0.7 or not at all, to 1.0, its `target`, in one run, design §6.
+  `plan.go` works out the whole migration in memory before anything is written, and
+  `report.go` prints it; `--dry-run` stops there. The older layouts become 0.7-shaped
+  first: 0.1's case renames and its vendored `fdf-spec.md` gone, 0.3's trail lift with
+  test stubs (all behind the 0.1–0.3 pre-flight), and the index status tags older tools
+  wrote. Then every root directory that holds Markdown and is not a register under the
+  pin (`reservedSince`: `changes/` from 0.5, `practices/` and `debts/` from 0.6, `bugs/`
+  from 0.7) is a feature group and moves into `features/`; every mention of a feature's
+  ID gains `features/` (`refactor.IDMentions`), except in logs, code blocks
+  (`links.Blocks`) but for a Gherkin `Scenario` line, and `resource` and `applies-to`
+  paths; the link engine repairs every
+  link, reading every path from the project root, and a symbolic link whose relative
+  target a move would change names it again (`relink`); `features/INDEX.md` takes the
+  groups' listings from the root `INDEX.md`,
+  which then lists every register; the pin, `SPEC.md` and any missing Context stub
+  follow, and the root `LOG.md` records what moved. `relocate.go` moves a bundle at
+  `…/docs/features` to `…/docs/fdf` beside it (or to `--to`), a submodule with `git mv`.
+  Git is its undo, in the repository that tracks the bundle (`repository`: the nearest
+  above it, or, for a submodule, the superproject): migrate reads the root as the disk
+  spells it (`onDisk`), starts only from a clean tree (a file git ignores counts, a
+  hidden one aside), marks what it wrote with `git add --intent-to-add --ignore-removal`
+  so that `git diff -M` shows each move, and prints the commands, each path quoted, that
+  restore everything should it stop partway: the bundle moved back first. `outside.go`
+  rewrites the project's git-tracked text files — links into the bundle, and mentions
+  of its path where a path begins — listing each mention of the old path it leaves for a
+  person to decide on (in a URL, after a longer path, or in a link that leads
+  elsewhere), and skipping what
+  `fdf install` manages and `.gitmodules`; a bundle that is its own repository has no
+  outside. Refused before anything is written: a root inside a pinned bundle, or one
+  that is a symbolic link, or whose `INDEX.md`, `LOG.md` or `SPEC.md` is one; a pin that
+  is not a version, a newer one or an unknown 0.x one; a stray root Markdown file, a
+  document named `index.md` or `log.md`, a practice, debt or bug beside a directory of
+  Markdown, a group whose place in `features/` is taken or a `features` that is no
+  directory, a directory of Markdown that is a symbolic link; a destination
+  that is not empty, inside the bundle, outside the project or inside `.git`, or behind
+  a file; and a tree that is not clean. A bundle at 1.0 moves nothing: its spec
+  copy, indexes and Context stubs are restored. Validation runs with
+  `FreshStubsAdvisory`, and a bundle from before 0.7 hears 0.7's F12, F8, surface and
+  timestamp counts and the debts that may be bugs).
   **`cli/internal/register`** (`fdf debt` and `fdf bug`: `register.Debt` and
   `register.Bug` are two `Kind`s over one implementation — the documents `layout` files
   in the register, listed with an optional status filter, scaffolded, and `--cleanup`,
@@ -243,8 +283,11 @@ be corrected in `INDEX.md`, and a root inside a pinned bundle is sent to that bu
   maintenance edits a tool does whole: `Move` (`fdf mv` — read what moves from `layout`, a
   register's document, a group at any depth or a task, never a directory beside a
   practice, debt or bug, nor one that holds no Markdown; plan every file move, rewrite
-  links, edges, declaration headings and ID mentions in every document, move index
-  listings, log, and report references outside the bundle) and `Lexicon`
+  links, edges, declaration headings and ID mentions in every document, with
+  `IDMentions`, which `fdf migrate` shares — an ID where it ends, as the ID, one of its
+  documents or its task directory, never `<id>/handler.go`, a route's template, or,
+  for the 0.x IDs migrate passes it (`routes`), a bare `/<id>` — move index listings,
+  log, and report references outside the bundle) and `Lexicon`
   (`fdf lexicon`, and `--fix` one `--term` at a time: plurals, capitals and a/an kept,
   scenario names renamed across their joins; italic mentions, quoted Gherkin labels,
   table cells and names are left for a person). **`cli/internal/logs`** is `fdf log`
@@ -315,9 +358,9 @@ describe the case they lock in (e.g. `done-with-open-task`, `depends-on-cycle`,
 
 `spec/<version>.md` files are normative. `spec/README.md` and the top-level `SPEC.md` index
 them; the current version is **1.0**: `fdf init` pins it, and every command reads and
-writes it. The validator still checks 0.2–0.7 pins, `fdf migrate` still upgrades a 0.x
-bundle to 0.7 (`target` in `migrate.go`), and the indexes leave 1.0 out, until migrate
-learns the step to 1.0. `currentVersion` is defined in
+writes it. `fdf migrate` upgrades any 0.x bundle to 1.0 (`target` in `migrate.go`); the
+validator still checks 0.2–0.7 pins, and the indexes leave 1.0 out, until Plan 5 of the
+1.0 roadmap. `currentVersion` is defined in
 `cli/internal/scaffold/scaffold.go`. A bundle vendors a copy of its pinned spec at its own
 root (`docs/fdf/SPEC.md`), so bundles are self-describing. Bumping the spec means: add
 `spec/<new>.md`, extend `supportedVersions` in `validate.go`, add a `migrate` path, update
