@@ -27,11 +27,6 @@ type Link struct {
 }
 
 var (
-	// inlineRe matches the destination of an inline link or image, ](target)
-	// or ](<target>), which may hold spaces, then an optional title in "…",
-	// '…' or (…); spaces may pad the inside of the parentheses. Find keeps a
-	// match only when a [ opens its link text.
-	inlineRe = regexp.MustCompile(`\]\([ \t]*(<[^<>\n]*>|[^)\s]+)(?:\s+(?:"[^"]*"|'[^']*'|\([^()]*\)))?[ \t]*\)`)
 	// defRe matches a reference definition, [label]: target, at any
 	// indentation: Code decides whether an indented one is code. A label
 	// that starts with ^ is a footnote, whose text is not a link.
@@ -43,49 +38,181 @@ var (
 
 // Find returns every link target in text, in order: inline links and images,
 // and reference definitions. A target inside a code block or a code span is
-// returned with InCode set.
+// returned with InCode set. A reference definition stands at the start of a
+// block, as CommonMark reads one: a line that continues a paragraph is prose.
 func Find(text string) []Link {
-	code := Code(text)
+	code, defAt := blocks(text)
+	closes := closers(text, code)
 	var out []Link
-	for _, m := range inlineRe.FindAllStringSubmatchIndex(text, -1) {
-		if opensLink(text, m[0]) {
-			out = append(out, Link{Start: m[2], End: m[3], Target: text[m[2]:m[3]], InCode: inRanges(code, m[2])})
+	for i := 0; ; {
+		j := strings.Index(text[i:], "](")
+		if j < 0 {
+			break
+		}
+		at := i + j
+		start, end, next, ok := inline(text, at+2)
+		if !ok {
+			i = at + 1
+			continue
+		}
+		i = next
+		if closes[at] {
+			out = append(out, Link{Start: start, End: end, Target: text[start:end], InCode: inRanges(code, start)})
 		}
 	}
 	for _, m := range defRe.FindAllStringSubmatchIndex(text, -1) {
-		out = append(out, Link{Start: m[2], End: m[3], Target: text[m[2]:m[3]], Def: true, InCode: inRanges(code, m[2])})
+		if inCode := inRanges(code, m[2]); inCode || defAt[m[0]] {
+			out = append(out, Link{Start: m[2], End: m[3], Target: text[m[2]:m[3]], Def: true, InCode: inCode})
+		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Start < out[j].Start })
 	return out
 }
 
-// opensLink reports whether the ] at text[end] closes a link's text: a [
+// inline reads what follows an inline link's "](", from text[i]: spaces, the
+// destination, an optional title, and the parenthesis that closes it. The
+// destination is <…>, which may hold spaces, or a run without spaces in
+// which parentheses balance and a backslash escapes the next character, as
+// in five(1).md. The title is "…", '…' or (…), after white space. It returns
+// the destination's offsets and where the link ends, or ok false when this
+// is no inline link.
+func inline(text string, i int) (start, end, next int, ok bool) {
+	for i < len(text) && (text[i] == ' ' || text[i] == '\t') {
+		i++
+	}
+	start = i
+	if i < len(text) && text[i] == '<' {
+		j := i + 1
+		for j < len(text) && text[j] != '>' && text[j] != '<' && text[j] != '\n' {
+			j++
+		}
+		if j >= len(text) || text[j] != '>' {
+			return 0, 0, 0, false
+		}
+		end = j + 1
+	} else {
+		depth, j := 0, i
+	scan:
+		for j < len(text) {
+			switch c := text[j]; {
+			case c == '\\' && j+1 < len(text) && text[j+1] > ' ':
+				j++ // the escaped character is part of the destination
+			case c == '(':
+				depth++
+			case c == ')':
+				if depth == 0 {
+					break scan
+				}
+				depth--
+			case c <= ' ':
+				break scan
+			}
+			j++
+		}
+		if j == i || depth != 0 {
+			return 0, 0, 0, false
+		}
+		end = j
+	}
+	k := end
+	if t := title(text, end); t > end {
+		k = t
+	}
+	for k < len(text) && (text[k] == ' ' || text[k] == '\t') {
+		k++
+	}
+	if k >= len(text) || text[k] != ')' {
+		return 0, 0, 0, false
+	}
+	return start, end, k + 1, true
+}
+
+// title returns where a link title after text[i] ends: white space, then
+// "…", '…' or (…). It returns i when there is none.
+func title(text string, i int) int {
+	k := i
+	for k < len(text) && strings.IndexByte(" \t\n\r\f", text[k]) >= 0 {
+		k++
+	}
+	if k == i || k >= len(text) {
+		return i
+	}
+	closer := map[byte]byte{'"': '"', '\'': '\'', '(': ')'}[text[k]]
+	if closer == 0 {
+		return i
+	}
+	for j := k + 1; j < len(text); j++ {
+		switch {
+		case text[j] == closer:
+			return j + 1
+		case closer == ')' && text[j] == '(':
+			return i
+		}
+	}
+	return i
+}
+
+// escaped reports whether a backslash escapes text[i]: an odd number of them
+// stand before it.
+func escaped(text string, i int) bool {
+	n := 0
+	for j := i - 1; j >= 0 && text[j] == '\\'; j-- {
+		n++
+	}
+	return n%2 == 1
+}
+
+// closers finds the ] of each "](" in text that closes a link's text: a [
 // before it, in the same paragraph, balances it. Brackets nest, so both
 // links in [![badge](b.svg)](page.md) are found, while the ] in "a] (b)" is
-// not a link at all.
-func opensLink(text string, end int) bool {
-	depth, blank := 0, false
-	for i := end; i >= 0; i-- {
-		c := text[i]
-		switch c {
-		case ']':
-			depth++
-		case '[':
-			if depth--; depth == 0 {
-				return true
-			}
+// not a link at all. A bracket a backslash escapes is text, and so is one in
+// a code span when the ] is not in it. It reads the text once, keeping two
+// counts of the [ still open: every one, for a ] in code, and those outside
+// code, for a ] outside it. A blank line starts a paragraph, with none open.
+func closers(text string, code []Span) map[int]bool {
+	out := map[int]bool{}
+	all, prose := 0, 0
+	blank, c := true, 0 // blank: the line so far is white space; c: the first range of code not behind i
+	for i := 0; i < len(text); i++ {
+		ch := text[i]
+		switch ch {
 		case '\n':
 			if blank {
-				return false // a blank line: the paragraph starts after it
+				all, prose = 0, 0
 			}
 			blank = true
 			continue
+		case ' ', '\t', '\r':
+			continue
 		}
-		if c != ' ' && c != '\t' && c != '\r' {
-			blank = false
+		blank = false
+		if ch != '[' && ch != ']' || escaped(text, i) {
+			continue
+		}
+		for c < len(code) && code[c].End <= i {
+			c++
+		}
+		inCode := c < len(code) && code[c].Start <= i
+		if ch == '[' {
+			all++
+			if !inCode {
+				prose++
+			}
+			continue
+		}
+		open := prose > 0
+		if inCode {
+			open = all > 0
+		}
+		if open && strings.HasPrefix(text[i+1:], "(") {
+			out[i] = true
+		}
+		all = max(all-1, 0)
+		if !inCode {
+			prose = max(prose-1, 0)
 		}
 	}
-	return false
+	return out
 }
 
 // Span is a run of a text's bytes, text[Start:End].
@@ -97,24 +224,38 @@ type Span struct{ Start, End int }
 // block; and each code span, its backticks included. A link whose target
 // starts in one of them is returned with InCode set.
 //
-// A fence closes on a line of the same character at least as long as the
-// one that opened it. An indented code block is a line indented four columns
-// or more (a tab reaches the next multiple of four) after a blank line,
-// outside a list, and the indented lines that follow it. The text's first
-// line continues whatever came before it, so a line read on its own, such as
-// one listing line, is never code for its indentation alone. Code spans are
-// marked in each block of prose.
+// A fence opens on a line indented less than four columns, or on any line of
+// a list, and closes on a line of the same character at least as long as
+// the one that opened it. An indented code block is a line indented four
+// columns or more (a tab reaches the next multiple of four) that starts a
+// block outside a list, after a blank line, a heading or a closing fence,
+// and the indented lines that follow it. The text's first line continues
+// whatever came before it, so a line read on its own, such as one listing
+// line, is never code for its indentation alone. Code spans are marked in
+// each block of prose, and a heading is a block of its own.
 func Code(text string) []Span {
-	var out []Span
+	code, _ := blocks(text)
+	return code
+}
+
+// blocks reads text as CommonMark groups its lines into blocks, as far as
+// Find needs to: the ranges Code returns, and the lines a reference
+// definition may start (defAt, by offset): every line that does not continue
+// a paragraph.
+func blocks(text string) (code []Span, defAt map[int]bool) {
+	defAt = map[int]bool{}
 	fence, fenceStart := "", 0
 	prose := -1 // where the current block of prose starts
 	endProse := func(at int) {
 		if prose >= 0 {
-			out = append(out, codeSpans(text, prose, at)...)
+			code = append(code, codeSpans(text, prose, at)...)
 			prose = -1
 		}
 	}
-	inList, blank, indented := false, false, false
+	// boundary: the line before ended a block (a blank line, a heading, a
+	// closing fence), so an indented line starts a code block. para: the
+	// line before is prose, which a definition cannot interrupt.
+	inList, boundary, para, indented := false, false, false, false
 	pos := 0
 	for _, line := range strings.SplitAfter(text, "\n") {
 		start := pos
@@ -123,45 +264,56 @@ func Code(text string) []Span {
 		switch {
 		case fence != "":
 			if strings.HasPrefix(t, fence) && strings.Trim(t, fence[:1]) == "" {
-				out = append(out, Span{fenceStart, pos})
+				code = append(code, Span{fenceStart, pos})
 				fence = ""
+				boundary = true
 			}
 			continue
-		case fenceRe.MatchString(t):
-			endProse(start)
-			fence, fenceStart = fenceRe.FindString(t), start
-			indented = false
 		case t == "":
 			endProse(start)
-			blank = true
+			boundary, para = true, false
 			continue
-		case columns(line) >= 4 && (indented || blank && !inList):
+		case columns(line) >= 4 && (indented || boundary && !inList):
 			endProse(start)
-			out = append(out, Span{start, pos})
-			indented = true
-		default:
-			indented = false
-			item := listItemRe.MatchString(line)
-			switch {
-			case item:
-				inList = true
-			case columns(line) == 0 && (blank || headingRe.MatchString(line)):
-				inList = false
-			}
-			if item || headingRe.MatchString(line) {
-				endProse(start) // a list item or a heading starts a block of its own
-			}
-			if prose < 0 {
-				prose = start
-			}
+			code = append(code, Span{start, pos})
+			indented, boundary, para = true, false, false
+			continue
+		case fenceRe.MatchString(t) && (columns(line) < 4 || inList):
+			endProse(start)
+			fence, fenceStart = fenceRe.FindString(t), start
+			indented, boundary, para = false, false, false
+			continue
 		}
-		blank = false
+		indented = false
+		item, heading := listItemRe.MatchString(line), headingRe.MatchString(line)
+		switch {
+		case item:
+			inList = true
+		case columns(line) == 0 && (boundary || heading):
+			inList = false
+		}
+		if item || heading {
+			endProse(start) // a list item or a heading starts a block of its own
+		}
+		defAt[start] = !para
+		if prose < 0 {
+			prose = start
+		}
+		switch {
+		case heading:
+			endProse(pos) // and a heading ends it
+			boundary, para = true, false
+		case defAt[start] && defRe.MatchString(line):
+			boundary, para = false, false // another definition may follow
+		default:
+			boundary, para = false, true
+		}
 	}
 	endProse(len(text))
 	if fence != "" {
-		out = append(out, Span{fenceStart, len(text)})
+		code = append(code, Span{fenceStart, len(text)})
 	}
-	return out
+	return code, defAt
 }
 
 // columns is how far a line is indented, a tab reaching the next multiple of
@@ -217,13 +369,10 @@ func codeSpans(text string, start, end int) []Span {
 	return out
 }
 
+// inRanges reports whether at is in one of rs, which are in order.
 func inRanges(rs []Span, at int) bool {
-	for _, r := range rs {
-		if at >= r.Start && at < r.End {
-			return true
-		}
-	}
-	return false
+	i := sort.Search(len(rs), func(i int) bool { return rs[i].End > at })
+	return i < len(rs) && rs[i].Start <= at
 }
 
 // Dest is a link target read as a path.
@@ -341,6 +490,12 @@ func Retarget(target string, s Site, m Move) (string, bool) {
 		var ok bool
 		if nt, ok = rel(path.Dir(s.NewPath), moved); !ok {
 			return "", false
+		}
+		// A link written ./x keeps its ./, so one that still names the
+		// same place, as a sibling that moves with its file does, is left
+		// as it is.
+		if strings.HasPrefix(strings.TrimPrefix(target, "<"), "./") && nt != "." && !strings.HasPrefix(nt, "../") {
+			nt = "./" + nt
 		}
 	}
 	if d.Dir && !strings.HasSuffix(nt, "/") {
