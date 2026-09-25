@@ -225,3 +225,29 @@ func TestCommandsSayTheSameWhenThereIsNoBundle(t *testing.T) {
 		t.Errorf("no command may create %s", root)
 	}
 }
+
+// Every command that works on a bundle's documents points a 0.x bundle at
+// `fdf migrate`, in the same words, and writes nothing in it.
+func TestCommandsPointA0xBundleAtMigrate(t *testing.T) {
+	root := t.TempDir()
+	index := "---\nfdf_version: \"0.7\"\n---\n\n# Bundle\n"
+	if err := os.WriteFile(filepath.Join(root, "INDEX.md"), []byte(index), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FDF_ROOT_DIR", root)
+	want := "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0 bundles — run `fdf migrate` to upgrade it first\n"
+	for _, args := range [][]string{
+		{"new", "payments/x"}, {"adopt", "--resource", "main.go", "payments/x"}, {"adopt"}, {"practice", "x"},
+		{"debt"}, {"debt", "x"}, {"bug", "--cleanup"}, {"change", "--affects", "features/p/q", "x"},
+		{"fix", "--affects", "features/p/q", "x"}, {"history", "features/p/q"},
+		{"mv", "features/a", "features/b"}, {"lexicon"}, {"log", "an entry"}, {"release", "1.0.0"},
+	} {
+		code, out, _ := fdfRun(args...)
+		if code != 1 || !strings.Contains(out, want) {
+			t.Errorf("%v: exit %d, want 1 and %q:\n%s", args, code, want, out)
+		}
+	}
+	if entries, _ := os.ReadDir(root); len(entries) != 1 {
+		t.Errorf("no command may write in a 0.x bundle; it holds %d entries", len(entries))
+	}
+}

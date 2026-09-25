@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this repo is
 
 This is the **source repository for the `fdf` CLI and its skills** — not a project that
-*uses* FDF. There is no `docs/features/` bundle here, so the global "Feature Document Format"
+*uses* FDF. There is no `docs/fdf/` (or `docs/features/`) bundle here, so the global "Feature Document Format"
 workflow instructions (route by feature status, `fdf new`, etc.) do **not** apply to work in
 this repo. FDF bundles live under `testdata/` as conformance fixtures; the real bundles this
 tool manages exist in *other* projects.
@@ -70,10 +70,18 @@ command as it should have been typed. `helpTopics` in `help.go` is the single so
 command's usage line, its group and summary in the overview, `fdf help <command>` and `-h`;
 `help_test.go` checks that every dispatcher command has one topic and every flag it defines
 is documented. A command that works on a bundle stops with `fdfroot.NoBundle` when the root
-holds no `INDEX.md`.
+holds no `INDEX.md`. Every command but `validate`, `migrate` and `serve` works on spec 1.x
+bundles only: `scaffold.RequireSupported` stops it on a bundle that pins 0.x, or no
+version, and points it at `fdf migrate`.
 
 - **`cli/internal/fdfroot`** — root resolution, used by every command. Bundle root precedence:
-  `--root` flag > `FDF_ROOT_DIR` env > `docs/features`. Relative roots resolve against the
+  `--root` flag > `FDF_ROOT_DIR` env > the default: the first of `docs/fdf` and
+  `docs/features` (where a bundle lived before 1.0) that holds an `INDEX.md`, else
+  `docs/fdf`. `docs/features` counts only when its `INDEX.md`, spelled so, pins
+  `fdf_version`, so a documentation site's `docs/features` is never taken for a bundle
+  (`pinned`). `Resolve` returns the root, which input chose it (the header labels the old
+  location `pre-1.0 default docs/features`), and the bundle the default passed over when
+  both hold one (`Shadowed`), which the header warns about. Relative roots resolve against the
   **project root**, found by walking up to the topmost `.git`. A `.git` *file* (submodule)
   marks a boundary but the walk continues to the superproject — so `resource:` paths always
   verify against the real project root even when the bundle is a git submodule. A `.git`
@@ -82,8 +90,9 @@ holds no `INDEX.md`.
 
 - **`cli/internal/specver`** — spec versions: `Parse` reads `MAJOR.MINOR` (a bundle's
   `fdf_version`, a `spec/<version>.md` name), and versions compare by number, so 1.0
-  follows 0.7 and 1.10 follows 1.2. Every version gate (`pinAtLeast` in `bundle` and
-  `scaffold`) and `scaffold.SpecVersions` go through it.
+  follows 0.7 and 1.10 follows 1.2. Every version gate (`pinAtLeast` in `bundle`), the
+  pins the commands support (`scaffold.Supported`) and `scaffold.SpecVersions` go through
+  it.
 
 - **`cli/internal/links`** — the one link-repair engine. `Find` returns a Markdown text's
   link targets as CommonMark reads them (inline links and images, with any title or `<…>`
@@ -100,9 +109,14 @@ holds no `INDEX.md`.
   files, the five Context documents and the six `Registers`), groups nested to any depth in
   every register but `releases/`, and the directory rule (a directory beside a feature,
   Change or Fix is its task directory; beside a practice, debt or bug it is an error; any
-  other is a group). `Bundle.File` gives a Markdown file's `Position` (`Kind`, `Register`,
+  other is a group). A directory that holds no Markdown is outside FDF wherever it is
+  (`HoldsMarkdown`). `Bundle.File` gives a Markdown file's `Position` (`Kind`, `Register`,
   the `ID` of the document it is or belongs to, a trail's `Role`), or a `Stray` with the
-  path at fault (`Where`) and its `Problem`; `Bundle.Dir` does the same for a directory.
+  path at fault (`Where`) and its `Problem`; `Bundle.Dir` does the same for a directory,
+  and `Bundle.Place` says why a new document cannot be filed at an ID. No document is
+  named `index.md` or `log.md`, which a disk that ignores case reads as the `INDEX.md` or
+  `LOG.md` beside it. `Bundle.Exists` reads a name exactly, as `os.Stat` does not on such
+  a disk. The validator and every command read positions here.
   It reads names through an `fs.FS` and matches them exactly, so a case-insensitive disk
   cannot change a result.
 
@@ -131,7 +145,8 @@ holds no `INDEX.md`.
     through `links.Find` and `links.Resolve` (`resolveLink`, `sectionLinks`, and the
     broken-link check, which then reads reference definitions too), F10 and F14 suggest the
     full ID of a feature named the 0.7 way (`featureHint`), and F12 reads group names
-    through `layout` (`groupName`: at every depth, never a register's own name).
+    through `layout` (`groupName`: at every depth, never a register's own name, nor a
+    directory that holds no Markdown).
   - **`practices.go`** holds F11 (practice body shape, `superseded-by` graph) and the
     `sectionText` helper that `domain.go`, `debts.go` and `bugs.go` also use.
     **`bugs.go`** holds F14 and the `resolves` half of F10: `# Symptom`/`# Expected`
@@ -176,17 +191,23 @@ holds no `INDEX.md`.
     `# Rationale`. `Options.FreshStubsAdvisory`
     downgrades F9 (unfilled Context stub) from error to warning — only `fdf migrate` sets it.
 
-- **`cli/internal/scaffold`** (`init`, `new`, and `Adopt`, which scaffolds an adopted map
-  entry; `pin.go` mirrors the validator's gates for the commands: `ReservedDirs` is which
-  bundle-root directories the pin reserves, and `RequirePin` refuses to write a document
-  type the pin predates, pointing at `fdf migrate`; `listing.go` keeps the indexes:
-  `ListEntry`/`Unlist` for a document, `ListGroup` for a new group in its parent's index,
-  the root `INDEX.md` for a feature group), **`cli/internal/install`** (skills + a
+- **`cli/internal/scaffold`** (`init`, `new`, `practice`, and `Adopt`, which scaffolds an
+  adopted map entry; `ids.go` reads the name a command is given: `NewID` files
+  `[<group>/…]<slug>`, or the full ID, through `layout`'s `Place`, and `WriteNew`
+  writes the new document with `O_EXCL`, never over a file; `IsFeature` and
+  `FeatureHint` check a feature ID, suggesting the full one for an ID written the 0.7
+  way, and `IDHint` does the same for a feature group's; `pin.go` is the commands' one
+  gate, `RequireSupported`, a pin among `Supported()`, which `fdf init` asks too;
+  `listing.go` keeps the indexes: `EnsureIndex` for a register's, `ListEntry`/`Unlist`
+  for a document, listing each new group on the way in its parent's index, `ListGroup`
+  for a group, and `ListRegister` for a register in the root `INDEX.md`),
+  **`cli/internal/install`** (skills + a
   `## Feature Document Format` primer, idempotent, never clobbers user edits; each
   skill's `.fdf-version` reads `<version> skills=<digest> primer=<digest> root=<root>`, so
   another build of the same version upgrades, and a primer an earlier install recorded
-  counts as fdf's own; also removes the superseded slash commands by exact name), and **`cli/internal/migrate`** (mechanical upgrades to the current spec
-  version; 0.3→0.4 rewrites nested trail files to stem siblings and scaffolds
+  counts as fdf's own; also removes the superseded slash commands by exact name), and **`cli/internal/migrate`** (mechanical upgrades of a 0.x bundle to 0.7, its
+  `target`; it refuses a bundle pinned to 1.0 or later before reading anything.
+  0.3→0.4 rewrites nested trail files to stem siblings and scaffolds
   `SURFACES.md`; 0.4→0.5, 0.5→0.6 and 0.6→0.7 are **additive**, so the pre-0.4 layout
   transform — pre-flight included — is skipped for bundles already in the stem layout.
   0.5→0.6 moves nothing but adds a fifth Context stub, so F9 holds the bundle to filling
@@ -196,19 +217,25 @@ holds no `INDEX.md`.
   the root `LOG.md`, and reports the new F12, F8, surface and timestamp counts and the
   debts that may be bugs).
   **`cli/internal/register`** (`fdf debt` and `fdf bug`: `register.Debt` and
-  `register.Bug` are two `Kind`s over one implementation — list with optional status
-  filter, scaffold, and `--cleanup`, which folds resolved entries into `<dir>/LOG.md`
+  `register.Bug` are two `Kind`s over one implementation — the documents `layout` files
+  in the register, listed with an optional status filter, scaffolded, and `--cleanup`,
+  which folds resolved entries into `<dir>/LOG.md`
   newest-first, with the first *paragraph* of `# Resolution`, and removes their files,
-  listings and any group left empty; open and accepted entries are never touched, `--dry-run` previews, `--no-log` skips
+  listings and any group left empty, at any depth: groups are decided deepest first, so
+  an emptied group can empty its parent, and a Finder `.DS_Store` goes with it; open and accepted entries are never touched, `--dry-run` previews, `--no-log` skips
   the log). **`cli/internal/changes`** (`fdf change`/`fdf fix` scaffolding, with
-  `--from bugs/<id>` copying a bug's analysis and writing `resolves`, and `fdf history`,
+  `--affects` taking full feature IDs, `--from bugs/<id>` copying a bug's analysis and
+  writing `resolves`, and `fdf history`,
   which computes a feature's post-delivery trail and known bugs from `affects:` rather
   than from back-links) and **`cli/internal/release`** (`fdf release`, which derives a
   release's `# Features`/`# Changes` lists from `version:` fields and preserves
-  hand-written `# Notes`; it never derives membership). **`cli/internal/adopt`** is the
+  hand-written `# Notes`; it never derives membership, refuses a version `layout` gives
+  no release file, and the first release lists `releases/` in the root `INDEX.md`). **`cli/internal/adopt`** is the
   adoption map (`fdf adopt` without an ID: features with scenario and test counts, then
   `git ls-files` code no `resource` claims). **`cli/internal/refactor`** holds the two
-  maintenance edits a tool does whole: `Move` (`fdf mv` — plan every file move, rewrite
+  maintenance edits a tool does whole: `Move` (`fdf mv` — read what moves from `layout`, a
+  register's document, a group at any depth or a task, never a directory beside a
+  practice, debt or bug, nor one that holds no Markdown; plan every file move, rewrite
   links, edges, declaration headings and ID mentions in every document, move index
   listings, log, and report references outside the bundle) and `Lexicon`
   (`fdf lexicon`, and `--fix` one `--term` at a time: plurals, capitals and a/an kept,
@@ -217,9 +244,9 @@ holds no `INDEX.md`.
   and the one newest-first `Insert` every log writer shares (`mv`, `lexicon`, the
   registers' `--cleanup`): an entry goes in the log of the document it is about —
   a feature's, change's, practice's, debt's or bug's `<slug>.log.md`, created on
-  first use (beside a `draft` only from v0.7, where a log is the one sibling a
-  draft may have), a group's `LOG.md`, or the root `LOG.md` for the bundle as a
-  whole.
+  first use (beside a `draft` too, where a log is the one sibling it may have), a
+  register's or group's `LOG.md`, or the root `LOG.md` for the bundle as a whole. Where
+  `layout` places no log, in a directory with no position or no Markdown, it writes none.
 
 ### Layout the validator expects (v0.7)
 
@@ -261,14 +288,15 @@ or task directory. Task dirs must not contain nested SPEC/PLAN/TEST or LOG.md.
 
 Under a **1.0** pin (`spec/1.0.md`) the same documents live in six registers at the root:
 feature groups move under `features/`, where a feature may also be filed flat; groups
-nest to any depth in every register but `releases/`; a directory beside a practice, debt
-or bug is an error; and the root holds no other Markdown. `layout` is the one place
-those rules are written.
+nest to any depth in every register but `releases/`; a directory that holds Markdown
+beside a practice, debt or bug is an error; and the root holds no other Markdown.
+`layout` is the one place those rules are written, and the commands write this layout.
 
 ### The conformance contract
 
 `testdata/*/` fixtures are the **executable spec**. Each fixture is a directory with a
-`bundle/` (and optionally a `repo/` wrapper for R1 tests) plus an `expect.txt` of `exit:`,
+`bundle/` (or a `repo/` wrapper for R1 tests, whose bundle is where fdf finds one by
+default: `repo/docs/fdf`, or `repo/docs/features` before 1.0) plus an `expect.txt` of `exit:`,
 `contains:` and `not-contains:` assertions; a `flags: --strict-domain` line runs the fixture as
 `fdf validate --strict-domain` would. `TestConformanceFixtures` (`conformance_test.go`) runs
 `Validate` over every fixture and checks the output. **When you change validation behavior, add or update a
@@ -279,11 +307,12 @@ describe the case they lock in (e.g. `done-with-open-task`, `depends-on-cycle`,
 ### Specs and versioning
 
 `spec/<version>.md` files are normative. `spec/README.md` and the top-level `SPEC.md` index
-them; the current version is **0.7**. `spec/1.0.md` is embedded and the validator checks
-1.0 pins, but `currentVersion` stays 0.7, and the indexes leave 1.0 out, until the
-commands write 1.0 bundles. `currentVersion` is defined in
+them; the current version is **1.0**: `fdf init` pins it, and every command reads and
+writes it. The validator still checks 0.2–0.7 pins, `fdf migrate` still upgrades a 0.x
+bundle to 0.7 (`target` in `migrate.go`), and the indexes leave 1.0 out, until migrate
+learns the step to 1.0. `currentVersion` is defined in
 `cli/internal/scaffold/scaffold.go`. A bundle vendors a copy of its pinned spec at its own
-`docs/features/SPEC.md`, so bundles are self-describing. Bumping the spec means: add
+root (`docs/fdf/SPEC.md`), so bundles are self-describing. Bumping the spec means: add
 `spec/<new>.md`, extend `supportedVersions` in `validate.go`, add a `migrate` path, update
 `currentVersion`, add fixtures for the new rules, and refresh **skills + install primer +
 README** so agents teach the new layout (re-run `fdf install` after users migrate). The

@@ -43,13 +43,16 @@ checks the bundle, keeps its names and references consistent, and installs
 the skills that teach an AI agent the workflow.
 
 IDS
-  A document's ID is its path from the bundle root without .md:
-  payments/instant-refunds, bugs/refund-split-capture, changes/refund-window.
-  Commands that name an existing document take its ID: log, mv, history,
-  --affects, --from. fdf new and fdf adopt take the new feature's ID. fdf
-  debt, bug, practice, change and fix take the new document's name inside
-  its directory: fdf debt authz-legacy-handlers files
-  debts/authz-legacy-handlers, as does fdf debt debts/authz-legacy-handlers.
+  A document's ID is its path from the bundle root without .md, so it starts
+  with its register: features/payments/instant-refunds,
+  bugs/refund-split-capture, changes/refund-window. Commands that name an
+  existing document take its ID: log, mv, history, --affects, --from. The
+  commands that create one (new, adopt, practice, debt, bug, change, fix)
+  take its name inside its register, [<group>/…]<slug>, with groups nested
+  to any depth: fdf new payments/instant-refunds files
+  features/payments/instant-refunds, and fdf debt authz-legacy-handlers
+  files debts/authz-legacy-handlers, as does fdf debt
+  debts/authz-legacy-handlers.
 
 BUNDLE ROOT
   Every command resolves the bundle root the same way:
@@ -80,7 +83,7 @@ TYPICAL FLOW
       #   -> specified; slug.plan.md + slug.test.md, one
       #   ` + "`## <scenario name>`" + ` case per scenario -> planned;
       #   tasks under slug/ -> implementing -> done
-      fdf log payments/instant-refunds "**Specified**: design approved."
+      fdf log features/payments/instant-refunds "**Specified**: approved."
       fdf validate                         # the gate after every bundle edit
 
   Code that predates the bundle:
@@ -88,9 +91,9 @@ TYPICAL FLOW
       fdf adopt --resource internal/payments/card.go payments/card-payments
 
   After delivery:
-      fdf change --affects payments/instant-refunds refund-window
-      fdf fix --affects payments/instant-refunds refund-rounding
-      fdf bug --affects payments/instant-refunds refund-split-capture
+      fdf change --affects features/payments/instant-refunds refund-window
+      fdf fix --affects features/payments/instant-refunds refund-rounding
+      fdf bug --affects features/payments/instant-refunds refund-split-capture
 
   Every date and time fdf writes is UTC.
 
@@ -147,19 +150,20 @@ var helpTopics = []helpTopic{
 	{
 		name:    "migrate",
 		group:   "Set up",
-		summary: "Upgrade a bundle to the spec version this fdf ships",
+		summary: "Upgrade a 0.x bundle to 0.7, the last 0.x spec version",
 		usage:   "fdf migrate [--root <dir>]",
-		body: "Upgrade a bundle to the spec version this fdf ships, then validate it. It\n" +
-			"rewrites the fdf_version pin, re-vendors SPEC.md, scaffolds missing\n" +
+		body: "Upgrade a 0.x bundle to spec 0.7, the last 0.x version, then validate it.\n" +
+			"It rewrites the fdf_version pin, re-vendors SPEC.md, scaffolds missing\n" +
 			"Context stubs and indexes, drops the status tags older versions wrote\n" +
 			"after index listings, and logs the migration in LOG.md; from v0.3 or\n" +
 			"earlier it also lifts nested trail files to stem-qualified siblings. It\n" +
 			"then counts what the new version checks that the old one did not. A\n" +
 			"pre-flight refuses content the new layout cannot hold and leaves the\n" +
 			"bundle untouched, so a refused run is safe to retry after fixing what it\n" +
-			"names. An unfilled Context stub is only a warning here; once the bundle\n" +
-			"has a feature, a plain `fdf validate` fails F9 until it is filled.\n" +
-			"Re-run `fdf install` afterwards.",
+			"names. A bundle pinned to 1.0 or later is refused before anything is read.\n" +
+			"An unfilled Context stub is only a warning here; once the bundle has a\n" +
+			"feature, a plain `fdf validate` fails F9 until it is filled. Re-run `fdf\n" +
+			"install` afterwards.",
 		flags:    []flagDoc{rootFlagDoc},
 		examples: []string{"fdf migrate", "fdf migrate --root docs/features"},
 	},
@@ -383,9 +387,9 @@ var helpTopics = []helpTopic{
 		},
 		examples: []string{
 			"fdf validate",
-			"fdf validate --root docs/features",
+			"fdf validate --root wiki/fdf",
 			"fdf validate --strict-domain",
-			"FDF_ROOT_DIR=wiki/features fdf validate",
+			"FDF_ROOT_DIR=wiki/fdf fdf validate",
 		},
 	},
 	{
@@ -499,13 +503,14 @@ var helpTopics = []helpTopic{
 		usage:   "fdf spec [-v <version>] [--list]",
 		body: "Print the format specification, straight from the copy embedded in this\n" +
 			"binary — no bundle, no network, and no checkout of the fdf repository\n" +
-			"needed. Defaults to the current version; -v prints an older one, which is\n" +
-			"what a bundle still pinning that version must satisfy.",
+			"needed. Defaults to the current version; -v prints another. The 0.x\n" +
+			"versions stay embedded, to read the copy a bundle from before 1.0\n" +
+			"vendored.",
 		flags: []flagDoc{
 			{"-v <version>", "spec version to print (default: the current version)"},
 			{"--list", "list the spec versions embedded in this binary"},
 		},
-		examples: []string{"fdf spec", "fdf spec -v 0.3", "fdf spec --list", "fdf spec | less"},
+		examples: []string{"fdf spec", "fdf spec -v 0.7", "fdf spec --list", "fdf spec | less"},
 	},
 	{
 		name:    "serve",
@@ -515,7 +520,7 @@ var helpTopics = []helpTopic{
 		body: "Serve the bundle in a browser by wrapping `bun x mdts`, so the markdown\n" +
 			"renders with working cross-links. Requires bun (https://bun.sh).",
 		flags:    []flagDoc{rootFlagDoc},
-		examples: []string{"fdf serve", "fdf serve --root docs/features"},
+		examples: []string{"fdf serve", "fdf serve --root wiki/fdf"},
 	},
 	{
 		name:    "help",
