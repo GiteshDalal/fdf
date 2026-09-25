@@ -153,7 +153,7 @@ func newPlan(root, pin, project, dest string) (p *plan, problems []string, err e
 		if d.Type()&os.ModeSymlink != 0 {
 			to, _ := os.Readlink(q)
 			if rootWrites[rel] {
-				linked = append(linked, fmt.Sprintf("%s: a symbolic link to %s, which migrate would write through — replace it with the file it names", rel, to))
+				linked = append(linked, linkedFile(rel, to))
 			}
 			if to != "" && !filepath.IsAbs(to) {
 				p.symlinks[rel] = filepath.ToSlash(to)
@@ -187,7 +187,9 @@ func newPlan(root, pin, project, dest string) (p *plan, problems []string, err e
 		if problems := preflightV4(root); len(problems) > 0 {
 			return nil, problems, nil
 		}
-		p.caseRenames()
+		if err := p.caseRenames(); err != nil {
+			return nil, nil, err
+		}
 		if err := p.liftTrails(); err != nil {
 			return nil, nil, err
 		}
@@ -227,8 +229,9 @@ func newPlan(root, pin, project, dest string) (p *plan, problems []string, err e
 // fixed by hand before migrating. They are read once the older layouts'
 // moves are made, and named where they are now. So is a directory of
 // Markdown that is a symbolic link, wherever it is, which the plan does not
-// read through: its documents would be left as they are, and a register's
-// index written through it.
+// read through: its documents would be left as they are. And so is a
+// register migrate writes into that is a symbolic link, whatever it holds:
+// its index would be written, and the feature groups moved, through it.
 func (p *plan) refusals() []string {
 	b := layout.New(os.DirFS(p.root))
 	var out []string
@@ -237,8 +240,10 @@ func (p *plan) refusals() []string {
 		if fi, err := os.Lstat(full); err != nil || fi.Mode()&os.ModeSymlink == 0 {
 			continue
 		}
-		if fi, err := os.Stat(full); err == nil && fi.IsDir() && holdsMarkdown(full) {
-			to, _ := os.Readlink(full)
+		to, _ := os.Readlink(full)
+		if layout.IsRegister(f) && f != "releases" {
+			out = append(out, linkedRegister(f, to))
+		} else if fi, err := os.Stat(full); err == nil && fi.IsDir() && holdsMarkdown(full) {
 			out = append(out, fmt.Sprintf("%s: a symbolic link to %s, a directory of Markdown that migrate does not read through — replace it with the directory it names", f, to))
 		}
 	}
@@ -279,7 +284,7 @@ func (p *plan) refusals() []string {
 			return nil
 		})
 	}
-	if fi, err := os.Lstat(filepath.Join(p.root, "features")); err == nil && !fi.IsDir() {
+	if fi, err := os.Lstat(filepath.Join(p.root, "features")); err == nil && !fi.IsDir() && fi.Mode()&os.ModeSymlink == 0 {
 		out = append(out, "features: not a directory, where the features/ register goes — move it out of the bundle root")
 	}
 	if !p.isGroup["features"] {
@@ -291,6 +296,17 @@ func (p *plan) refusals() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// linkedFile and linkedRegister say why migrate refuses a symbolic link it
+// would write through: a file it writes whatever it holds, and a register
+// it writes into.
+func linkedFile(rel, to string) string {
+	return fmt.Sprintf("%s: a symbolic link to %s, which migrate would write through — replace it with the file it names", rel, to)
+}
+
+func linkedRegister(reg, to string) string {
+	return fmt.Sprintf("%s: a symbolic link to %s, a register that migrate would write through — replace it with the directory it names", reg, to)
 }
 
 // holdsMarkdown reports whether the directory at dir, which may be a
@@ -389,12 +405,18 @@ func (p *plan) source(rel string) string {
 }
 
 // caseRenames plans v0.1's renames: index.md, log.md, spec.md and plan.md are
-// INDEX.md, LOG.md, SPEC.md and PLAN.md wherever they are. Its vendored spec,
+// INDEX.md, LOG.md, SPEC.md and PLAN.md wherever they are. It refuses to
+// rename a file onto another that is there, as a disk that reads case can
+// hold both, and the rename would write over the other. Its vendored spec,
 // fdf-spec.md, goes, and a link to it names the vendored SPEC.md.
-func (p *plan) caseRenames() {
+func (p *plan) caseRenames() error {
+	present := p.present()
 	for _, f := range p.files {
 		dir, base := path.Split(f)
 		if to, ok := renames[base]; ok {
+			if present[dir+to] {
+				return fmt.Errorf("cannot move %s: %s already exists", f, dir+to)
+			}
 			p.moves[f] = dir + to
 		}
 	}
@@ -404,6 +426,7 @@ func (p *plan) caseRenames() {
 			p.aliases[f] = "SPEC.md"
 		}
 	}
+	return nil
 }
 
 // liftTrails plans v0.4's trail lift: group/slug/{SPEC,PLAN,TEST,LOG}.md is

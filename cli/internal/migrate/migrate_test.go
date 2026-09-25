@@ -488,6 +488,92 @@ func TestMigrateRefusesARootFileThatIsASymlink(t *testing.T) {
 	}
 }
 
+// A register that is a symbolic link is not where the link is: migrate would
+// write its index, or move the feature groups, through it into the
+// directory it names, outside the bundle, whatever that holds. It is
+// refused before anything is written, once, in the words of the other
+// symbolic links migrate refuses. So, on the repair path of a bundle at 1.0,
+// is a file migrate would restore that is a symbolic link, as a root file a
+// migration writes is, and a register it would restore an index into that
+// is one.
+func TestMigrateRefusesARegisterThatIsASymlink(t *testing.T) {
+	var out bytes.Buffer
+	for _, reg := range []string{"practices", "features"} {
+		dir := t.TempDir()
+		root := filepath.Join(dir, "handbook")
+		copyFixtureTo(t, "valid-bugs-v07", root)
+		if err := os.MkdirAll(filepath.Join(dir, "shared", "empty-"+reg), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(filepath.Join("..", "shared", "empty-"+reg), filepath.Join(root, reg)); err != nil {
+			t.Skip("symlinks unavailable:", err)
+		}
+		before := tree(t, dir)
+		out.Reset()
+		want := "cannot migrate — fix these first (bundle left unchanged):\n" +
+			"  " + reg + ": a symbolic link to ../shared/empty-" + reg + ", a register that migrate would write through — replace it with the directory it names\n"
+		if code := Run(Options{Root: root}, &out); code != 1 || out.String() != want {
+			t.Errorf("%s: a register that is a symlink is refused: exit %d\n got: %q\nwant: %q", reg, code, out.String(), want)
+		}
+		if after := tree(t, dir); after != before {
+			t.Errorf("%s: a refused migration writes nothing, through the link or anywhere:\n%s", reg, after)
+		}
+	}
+
+	dir := t.TempDir()
+	root := filepath.Join(dir, "handbook")
+	copyFixtureTo(t, "valid-v10", root)
+	write(t, dir, "shared/SPEC.md", "A copy of the spec, shared.\n")
+	if err := os.MkdirAll(filepath.Join(dir, "shared", "empty-bugs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, to := range map[string]string{"SPEC.md": "SPEC.md", "bugs": "empty-bugs"} {
+		if err := os.RemoveAll(filepath.Join(root, name)); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(filepath.Join("..", "shared", to), filepath.Join(root, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := tree(t, dir)
+	out.Reset()
+	want := "cannot restore — fix these first (bundle left unchanged):\n" +
+		"  SPEC.md: a symbolic link to ../shared/SPEC.md, which migrate would write through — replace it with the file it names\n" +
+		"  bugs: a symbolic link to ../shared/empty-bugs, a register that migrate would write through — replace it with the directory it names\n"
+	if code := Run(Options{Root: root}, &out); code != 1 || !strings.HasSuffix(out.String(), want) {
+		t.Errorf("on the repair path, a file or register it would write through is refused: exit %d\n got: %q\nwant it to end: %q", code, out.String(), want)
+	}
+	if after := tree(t, dir); after != before {
+		t.Errorf("a refused repair writes nothing, through the link or anywhere:\n%s", after)
+	}
+}
+
+// v0.1 named index.md, log.md, spec.md and plan.md in lowercase, which
+// migrate renames to INDEX.md, LOG.md, SPEC.md and PLAN.md. On a disk that
+// reads case, a directory may hold both names, and the rename would write
+// over the other file, which nothing but git could bring back: migrate
+// refuses it before it writes anything, as it refuses to lift a trail file
+// onto one that is there.
+func TestMigrateRefusesACaseRenameOntoAnotherFile(t *testing.T) {
+	probe := t.TempDir()
+	write(t, probe, "index.md", "lower\n")
+	write(t, probe, "INDEX.md", "upper\n")
+	if entries, err := os.ReadDir(probe); err != nil || len(entries) != 2 {
+		t.Skip("the disk ignores case: index.md and INDEX.md are one file")
+	}
+	root := t.TempDir()
+	buildV01Bundle(t, root)
+	write(t, root, "wdise/INDEX.md", "# Wdise, as written later\n")
+	before := tree(t, root)
+	var out bytes.Buffer
+	if code := Run(Options{Root: root}, &out); code != 1 || out.String() != "error: cannot move wdise/index.md: wdise/INDEX.md already exists\n" {
+		t.Errorf("a rename onto another file is refused: exit %d\n%s", code, out.String())
+	}
+	if after := tree(t, root); after != before {
+		t.Errorf("a refused migration changes nothing:\n%s", after)
+	}
+}
+
 // migrate never writes over a file its plan did not read: a file it would
 // write new that is there after all stops it, and keeps its words.
 func TestMigrateNeverWritesOverAFileItDidNotRead(t *testing.T) {

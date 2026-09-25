@@ -259,15 +259,18 @@ be corrected in `INDEX.md`, and a root inside a pinned bundle is sent to that bu
   `fdf install` manages and `.gitmodules`; a bundle that is its own repository has no
   outside. Refused before anything is written: a root inside a pinned bundle, or one
   that is a symbolic link, or whose `INDEX.md`, `LOG.md` or `SPEC.md` is one; a pin that
-  is not a version, a newer one or an unknown 0.x one; a stray root Markdown file, a
+  is not a version, a newer one or an unknown 0.x one; a v0.1 rename (`caseRenames`) or
+  a 0.3 lift (`liftTrails`) onto a file that is there; a stray root Markdown file, a
   document named `index.md` or `log.md`, a practice, debt or bug beside a directory of
   Markdown, a group whose place in `features/` is taken or a `features` that is no
-  directory, a directory of Markdown that is a symbolic link; a destination
-  that is not empty, inside the bundle, outside the project or inside `.git`, or behind
-  a file; a tree that is not clean; and a place git would ignore. A bundle at 1.0
-  moves nothing: its spec copy, indexes and Context stubs are restored. Validation runs
-  with `FreshStubsAdvisory`, and a bundle from before 0.7 hears 0.7's F12, F8, surface
-  and timestamp counts and the debts that may be bugs).
+  directory, a directory of Markdown that is a symbolic link, a register migrate writes
+  into that is one, whatever it holds; a destination that is not empty, inside the
+  bundle, outside the project or inside `.git`, or behind a file; a tree that is not
+  clean; and a place git would ignore. A bundle at 1.0 moves nothing: its spec copy,
+  indexes and Context stubs are restored, and one it would write through a symbolic
+  link, the file's or its register's, is refused first. Validation runs with
+  `FreshStubsAdvisory`, and a bundle from before 0.7 hears 0.7's F12, F8, surface and
+  timestamp counts and the debts that may be bugs).
   **`cli/internal/register`** (`fdf debt` and `fdf bug`: `register.Debt` and
   `register.Bug` are two `Kind`s over one implementation — the documents `layout` files
   in the register, listed with an optional status filter, scaffolded, and `--cleanup`,

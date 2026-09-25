@@ -36,6 +36,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -261,9 +262,10 @@ func Run(o Options, out io.Writer) int {
 
 // repair takes a bundle already at target, in which nothing moves: it
 // restores the vendored spec when it is missing or not target's, each
-// register's index but releases/', and each missing Context stub, then
-// validates the bundle with the same stub leniency as a migration — so
-// running migrate twice in a row cannot flip from success to failure.
+// register's index but releases/', and each missing Context stub, never
+// through a symbolic link, then validates the bundle with the same stub
+// leniency as a migration — so running migrate twice in a row cannot flip
+// from success to failure.
 func repair(o Options, root string, out io.Writer) int {
 	fmt.Fprintf(out, "nothing to migrate: the bundle already pins fdf_version %s, the version %s upgrades a bundle to.\n", target, binaryName())
 	fmt.Fprintln(out, "if a newer spec version exists, upgrade fdf and re-run — a version-pinned shim (mise, asdf) can hold an older fdf in this directory.")
@@ -285,6 +287,29 @@ func repair(o Options, root string, out io.Writer) int {
 		if !exists(filepath.Join(root, name)) {
 			restore[name], _ = scaffold.ContextStub(name)
 		}
+	}
+	// Nothing is written through a symbolic link: a file it would restore
+	// that is one, such as a SPEC.md or a dangling Context document, or a
+	// register it would restore an index into, is refused first, as a
+	// migration refuses it.
+	var linked []string
+	for _, rel := range sortedKeys(restore) {
+		if reg := path.Dir(rel); reg != "." {
+			if to, err := os.Readlink(filepath.Join(root, reg)); err == nil {
+				linked = append(linked, linkedRegister(reg, to))
+				continue
+			}
+		}
+		if to, err := os.Readlink(filepath.Join(root, filepath.FromSlash(rel))); err == nil {
+			linked = append(linked, linkedFile(rel, to))
+		}
+	}
+	if len(linked) > 0 {
+		fmt.Fprintln(out, "cannot restore — fix these first (bundle left unchanged):")
+		for _, l := range linked {
+			fmt.Fprintln(out, "  "+l)
+		}
+		return 1
 	}
 	switch {
 	case len(restore) == 0:
