@@ -55,13 +55,16 @@ func TestSyncDerivesBothListsAndSkipsUnversioned(t *testing.T) {
 }
 
 // A version names the release's file, so it must be a name the 1.0 layout
-// gives a release: lowercase, and flat in releases/.
+// gives a release: lowercase, flat in releases/, and not the register's own
+// index or log.
 func TestSyncRefusesAVersionNoReleaseFileCanTake(t *testing.T) {
 	root := bundle(t, "done", "done")
 	for version, says := range map[string]string{
 		"2.0.0-RC1": "error: 2.0.0-RC1 cannot name a release — releases/2.0.0-RC1.md: filenames are lowercase",
 		"2.0/beta":  "error: 2.0/beta cannot name a release — releases/2.0/: releases/ is flat",
 		"index":     "error: index cannot name a release — releases/index.md: no document is named index.md",
+		"INDEX":     "error: INDEX cannot name a release — releases/INDEX.md is the register's index, not a release (F3)\n",
+		"LOG":       "error: LOG cannot name a release — releases/LOG.md is the register's log, not a release (F3)\n",
 	} {
 		var out bytes.Buffer
 		if code := Sync(root, version, "", false, &out); code != 2 || !strings.Contains(out.String(), says) {

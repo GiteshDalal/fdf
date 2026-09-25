@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/GiteshDalal/fdf/cli/internal/layout"
 )
 
 // A document filed in groups within groups is listed in its innermost
@@ -109,5 +111,31 @@ func TestEnsureIndexWritesEachRegistersIndexOnce(t *testing.T) {
 	}
 	if code := EnsureIndex(root, "releases", &out); code != 1 {
 		t.Errorf("releases/ keeps its own index (fdf release): exit %d", code)
+	}
+}
+
+// Each register layout knows has its entry in every table scaffold keeps per
+// register: the line the root INDEX.md lists it with and, but for releases/,
+// which is flat and whose index `fdf release` writes, the index `fdf init`
+// writes and the noun its groups are listed with. A register added to
+// layout.Registers fails here until every table has it.
+func TestEveryRegisterIsInScaffoldsTables(t *testing.T) {
+	for _, reg := range layout.Registers {
+		listed := false
+		for _, r := range registerListings {
+			listed = listed || r.reg == reg && r.line != ""
+		}
+		if !listed {
+			t.Errorf("registerListings has no line for %s/", reg)
+		}
+		if reg == "releases" {
+			continue
+		}
+		if _, ok := registerIndexes[reg]; !ok {
+			t.Errorf("registerIndexes has no index for %s/", reg)
+		}
+		if groupNouns[reg] == "" {
+			t.Errorf("groupNouns has no noun for %s/", reg)
+		}
 	}
 }

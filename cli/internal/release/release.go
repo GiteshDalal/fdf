@@ -48,8 +48,14 @@ func Sync(root, version, date string, ship bool, out io.Writer) int {
 		return 2
 	}
 	// The version names the release's file, which layout must place.
-	if pos := layout.New(os.DirFS(root)).File("releases/" + version + ".md"); pos.Kind != layout.Document {
+	switch pos := layout.New(os.DirFS(root)).File("releases/" + version + ".md"); pos.Kind {
+	case layout.Document:
+	case layout.Stray:
 		fmt.Fprintf(out, "error: %s cannot name a release — %s: %s (F3)\n", version, pos.Where, pos.Problem)
+		return 2
+	default:
+		// INDEX and LOG name the register's own index and log.
+		fmt.Fprintf(out, "error: %s cannot name a release — releases/%s.md is the register's %s, not a release (F3)\n", version, version, pos.Kind)
 		return 2
 	}
 	if !scaffold.RequireSupported(root, out) {

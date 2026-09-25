@@ -12,6 +12,7 @@ import (
 	"time"
 
 	fdf "github.com/GiteshDalal/fdf"
+	"github.com/GiteshDalal/fdf/cli/internal/layout"
 	"github.com/GiteshDalal/fdf/cli/internal/specver"
 )
 
@@ -138,10 +139,13 @@ func EnsureDebtsIndex(root string, out io.Writer) int     { return EnsureIndex(r
 func EnsureBugsIndex(root string, out io.Writer) int      { return EnsureIndex(root, "bugs", out) }
 
 // ensureIndexes creates whichever of the registers' indexes `fdf init`
-// scaffolds are absent: every register's but that of releases/, which
-// `fdf release` writes with the first release.
+// scaffolds are absent: that of every register layout knows but releases/,
+// which `fdf release` writes with the first release.
 func ensureIndexes(root string, out io.Writer) int {
-	for _, reg := range []string{"features", "changes", "practices", "debts", "bugs"} {
+	for _, reg := range layout.Registers {
+		if reg == "releases" {
+			continue
+		}
 		if code := EnsureIndex(root, reg, out); code != 0 {
 			return code
 		}
