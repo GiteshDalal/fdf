@@ -1,11 +1,9 @@
 package scaffold
 
-// Index listings. The spec asks each INDEX.md to list the documents beside
-// it, and the root INDEX.md to list the groups. `fdf new` and `fdf change`
-// have always added theirs; these do the same for a practice, a debt and a
-// bug, list a new group in its parent's index — a feature group in the root
-// INDEX.md, a reserved directory's group in that directory's — and take a
-// cleared entry's listing away with its file.
+// Index listings. The spec asks each register's and each group's INDEX.md to
+// list the documents and groups beside it. Every command that files a
+// document lists it there, lists each new group in its parent's index, and
+// takes a cleared entry's listing away with its file.
 
 import (
 	"fmt"
@@ -55,39 +53,25 @@ func ListEntry(root, dir, id, title, what string, out io.Writer) int {
 // post-delivery work.
 var groupNouns = map[string]string{"features": "features", "changes": "changes and fixes", "practices": "practices", "debts": "debts", "bugs": "bugs"}
 
-// GroupTitle is how a new group's own INDEX.md is headed: a 0.7 feature group
-// (dir "") as "<Group> features", a group in a register by its name.
+// GroupTitle is how a new group's own INDEX.md is headed: by its name.
 func GroupTitle(dir, group string) string {
 	title, _ := groupListing(dir, group)
-	if dir == "" {
-		return title + " features"
-	}
 	return title
 }
 
-// groupListing is a group's title and the line its parent index lists it
-// with: a 0.7 feature group (dir "") in the bundle-root INDEX.md, a group in a
-// register in its parent's INDEX.md, which dir names at any depth.
+// groupListing is a group's title and the line its parent's INDEX.md lists
+// it with. dir is the parent: a register, or a group in one, at any depth.
 func groupListing(dir, group string) (title, line string) {
-	if dir == "" {
-		title = strings.ToUpper(group[:1]) + group[1:]
-		return title, fmt.Sprintf("* [%s](/%s/INDEX.md) - %s features.", title, group, group)
-	}
 	reg, _, _ := strings.Cut(dir, "/")
 	title = strings.ToUpper(group[:1]) + strings.ReplaceAll(group[1:], "-", " ")
 	return title, fmt.Sprintf("* [%s](/%s/%s/INDEX.md) - %s in %s.", title, dir, group, groupNouns[reg], group)
 }
 
-// ListGroup lists a group in its parent index — a feature group (dir "") in
-// the bundle-root INDEX.md, which the spec says lists the groups; a reserved
-// directory's group in that directory's INDEX.md — unless it is listed there
-// already, and says so the way ListEntry does. A parent with no index is left
-// without one.
+// ListGroup lists a group in its parent's INDEX.md, dir, unless it is listed
+// there already, and says so the way ListEntry does. A parent with no index
+// is left without one.
 func ListGroup(root, dir, group string, out io.Writer) int {
-	idxRel := "INDEX.md"
-	if dir != "" {
-		idxRel = dir + "/INDEX.md"
-	}
+	idxRel := dir + "/INDEX.md"
 	p := filepath.Join(root, filepath.FromSlash(idxRel))
 	raw, err := os.ReadFile(p)
 	if err != nil {
@@ -106,49 +90,23 @@ func ListGroup(root, dir, group string, out io.Writer) int {
 	return 0
 }
 
-var overviewRe = regexp.MustCompile(`(?i)^#\s+overview\s*$`)
-var headingLineRe = regexp.MustCompile(`^#{1,6}\s`)
-
-// WithGroupListing returns the text of a group's parent index (see ListGroup)
-// with the group's listing added, and whether it added it: an index that
-// already lists the group — its INDEX.md, or the directory — is returned as it
-// is. The line goes after the last group the index lists, so the groups stay
-// together; failing that, at the end of the `# Overview` list `fdf init`
-// writes in the root index; failing that, at the end.
+// WithGroupListing returns the text of a group's parent index, dir's, with
+// the group's listing added, and whether it added it: an index that already
+// lists the group — its INDEX.md, or the directory — is returned as it is.
+// The line goes after the last group the index lists, so the groups stay
+// together; failing that, at the end.
 func WithGroupListing(text, dir, group string) (string, bool) {
-	idxDir, groupRel := ".", group
-	if dir != "" {
-		idxDir, groupRel = dir, dir+"/"+group
-	}
+	groupRel := dir + "/" + group
 	_, line := groupListing(dir, group)
 	lines := strings.Split(text, "\n")
 	after := -1 // the line the listing goes after
 	for i, l := range lines {
-		t := ListingTarget(l, idxDir)
+		t := ListingTarget(l, dir)
 		if t == groupRel+"/INDEX.md" || t == groupRel {
 			return text, false
 		}
-		if strings.HasSuffix(t, "/INDEX.md") && path.Dir(path.Dir(t)) == path.Clean(idxDir) {
+		if strings.HasSuffix(t, "/INDEX.md") && path.Dir(path.Dir(t)) == dir {
 			after = i
-		}
-	}
-	if after < 0 {
-		// The end of the `# Overview` section: its last listing, or else its
-		// last line of text, or else the heading itself.
-		for i := 0; i < len(lines); i++ {
-			if !overviewRe.MatchString(strings.TrimSpace(lines[i])) {
-				continue
-			}
-			after = i
-			listed := false
-			for j := i + 1; j < len(lines) && !headingLineRe.MatchString(lines[j]); j++ {
-				if listingLinkRe.MatchString(lines[j]) {
-					after, listed = j, true
-				} else if strings.TrimSpace(lines[j]) != "" && !listed {
-					after = j
-				}
-			}
-			break
 		}
 	}
 	if after < 0 {

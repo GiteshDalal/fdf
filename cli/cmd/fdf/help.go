@@ -420,26 +420,26 @@ var helpTopics = []helpTopic{
 		body: "Move or rename a document with everything it owns — a feature with its\n" +
 			"spec, plan, test, surface, log and task directory; a Change or Fix; a\n" +
 			"practice, debt or bug; a task within its directory; or a whole group —\n" +
-			"and repair every reference to it across the bundle, frozen documents\n" +
-			"included (v0.7's reference repair): links, `affects`, `depends-on`,\n" +
-			"`replaced-by`, `retires`, `superseded-by`, `resolves`, declaration\n" +
-			"headings, index listings and ID mentions. Logs keep their words and get\n" +
-			"their links repaired. It never overwrites, and it lists references\n" +
-			"outside the bundle without editing them. A debt and a bug can be re-filed\n" +
-			"as each other; a debt re-filed as a bug still needs the `# Expected` a\n" +
-			"bug states. Which directories are registers follows the bundle's pin: on\n" +
-			"a v0.6 bundle bugs/ is a feature group, which `fdf mv bugs <group>`\n" +
-			"renames before `fdf migrate`. The move is logged in LOG.md, then the\n" +
-			"bundle is validated, and the exit code is validation's.",
+			"within its register, at any depth: flat to grouped and back, into a nested\n" +
+			"group, or a group under another. It takes full IDs (features/…), and\n" +
+			"repairs every reference to what moved across the bundle, frozen documents\n" +
+			"included: links, `affects`, `depends-on`, `replaced-by`, `retires`,\n" +
+			"`superseded-by`, `resolves`, declaration headings, index listings and ID\n" +
+			"mentions. Logs keep their words and get their links repaired. It never\n" +
+			"overwrites, and it lists references outside the bundle without editing\n" +
+			"them. A debt and a bug can be re-filed as each other; a debt re-filed as a\n" +
+			"bug still needs the `# Expected` a bug states. The move is logged in\n" +
+			"LOG.md, then the bundle is validated, and the exit code is validation's.",
 		flags: []flagDoc{
 			{"--dry-run", "print what would move and what would be repaired, change nothing"},
 			rootFlagDoc,
 		},
 		examples: []string{
-			"fdf mv payments/store-hours venues/opening-hours",
-			"fdf mv --dry-run payments billing",
+			"fdf mv features/payments/store-hours features/venues/opening-hours",
+			"fdf mv features/onboarding features/accounts/onboarding",
+			"fdf mv --dry-run features/payments features/billing",
 			"fdf mv debts/refund-webhook-retries bugs/refund-webhook-retries",
-			"fdf mv payments/instant-refunds/02-ui payments/instant-refunds/03-ui",
+			"fdf mv features/payments/instant-refunds/02-ui features/payments/instant-refunds/03-ui",
 		},
 	},
 	{

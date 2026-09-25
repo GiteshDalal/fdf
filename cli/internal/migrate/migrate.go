@@ -470,7 +470,7 @@ func bugsGroupConflict(root string) string {
 	if offender == "" {
 		return ""
 	}
-	return fmt.Sprintf("bugs/ is a feature group (%s), but v0.7 reserves bugs/ for the bug register — rename the group first with `fdf mv bugs <new-group>`, then re-run fdf migrate", filepath.ToSlash(offender))
+	return fmt.Sprintf("bugs/ is a feature group (%s), but v0.7 reserves bugs/ for the bug register — rename the group first (its directory, its listing in INDEX.md and the links to it), then re-run fdf migrate", filepath.ToSlash(offender))
 }
 
 var typeLineRe = regexp.MustCompile(`(?m)^type:\s*(\S+)`)

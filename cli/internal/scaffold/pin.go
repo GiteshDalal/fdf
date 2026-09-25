@@ -1,12 +1,7 @@
 package scaffold
 
-// A bundle's pin decides which of its bundle-root directories hold one kind of
-// document each, and so what a command may write where. The gates here mirror
-// the validator's (bundle.pinAtLeast, and its specV5, specV6 and specV7):
-// releases/ under every pin, changes/ from v0.5, practices/ and debts/ from
-// v0.6, bugs/ from v0.7. Under an older pin the validator reads the same
-// directory as a feature group — so a command must neither refuse a feature
-// there nor file a register entry there.
+// A bundle's pin decides whether the commands can work on it: they read and
+// write spec 1.x, and send a 0.x bundle to `fdf migrate`.
 
 import (
 	"fmt"
@@ -18,11 +13,6 @@ import (
 
 	"github.com/GiteshDalal/fdf/cli/internal/specver"
 )
-
-// reservedSince is the spec minor version from which each bundle-root
-// directory holds one kind of document. releases/ has since v0.2, the oldest
-// version the validator checks, so it is reserved under every pin.
-var reservedSince = map[string]int{"releases": 0, "changes": 5, "practices": 6, "debts": 6, "bugs": 7}
 
 var pinKeyRe = regexp.MustCompile(`^fdf_version:\s?(.*)$`)
 
@@ -66,20 +56,6 @@ func pinAtLeast(pin string, minor int) bool {
 	}
 	v, ok := specver.Parse(pin)
 	return supported && ok && v.AtLeast(specver.Version{Major: 0, Minor: minor})
-}
-
-// ReservedDirs returns the bundle-root directories the bundle at root reserves
-// under its pin: each holds one kind of document, and any other directory is
-// a feature group.
-func ReservedDirs(root string) map[string]bool {
-	pin := Pin(root)
-	out := map[string]bool{}
-	for dir, since := range reservedSince {
-		if since == 0 || pinAtLeast(pin, since) {
-			out[dir] = true
-		}
-	}
-	return out
 }
 
 // Supported lists the spec versions the commands work on: the embedded ones of

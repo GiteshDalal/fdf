@@ -45,4 +45,15 @@ func TestIsFeatureAndItsHint(t *testing.T) {
 			t.Errorf("FeatureHint(%q) = %q; want %q", id, got, want)
 		}
 	}
+	// A command that takes a group's ID hints at a feature group's too.
+	for id, want := range map[string]string{
+		"platform/payments": " — did you mean features/platform/payments?",
+		"onboarding":        " — did you mean features/onboarding?",
+		"platform/nope":     "",
+		"features/platform": "",
+	} {
+		if got := IDHint(root, id); got != want {
+			t.Errorf("IDHint(%q) = %q; want %q", id, got, want)
+		}
+	}
 }

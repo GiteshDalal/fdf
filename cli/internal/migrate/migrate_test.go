@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/GiteshDalal/fdf/cli/internal/bundle"
-	"github.com/GiteshDalal/fdf/cli/internal/refactor"
 )
 
 func write(t *testing.T, root, rel, content string) {
@@ -611,7 +610,8 @@ func TestMigrateRefusesBugsFeatureGroup(t *testing.T) {
 		t.Fatalf("migrate exit %d, want 1\n%s", code, out.String())
 	}
 	if !strings.Contains(out.String(), "bugs/ is a feature group (bugs/tracker.md)") ||
-		!strings.Contains(out.String(), "`fdf mv bugs <new-group>`") {
+		!strings.Contains(out.String(), "rename the group first (its directory, its listing in INDEX.md and the links to it)") ||
+		strings.Contains(out.String(), "fdf mv") {
 		t.Fatalf("refusal does not name the conflict and its fix:\n%s", out.String())
 	}
 	idx, _ := os.ReadFile(filepath.Join(root, "INDEX.md"))
@@ -667,9 +667,9 @@ func mustRead(t *testing.T, p string) []byte {
 	return raw
 }
 
-// The refusal names its way out, and the way out works: `fdf mv bugs
-// <new-group>` renames the v0.6 feature group — bugs/ is not a register
-// under that pin — and the migration then goes through.
+// The refusal names its way out, and the way out works: once the v0.6
+// feature group is renamed — bugs/ is not a register under that pin — the
+// migration goes through.
 func TestMigrateAfterMovingTheBugsFeatureGroup(t *testing.T) {
 	root := t.TempDir()
 	buildV06Bundle(t, root)
@@ -677,12 +677,14 @@ func TestMigrateAfterMovingTheBugsFeatureGroup(t *testing.T) {
 	write(t, root, "bugs/INDEX.md", "# Bugs\n\n* [Tracker](/bugs/tracker.md) - a feature group named bugs.\n")
 	write(t, root, "bugs/tracker.md", "---\ntype: Feature\nstatus: draft\ntitle: Tracker\ndescription: d.\ntimestamp: 2026-09-16T00:00:00Z\n---\n\n# Feature\n\n```gherkin\nFeature: Tracker\n  As a user\n  I want it\n  So that it helps\n```\n\n# Scenarios\n\n```gherkin\nScenario: It works\n  Given it\n  When it runs\n  Then it works\n```\n")
 	var out bytes.Buffer
-	if code := Run(root, "", &out); code != 1 || !strings.Contains(out.String(), "`fdf mv bugs <new-group>`") {
-		t.Fatalf("migrate should refuse and name the move: exit %d\n%s", code, out.String())
+	if code := Run(root, "", &out); code != 1 || !strings.Contains(out.String(), "rename the group first") {
+		t.Fatalf("migrate should refuse and name the rename: exit %d\n%s", code, out.String())
 	}
-	out.Reset()
-	if code := refactor.Move(root, "", "bugs", "issues", false, &out); code != 0 {
-		t.Fatalf("fdf mv bugs issues on the v0.6 bundle: exit %d\n%s", code, out.String())
+	if err := os.Rename(filepath.Join(root, "bugs"), filepath.Join(root, "issues")); err != nil {
+		t.Fatal(err)
+	}
+	for _, rel := range []string{"INDEX.md", "issues/INDEX.md"} {
+		write(t, root, rel, strings.ReplaceAll(string(mustRead(t, filepath.Join(root, rel))), "/bugs/", "/issues/"))
 	}
 	out.Reset()
 	if code := Run(root, "", &out); code != 0 {

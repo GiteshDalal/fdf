@@ -192,22 +192,19 @@ func TestNewListsEveryNewGroupInItsParent(t *testing.T) {
 func TestWithGroupListingPlacesTheGroup(t *testing.T) {
 	for _, tc := range []struct{ name, text, want string }{
 		{"after the last group",
-			"# Bundle\n\n* [Payments](/payments/INDEX.md) - payments.\n* [Format reference](/SPEC.md) - the spec.\n",
-			"# Bundle\n\n* [Payments](/payments/INDEX.md) - payments.\n* [Venues](/venues/INDEX.md) - venues features.\n* [Format reference](/SPEC.md) - the spec.\n"},
-		{"a # Overview with no list",
-			"# Bundle\n\n# Overview\nIntro.\n\n# Conventions\n",
-			"# Bundle\n\n# Overview\nIntro.\n\n* [Venues](/venues/INDEX.md) - venues features.\n\n# Conventions\n"},
-		{"an empty # Overview",
-			"# Bundle\n\n# Overview\n# Conventions\n",
-			"# Bundle\n\n# Overview\n\n* [Venues](/venues/INDEX.md) - venues features.\n\n# Conventions\n"},
+			"# Features\n\n* [Payments](/features/payments/INDEX.md) - payments.\n* [Onboarding](/features/onboarding.md) - feature.\n",
+			"# Features\n\n* [Payments](/features/payments/INDEX.md) - payments.\n* [Venues](/features/venues/INDEX.md) - features in venues.\n* [Onboarding](/features/onboarding.md) - feature.\n"},
+		{"a subgroup is not a sibling",
+			"# Features\n\n* [Deep](/features/a/deep/INDEX.md) - a subgroup's.\n",
+			"# Features\n\n* [Deep](/features/a/deep/INDEX.md) - a subgroup's.\n* [Venues](/features/venues/INDEX.md) - features in venues.\n"},
 		{"at the end",
-			"# Bundle\n\nNo list yet.\n",
-			"# Bundle\n\nNo list yet.\n\n* [Venues](/venues/INDEX.md) - venues features.\n"},
+			"# Features\n\nNo list yet.\n",
+			"# Features\n\nNo list yet.\n\n* [Venues](/features/venues/INDEX.md) - features in venues.\n"},
 		{"listed by its directory",
-			"# Bundle\n\n* [Venues](venues/) - venues.\n",
-			"# Bundle\n\n* [Venues](venues/) - venues.\n"},
+			"# Features\n\n* [Venues](venues/) - venues.\n",
+			"# Features\n\n* [Venues](venues/) - venues.\n"},
 	} {
-		got, _ := WithGroupListing(tc.text, "", "venues")
+		got, _ := WithGroupListing(tc.text, "features", "venues")
 		if got != tc.want {
 			t.Errorf("%s:\n got: %q\nwant: %q", tc.name, got, tc.want)
 		}
@@ -346,45 +343,6 @@ func TestNewRefusesWhatTheValidatorRejects(t *testing.T) {
 		var vout bytes.Buffer
 		if bundle.Validate(root, bundle.Options{Out: &vout}) == 0 || !strings.Contains(vout.String(), "(F3)") {
 			t.Errorf("features/%s.md written by hand should fail F3:\n%s", tc.name, vout.String())
-		}
-	}
-}
-
-// The gates are the validator's own: under every version it checks, a
-// feature in a directory the pin reserves fails validation, and one in any
-// other directory passes. This holds ReservedDirs to bundle.Validate.
-func TestReservedDirsMirrorTheValidator(t *testing.T) {
-	context := map[string][]string{
-		"0.2": nil,
-		"0.3": {"STACK.md", "ARCHITECTURE.md", "INFRA.md"},
-		"0.4": {"STACK.md", "ARCHITECTURE.md", "SURFACES.md", "INFRA.md"},
-		"0.5": {"STACK.md", "ARCHITECTURE.md", "SURFACES.md", "INFRA.md"},
-		"0.6": {"STACK.md", "ARCHITECTURE.md", "SURFACES.md", "INFRA.md", "DOMAIN.md"},
-		"0.7": {"STACK.md", "ARCHITECTURE.md", "SURFACES.md", "INFRA.md", "DOMAIN.md"},
-		"1.0": {"STACK.md", "ARCHITECTURE.md", "SURFACES.md", "INFRA.md", "DOMAIN.md"},
-	}
-	if len(context) != len(SpecVersions()) {
-		t.Fatalf("this test knows the Context documents of %d spec versions; the binary embeds %v", len(context), SpecVersions())
-	}
-	feature := "---\ntype: Feature\nstatus: draft\ntitle: X\ndescription: d.\ntimestamp: 2026-09-24T00:00:00Z\n---\n\n" +
-		"```gherkin\nFeature: X\n  As a user\n  I want x\n  So that y\n```\n\n```gherkin\nScenario: It works\n  Given x\n  When y\n  Then z\n```\n"
-	for pin, docs := range context {
-		for dir := range reservedSince {
-			root := pinned(t, pin)
-			for _, name := range docs {
-				body := "Filled.\n"
-				if name == "DOMAIN.md" {
-					body = "# Terms\n\n## Venue\nA physical location where a merchant sells.\n- instead-of: shopfront\n"
-				}
-				os.WriteFile(filepath.Join(root, name), []byte("---\ntype: Context\ntitle: T\ndescription: d.\ntimestamp: 2026-09-24T00:00:00Z\n---\n\n"+body), 0o644)
-			}
-			os.MkdirAll(filepath.Join(root, dir), 0o755)
-			os.WriteFile(filepath.Join(root, dir, "x.md"), []byte(feature), 0o644)
-			var out bytes.Buffer
-			passes := bundle.Validate(root, bundle.Options{Out: &out}) == 0
-			if reserved := ReservedDirs(root)[dir]; passes == reserved {
-				t.Errorf("pin %s: ReservedDirs says %s/ reserved=%v, but a feature there validates=%v:\n%s", pin, dir, reserved, passes, out.String())
-			}
 		}
 	}
 }

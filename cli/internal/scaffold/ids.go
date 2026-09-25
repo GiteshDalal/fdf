@@ -72,3 +72,15 @@ func FeatureHint(root, id string) string {
 	}
 	return ""
 }
+
+// IDHint is FeatureHint for a command that takes a group's ID as well as a
+// document's: the full ID of a feature or a feature group written the 0.7
+// way.
+func IDHint(root, id string) string {
+	full := "features/" + id
+	b := layout.New(os.DirFS(root))
+	if strings.HasPrefix(id, "features/") || !b.Exists(full+".md") && !b.Exists(full) {
+		return ""
+	}
+	return " — did you mean " + full + "?"
+}
