@@ -79,44 +79,63 @@ var registerListings = []struct{ reg, title, line string }{
 	{"releases", "Releases", "* [Releases](/releases/INDEX.md) - what shipped in each version."},
 }
 
+// RegisterLine is the line the root INDEX.md lists the register reg with, and
+// the register's title.
+func RegisterLine(reg string) (line, title string) {
+	for _, r := range registerListings {
+		if r.reg == reg {
+			return r.line, r.title
+		}
+	}
+	return "", ""
+}
+
 // ListRegister lists a register in the root INDEX.md, after the registers it
 // lists already, unless it lists this one, and says so the way ListEntry
 // does. A root index that lists no register gets the line at its end.
 func ListRegister(root, reg string, out io.Writer) int {
-	var title, line string
-	for _, r := range registerListings {
-		if r.reg == reg {
-			title, line = r.title, r.line
-		}
-	}
 	p := filepath.Join(root, "INDEX.md")
 	raw, err := os.ReadFile(p)
-	if err != nil || line == "" {
+	if err != nil {
 		return 0
 	}
-	lines := strings.Split(string(raw), "\n")
-	after := -1 // the line the listing goes after
-	for i, l := range lines {
-		t := ListingTarget(l, ".")
-		if t == reg+"/INDEX.md" || t == reg {
-			return 0
-		}
-		if r, ok := strings.CutSuffix(t, "/INDEX.md"); ok && layout.IsRegister(r) {
-			after = i
-		}
-	}
-	var text string
-	if after < 0 {
-		text = strings.TrimRight(string(raw), "\n") + "\n\n" + line + "\n"
-	} else {
-		text = strings.Join(append(lines[:after+1], append([]string{line}, lines[after+1:]...)...), "\n")
+	text, added := WithRegisterListing(string(raw), reg)
+	if !added {
+		return 0
 	}
 	if err := os.WriteFile(p, []byte(text), 0o644); err != nil {
 		fmt.Fprintln(out, "error:", err)
 		return 1
 	}
+	_, title := RegisterLine(reg)
 	fmt.Fprintf(out, "updated INDEX.md (now lists %q)\n", title)
 	return 0
+}
+
+// WithRegisterListing returns the root INDEX.md's text with the register
+// reg's listing added after the registers it lists already, or at its end
+// when it lists none, and whether it added it: a text that already lists the
+// register — its INDEX.md, or the directory — is returned as it is.
+func WithRegisterListing(text, reg string) (string, bool) {
+	line, _ := RegisterLine(reg)
+	if line == "" {
+		return text, false
+	}
+	lines := strings.Split(text, "\n")
+	after := -1 // the line the listing goes after
+	for i, l := range lines {
+		t := ListingTarget(l, ".")
+		if t == reg+"/INDEX.md" || t == reg {
+			return text, false
+		}
+		if r, ok := strings.CutSuffix(t, "/INDEX.md"); ok && layout.IsRegister(r) {
+			after = i
+		}
+	}
+	if after < 0 {
+		return strings.TrimRight(text, "\n") + "\n\n" + line + "\n", true
+	}
+	return strings.Join(append(lines[:after+1], append([]string{line}, lines[after+1:]...)...), "\n"), true
 }
 
 // ListGroup lists a group in its parent's INDEX.md, dir, unless it is listed

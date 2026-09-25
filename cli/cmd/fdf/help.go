@@ -151,22 +151,29 @@ var helpTopics = []helpTopic{
 	{
 		name:    "migrate",
 		group:   "Set up",
-		summary: "Upgrade a 0.x bundle to 0.7, the last 0.x spec version",
-		usage:   "fdf migrate [--root <dir>]",
-		body: "Upgrade a 0.x bundle to spec 0.7, the last 0.x version, then validate it.\n" +
-			"It rewrites the fdf_version pin, re-vendors SPEC.md, scaffolds missing\n" +
-			"Context stubs and indexes, drops the status tags older versions wrote\n" +
-			"after index listings, and logs the migration in LOG.md; from v0.3 or\n" +
-			"earlier it also lifts nested trail files to stem-qualified siblings. It\n" +
-			"then counts what the new version checks that the old one did not. A\n" +
-			"pre-flight refuses content the new layout cannot hold and leaves the\n" +
-			"bundle untouched, so a refused run is safe to retry after fixing what it\n" +
-			"names. A bundle pinned to 1.0 or later is refused before anything but its\n" +
-			"pin is read, or anything is written. An unfilled Context stub is only a\n" +
-			"warning here; once the bundle has a feature, a plain `fdf validate` fails\n" +
-			"F9 until it is filled. Re-run `fdf install` afterwards.",
-		flags:    []flagDoc{rootFlagDoc},
-		examples: []string{"fdf migrate", "fdf migrate --root docs/features"},
+		summary: "Upgrade a 0.x bundle to spec 1.0 in one run",
+		usage:   "fdf migrate [--root <dir>] [--dry-run]",
+		body: "Upgrade a bundle at any 0.x pin to spec 1.0, then validate it. It works\n" +
+			"out the whole migration and prints it before it writes anything; with\n" +
+			"--dry-run it stops there. Older layouts are made 0.7-shaped first (v0.1's\n" +
+			"renames, v0.3's trail lift, the status tags older tools wrote after index\n" +
+			"listings). Then every feature group moves into features/, and every\n" +
+			"mention of a feature's ID gains features/, in frozen documents too; logs\n" +
+			"keep their words. Every link is repaired, features/INDEX.md takes the\n" +
+			"groups' listings from INDEX.md, the other registers get their indexes,\n" +
+			"and the pin, the vendored SPEC.md and any missing Context stub follow. The\n" +
+			"migration is logged in LOG.md. A pre-flight refuses content the new layout\n" +
+			"cannot hold and leaves the bundle untouched, so a refused run is safe to\n" +
+			"retry after fixing what it names. A bundle already at 1.0 moves nothing:\n" +
+			"its spec copy, indexes and Context stubs are restored. An unfilled Context\n" +
+			"stub is only a warning here; once the bundle has a feature, a plain\n" +
+			"`fdf validate` fails F9 until it is filled. Re-run `fdf install`\n" +
+			"afterwards.",
+		flags: []flagDoc{
+			{"--dry-run", "print the plan, and change nothing"},
+			rootFlagDoc,
+		},
+		examples: []string{"fdf migrate --dry-run", "fdf migrate", "fdf migrate --root docs/features"},
 	},
 	{
 		name:    "new",

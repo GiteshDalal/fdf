@@ -9,6 +9,7 @@ import (
 
 func runMigrate(args []string, stdout io.Writer) int {
 	fs := newFlagSet("migrate")
+	dryRun := fs.Bool("dry-run", false, "print the plan, and change nothing")
 	r, _, exit, ok := resolveRootSource(fs, args, stdout)
 	if !ok {
 		return exit
@@ -20,5 +21,5 @@ func runMigrate(args []string, stdout io.Writer) int {
 		repoRoot = pr
 	}
 	migrate.Version = version
-	return migrate.Run(root, repoRoot, stdout)
+	return migrate.Run(migrate.Options{Root: root, Project: repoRoot, DryRun: *dryRun}, stdout)
 }

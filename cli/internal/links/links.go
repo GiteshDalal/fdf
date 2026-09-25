@@ -41,7 +41,7 @@ var (
 // returned with InCode set. A reference definition stands at the start of a
 // block, as CommonMark reads one: a line that continues a paragraph is prose.
 func Find(text string) []Link {
-	code, defAt := blocks(text)
+	code, defAt, _ := blocks(text)
 	closes := closers(text, code)
 	var out []Link
 	for i := 0; ; {
@@ -234,15 +234,23 @@ type Span struct{ Start, End int }
 // line, is never code for its indentation alone. Code spans are marked in
 // each block of prose, and a heading is a block of its own.
 func Code(text string) []Span {
-	code, _ := blocks(text)
+	code, _, _ := blocks(text)
 	return code
 }
 
+// Blocks returns the byte ranges of text's code blocks, in order: the ranges
+// Code returns but its code spans, each fenced block and each line of an
+// indented one.
+func Blocks(text string) []Span {
+	_, _, block := blocks(text)
+	return block
+}
+
 // blocks reads text as CommonMark groups its lines into blocks, as far as
-// Find needs to: the ranges Code returns, and the lines a reference
-// definition may start (defAt, by offset): every line that does not continue
-// a paragraph.
-func blocks(text string) (code []Span, defAt map[int]bool) {
+// Find needs to: the ranges Code returns, those of them that are code
+// blocks (block), and the lines a reference definition may start (defAt, by
+// offset): every line that does not continue a paragraph.
+func blocks(text string) (code []Span, defAt map[int]bool, block []Span) {
 	defAt = map[int]bool{}
 	fence, fenceStart := "", 0
 	prose := -1 // where the current block of prose starts
@@ -265,6 +273,7 @@ func blocks(text string) (code []Span, defAt map[int]bool) {
 		case fence != "":
 			if strings.HasPrefix(t, fence) && strings.Trim(t, fence[:1]) == "" {
 				code = append(code, Span{fenceStart, pos})
+				block = append(block, Span{fenceStart, pos})
 				fence = ""
 				boundary = true
 			}
@@ -276,6 +285,7 @@ func blocks(text string) (code []Span, defAt map[int]bool) {
 		case columns(line) >= 4 && (indented || boundary && !inList):
 			endProse(start)
 			code = append(code, Span{start, pos})
+			block = append(block, Span{start, pos})
 			indented, boundary, para = true, false, false
 			continue
 		case fenceRe.MatchString(t) && (columns(line) < 4 || inList):
@@ -312,8 +322,9 @@ func blocks(text string) (code []Span, defAt map[int]bool) {
 	endProse(len(text))
 	if fence != "" {
 		code = append(code, Span{fenceStart, len(text)})
+		block = append(block, Span{fenceStart, len(text)})
 	}
-	return code, defAt
+	return code, defAt, block
 }
 
 // columns is how far a line is indented, a tab reaching the next multiple of

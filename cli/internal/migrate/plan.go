@@ -3,11 +3,10 @@ package migrate
 // A migration is worked out in full before anything is written: every file
 // that moves, every file that goes, and the text of every file migrate
 // writes. Nothing touches the bundle until the plan is complete, so a
-// refusal leaves it as it was.
+// refusal leaves it as it was, and a dry run prints the plan and stops.
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -15,9 +14,30 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/GiteshDalal/fdf/cli/internal/layout"
 	"github.com/GiteshDalal/fdf/cli/internal/links"
 	"github.com/GiteshDalal/fdf/cli/internal/logs"
+	"github.com/GiteshDalal/fdf/cli/internal/refactor"
+	"github.com/GiteshDalal/fdf/cli/internal/scaffold"
+	"github.com/GiteshDalal/fdf/cli/internal/specver"
 )
+
+// reservedSince is the spec version from which each bundle-root directory is
+// a register: releases/ under every pin, changes/ from 0.5, practices/ and
+// debts/ from 0.6, and bugs/ from 0.7. Under an older pin the validator reads
+// the same directory as a feature group, so migrate moves it into features/
+// with the others.
+var reservedSince = map[string]specver.Version{
+	"releases": {}, "changes": {Minor: 5}, "practices": {Minor: 6}, "debts": {Minor: 6}, "bugs": {Minor: 7},
+}
+
+// reserved reports whether the bundle-root directory name is a register under
+// pin, a 0.x version or "" for none.
+func reserved(name, pin string) bool {
+	since, ok := reservedSince[name]
+	v, _ := specver.Parse(pin)
+	return ok && v.AtLeast(since)
+}
 
 // plan is a migration worked out in full.
 type plan struct {
@@ -30,23 +50,30 @@ type plan struct {
 	files  []string
 	texts0 map[string]string
 
-	// moves are the files the older layouts' steps rename, by path before ->
-	// after: 0.1's case renames and 0.3's trail lift, one entry per file.
-	moves map[string]string
-	// gone are the files migrate removes: v0.1's vendored fdf-spec.md.
-	gone []string
-	// aliases name, for the link engine only, where a link to a file that
-	// does not move on must point now: fdf-spec.md is the vendored SPEC.md,
-	// and a missing nested TEST.md is the stub written beside the feature.
-	aliases map[string]string
-	// texts are the files migrate writes, by path after the moves: a file's
-	// new text, or a new file.
-	texts map[string]string
-	// stubs are the test documents migrate writes for features that need
-	// one, with how many scenario cases each holds.
-	stubs map[string]int
+	// The older layouts' steps, which make a 0.x bundle 0.7-shaped.
+	moves   map[string]string // 0.1's case renames and 0.3's trail lift, by path before -> after
+	gone    []string          // v0.1's vendored fdf-spec.md, which goes
+	aliases map[string]string // for the link engine only: where a link to a file that does not move on points now
+	stubs   map[string]int    // test documents written for features that need one, with their cases
+	tags    int               // status tags removed from index listings
 
-	tags int // status tags removed from index listings
+	// The 1.0 steps.
+	groups  []string          // the root directories that move into features/
+	isGroup map[string]bool   // the same, by name
+	ids     map[string]string // each feature's ID before -> after
+
+	// texts are the files migrate writes, by path once migrated: a file's new
+	// text, or a new file. why says, for each, what changes in it.
+	texts map[string]string
+	why   map[string][]string
+
+	links     int // links repaired, inside the bundle
+	linkFiles int // files they are in
+	mentions  int // feature ID mentions rewritten
+	idFiles   int // documents they are in
+	logIDs    int // feature ID mentions logs keep
+	listings  int // group listings moved from the root INDEX.md
+	generated int // listings written for groups the root never listed
 }
 
 // rootWrites are the files at the bundle root that migrate writes whatever
@@ -64,7 +91,8 @@ func newPlan(root, pin string) (p *plan, problems []string, err error) {
 		return nil, []string{fmt.Sprintf("%s: a symbolic link to %s — migrate the directory it names, with --root", root, to)}, nil
 	}
 	p = &plan{root: root, from: pin, texts0: map[string]string{}, moves: map[string]string{},
-		aliases: map[string]string{}, texts: map[string]string{}, stubs: map[string]int{}}
+		aliases: map[string]string{}, stubs: map[string]int{}, isGroup: map[string]bool{},
+		ids: map[string]string{}, texts: map[string]string{}, why: map[string][]string{}}
 	var linked []string
 	err = filepath.WalkDir(root, func(q string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -105,11 +133,14 @@ func newPlan(root, pin string) (p *plan, problems []string, err error) {
 		return nil, linked, nil
 	}
 	// A bundle already in the stem-qualified layout (v0.4 onward) needs no
-	// structural work: 0.4 → 0.5 only adds changes/, 0.5 → 0.6 only adds
-	// practices/, debts/ and DOMAIN.md, and 0.6 → 0.7 only adds bugs/.
-	// Running the pre-0.4 steps over one would be actively wrong — pre-flight
-	// reads every `slug.spec.md` as an illegal dotted basename.
-	if pin != "0.4" && pin != "0.5" && pin != "0.6" {
+	// structural work to be 0.7-shaped: 0.4 → 0.5 only adds changes/,
+	// 0.5 → 0.6 only adds practices/, debts/ and DOMAIN.md, and 0.6 → 0.7
+	// only adds bugs/. Running the pre-0.4 steps over one would be actively
+	// wrong — pre-flight reads every `slug.spec.md` as an illegal dotted
+	// basename.
+	v, _ := specver.Parse(pin)
+	stem := v.AtLeast(specver.Version{Minor: 4})
+	if !stem {
 		// Refuse content the v0.4 layout cannot hold.
 		if problems := preflightV4(root); len(problems) > 0 {
 			return nil, problems, nil
@@ -118,13 +149,20 @@ func newPlan(root, pin string) (p *plan, problems []string, err error) {
 		if err := p.liftTrails(); err != nil {
 			return nil, nil, err
 		}
+	}
+	p.findGroups()
+	if !stem {
 		p.stubTests()
 	}
 	p.repair()
+	if err := p.indexes(); err != nil {
+		return nil, nil, err
+	}
 	return p, nil, nil
 }
 
-// after is where the file at rel is once the moves are made.
+// after is where the file at rel is once the older layouts' moves are made:
+// its 0.7-shaped path.
 func (p *plan) after(rel string) string {
 	if to, ok := p.moves[rel]; ok {
 		return to
@@ -136,8 +174,20 @@ func (p *plan) after(rel string) string {
 // does: migrate writes nothing in its place.
 func (p *plan) goes(rel string) bool { return slices.Contains(p.gone, rel) }
 
+// grouped is where a 0.7-shaped path is in 1.0: under features/ when its
+// root directory is a feature group.
+func (p *plan) grouped(rel string) string {
+	if dir, _, ok := strings.Cut(rel, "/"); ok && p.isGroup[dir] {
+		return "features/" + rel
+	}
+	return rel
+}
+
+// to is where the file at rel is once migrated.
+func (p *plan) to(rel string) string { return p.grouped(p.after(rel)) }
+
 // present is the set of the bundle's files once the moves made so far are
-// made.
+// made, by 0.7-shaped path.
 func (p *plan) present() map[string]bool {
 	out := map[string]bool{}
 	for _, f := range p.files {
@@ -146,25 +196,46 @@ func (p *plan) present() map[string]bool {
 	return out
 }
 
-// text is the text of the file at rel once the plan is applied: its planned
-// text, or the text of the file that is there now, or "" for none.
+// text is the text of the file at rel once migrated: its planned text, or
+// the text of the file that is there now, or "" for none.
 func (p *plan) text(rel string) string {
 	if t, ok := p.texts[rel]; ok {
 		return t
 	}
 	for _, f := range p.files {
-		if p.after(f) == rel {
+		if p.to(f) == rel {
 			return p.texts0[f]
 		}
 	}
 	return ""
 }
 
+// exists reports whether the bundle holds a file at rel once migrated.
+func (p *plan) exists(rel string) bool {
+	if _, ok := p.texts[rel]; ok {
+		return true
+	}
+	for _, f := range p.files {
+		if p.to(f) == rel {
+			return true
+		}
+	}
+	return false
+}
+
+// write plans text for the file at rel, once migrated, and says why.
+func (p *plan) write(rel, text, why string) {
+	p.texts[rel] = text
+	if why != "" {
+		p.why[rel] = append(p.why[rel], why)
+	}
+}
+
 // source is the file of the bundle, as it stands, that is at rel once
 // migrated, or "" when migrate writes rel new.
 func (p *plan) source(rel string) string {
 	for _, f := range p.files {
-		if p.after(f) == rel {
+		if p.to(f) == rel {
 			return f
 		}
 	}
@@ -243,31 +314,72 @@ func (p *plan) stubTests() {
 		for _, sc := range scenarioRe.FindAllStringSubmatch(raw, -1) {
 			cases = append(cases, fmt.Sprintf("## %s\n\nTODO: specify the concrete verification.\n", strings.TrimSpace(sc[1])))
 		}
-		p.texts[test] = fmt.Sprintf("---\ntype: Test\ntitle: %s acceptance\ndescription: How this feature is proven.\ntimestamp: %s\n---\n\n# Test Cases\n\n%s",
-			strings.TrimSuffix(parts[1], ".md"), ts, strings.Join(cases, "\n"))
-		p.stubs[test] = len(cases)
+		to := p.grouped(test)
+		p.write(to, fmt.Sprintf("---\ntype: Test\ntitle: %s acceptance\ndescription: How this feature is proven.\ntimestamp: %s\n---\n\n# Test Cases\n\n%s",
+			strings.TrimSuffix(parts[1], ".md"), ts, strings.Join(cases, "\n")), "")
+		p.stubs[to] = len(cases)
 		p.aliases[stem+"/TEST.md"] = test
 	}
 }
 
-// move is the plan as the link engine reads it: every file that moves, and
-// every alias.
-func (p *plan) move() links.Move {
-	files := map[string]string{}
-	for o, n := range p.moves {
-		files[o] = n
+// findGroups finds the feature groups, which move into features/: every root
+// directory that is not hidden, holds Markdown, and is not a register under
+// the bundle's pin. A directory that holds no Markdown stays where it is,
+// outside FDF. A feature is a document directly in a group, and its ID gains
+// features/.
+func (p *plan) findGroups() {
+	for _, f := range p.files {
+		dir, _, ok := strings.Cut(f, "/")
+		if ok && strings.HasSuffix(f, ".md") && !reserved(dir, p.from) && !p.isGroup[dir] {
+			p.isGroup[dir] = true
+			p.groups = append(p.groups, dir)
+		}
 	}
-	for o, n := range p.aliases {
-		files[o] = n
+	sort.Strings(p.groups)
+	for _, f := range p.files {
+		s := p.after(f)
+		parts := strings.Split(s, "/")
+		name := strings.TrimSuffix(parts[len(parts)-1], ".md")
+		if len(parts) == 2 && p.isGroup[parts[0]] && strings.HasSuffix(s, ".md") &&
+			name != "INDEX" && name != "LOG" && !strings.Contains(name, ".") {
+			id := strings.TrimSuffix(s, ".md")
+			p.ids[id] = "features/" + id
+		}
 	}
-	return links.Move{Files: files}
 }
 
-// repair plans the new text of every Markdown file: a lifted log gains the
-// frontmatter a stem sibling needs, an index loses the status tags older
-// tools wrote after its listings, and every link is repaired by the engine,
-// from where its file was to where it is now. The vendored SPEC.md, which
-// migrate replaces, is left to it, and a file that goes is left alone.
+// move is the plan as the link engine reads it: every file the older layouts
+// move, every alias, and every group, each to where it is once migrated.
+func (p *plan) move() links.Move {
+	m := links.Move{Files: map[string]string{}, Dirs: map[string]string{}}
+	for o := range p.moves {
+		m.Files[o] = p.to(o)
+	}
+	for o, a := range p.aliases {
+		m.Files[o] = p.grouped(a)
+	}
+	for _, g := range p.groups {
+		m.Dirs[g] = "features/" + g
+	}
+	return m
+}
+
+// isLog reports whether rel is a log, whose words record what things were
+// called then: LOG.md, or a <slug>.log.md.
+func isLog(rel string) bool {
+	return path.Base(rel) == "LOG.md" || strings.HasSuffix(rel, ".log.md")
+}
+
+// repair plans the new text of every Markdown file. A lifted log gains the
+// frontmatter a stem sibling needs, and an index loses the status tags older
+// tools wrote after its listings. Every link is repaired by the engine, from
+// where its file was to where it is now. Outside logs, which keep their
+// words, every mention of a feature's ID gains features/ — in fields,
+// headings, prose, code spans and a Gherkin Scenario line, while the rest of
+// a code block, such as a Gherkin step or a shell sample, keeps its words: a
+// reference repair after a move, which reaches frozen documents too. The
+// vendored SPEC.md, which migrate replaces, is left to it, and a file that
+// goes is left alone.
 func (p *plan) repair() {
 	mv := p.move()
 	for _, f := range p.files {
@@ -275,37 +387,265 @@ func (p *plan) repair() {
 		if !ok || f == "SPEC.md" || p.goes(f) {
 			continue
 		}
-		to := p.after(f)
-		if strings.HasSuffix(to, ".log.md") && path.Base(f) != path.Base(to) {
-			text = withLogFrontmatter(text, to)
+		shaped, to := p.after(f), p.to(f)
+		if strings.HasSuffix(shaped, ".log.md") && path.Base(f) != path.Base(shaped) {
+			text = withLogFrontmatter(text, shaped)
+			p.why[to] = append(p.why[to], "log frontmatter")
 		}
-		if path.Base(to) == "INDEX.md" {
+		if path.Base(shaped) == "INDEX.md" {
 			var n int
-			text, n = stripStatusTags(text)
-			p.tags += n
+			if text, n = stripStatusTags(text); n > 0 {
+				p.tags += n
+				p.why[to] = append(p.why[to], count(n, "status tag"))
+			}
 		}
-		text = repairLinks(text, links.Site{OldPath: f, NewPath: to}, mv)
-		if text != p.texts0[f] || to != f {
+		var n int
+		if text, n = repairLinks(text, links.Site{OldPath: f, NewPath: to}, mv); n > 0 {
+			p.links += n
+			p.linkFiles++
+			p.why[to] = append(p.why[to], count(n, "link"))
+		}
+		skip := linkTargets(text)
+		// A scenario's name is matched by its test case and by the
+		// declarations that name it, which are prose: its Scenario line is
+		// rewritten with them, and the rest of a code block keeps its words.
+		named := map[int]bool{}
+		for _, loc := range scenarioLineRe.FindAllStringIndex(text, -1) {
+			for k := loc[0]; k < loc[1]; k++ {
+				named[k] = true
+			}
+		}
+		for _, b := range links.Blocks(text) {
+			for k := b.Start; k < b.End; k++ {
+				if !named[k] {
+					skip[k] = true
+				}
+			}
+		}
+		if isLog(shaped) {
+			p.logIDs += len(refactor.IDMentions(text, p.ids, "", skip, true))
+		} else {
+			for k := range fieldPaths(text) {
+				skip[k] = true
+			}
+			if reps := refactor.IDMentions(text, p.ids, "", skip, true); len(reps) > 0 {
+				text = replace(text, reps)
+				p.mentions += len(reps)
+				p.idFiles++
+				p.why[to] = append(p.why[to], count(len(reps), "ID"))
+			}
+		}
+		if text != p.texts0[f] {
 			p.texts[to] = text
 		}
 	}
+	// A test stub names each scenario as its feature's Gherkin does, whose
+	// Scenario lines gain features/ with every other copy of the name.
+	for to := range p.stubs {
+		text := p.texts[to]
+		p.texts[to] = replace(text, refactor.IDMentions(text, p.ids, "", map[int]bool{}, true))
+	}
+}
+
+// indexes plans the indexes 1.0 asks for. Each feature group's listing moves
+// from the root INDEX.md to a new features/INDEX.md, description and all,
+// as a listing moves with what it lists in fdf mv, and the root lists the
+// Features register where the first of them stood. A group the root never
+// listed gets the listing fdf new gives a new group, which links the
+// group's directory when it has no index. The other registers get the
+// indexes fdf init writes, and the root lists every register the bundle
+// has: releases/ once it has an index, which fdf release writes. Then the
+// pin, the vendored spec of the version it pins, and any Context stub
+// missing.
+func (p *plan) indexes() error {
+	root := p.text("INDEX.md")
+	featuresLine, _ := scaffold.RegisterLine("features")
+	var kept, moved []string
+	for _, line := range strings.Split(root, "\n") {
+		if !p.listsGroup(scaffold.ListingTarget(line, ".")) {
+			kept = append(kept, line)
+			continue
+		}
+		if len(moved) == 0 {
+			kept = append(kept, featuresLine)
+		}
+		// A listing moves without the CR of a CRLF line: features/INDEX.md
+		// is new, and ends each line as scaffold's text does.
+		moved = append(moved, reexpress(strings.TrimSuffix(line, "\r"), links.Site{OldPath: "INDEX.md", NewPath: "features/INDEX.md"}))
+	}
+	p.listings = len(moved)
+	root = strings.Join(kept, "\n")
+	features, _ := scaffold.IndexText("features")
+	if len(moved) > 0 {
+		features = strings.TrimRight(features, "\n") + "\n" + strings.Join(moved, "\n") + "\n"
+	}
+	for _, g := range p.groups {
+		var added bool
+		if features, added = scaffold.WithGroupListing(features, "features", g); added {
+			p.generated++
+			if !p.exists("features/" + g + "/INDEX.md") {
+				features = strings.Replace(features, "(/features/"+g+"/INDEX.md)", "(/features/"+g+"/)", 1)
+			}
+		}
+	}
+	p.write("features/INDEX.md", features, "")
+	for _, reg := range layout.Registers {
+		if reg == "features" || reg == "releases" {
+			continue
+		}
+		if idx := reg + "/INDEX.md"; !p.exists(idx) {
+			body, _ := scaffold.IndexText(reg)
+			p.write(idx, body, "")
+		}
+	}
+	for _, reg := range layout.Registers {
+		if reg == "releases" && !p.exists("releases/INDEX.md") {
+			continue
+		}
+		root, _ = scaffold.WithRegisterListing(root, reg)
+	}
+	p.write("INDEX.md", withPin(root, target), "")
+	if p.listings > 0 {
+		p.why["INDEX.md"] = append(p.why["INDEX.md"], count(p.listings, "group listing")+" moved to features/INDEX.md")
+	}
+	p.why["INDEX.md"] = append(p.why["INDEX.md"], "pinned to "+target)
+	for _, name := range layout.ContextDocs {
+		if !p.exists(name) {
+			stub, _ := scaffold.ContextStub(name)
+			p.write(name, stub, "")
+		}
+	}
+	doc, err := scaffold.SpecDoc(target)
+	if err != nil {
+		return err
+	}
+	p.write("SPEC.md", string(doc), "")
+	return nil
+}
+
+// listsGroup reports whether a root listing's target, t, is a feature group
+// once migrated: its INDEX.md, or its directory.
+func (p *plan) listsGroup(t string) bool {
+	rest, ok := strings.CutPrefix(t, "features/")
+	g, tail, nested := strings.Cut(rest, "/")
+	return ok && p.isGroup[g] && (!nested || tail == "INDEX.md")
+}
+
+// logEntry plans the migration's entry in the bundle-root log, where every
+// bundle-wide event goes, with what it moved and repaired.
+func (p *plan) logEntry(from string) {
+	entry := fmt.Sprintf("**Migrated**: fdf_version %s → %s with `fdf migrate`", from, target)
+	var did []string
+	if len(p.groups) > 0 {
+		did = append(did, fmt.Sprintf("moved %s into `features/` (%s)", p.groupList("`", "/`"), count(len(p.ids), "feature")))
+	}
+	if p.mentions > 0 || p.links > 0 {
+		did = append(did, fmt.Sprintf("repaired %s in %s and %s in %s", count(p.mentions, "feature ID mention"), count(p.idFiles, "document"), count(p.links, "link"), count(p.linkFiles, "file")))
+	}
+	if len(did) > 0 {
+		entry += ": " + strings.Join(did, "; ")
+	}
+	entry += "."
+	if p.tags > 0 {
+		entry += fmt.Sprintf(" Removed the status tag from %d index listing(s); a document's status lives only in its frontmatter.", p.tags)
+	}
+	text := p.text("LOG.md")
+	if text == "" {
+		text = "# Bundle Update Log\n"
+	}
+	p.write("LOG.md", logs.Insert(text, logs.Entry(entry)), "the migration's entry")
+}
+
+// groupList names the groups, each between before and after.
+func (p *plan) groupList(before, after string) string {
+	names := make([]string, len(p.groups))
+	for i, g := range p.groups {
+		names[i] = before + g + after
+	}
+	return strings.Join(names, ", ")
+}
+
+// reexpress rewrites a line's links, as written in the file at s.OldPath, so
+// that they name the same files from s.NewPath: a listing that moves from one
+// index to another, while nothing it names moves.
+func reexpress(line string, s links.Site) string {
+	text, _ := repairLinks(line, s, links.Move{})
+	return text
 }
 
 // repairLinks rewrites every link in text that the move changes, as written
-// in the file at s.OldPath and now read from s.NewPath. A link in code is a
-// sample and stays as it is.
-func repairLinks(text string, s links.Site, m links.Move) string {
-	var b strings.Builder
-	last := 0
+// in the file at s.OldPath and now read from s.NewPath, and says how many it
+// rewrote. A link in code is a sample and stays as it is.
+func repairLinks(text string, s links.Site, m links.Move) (string, int) {
+	var reps []refactor.Replacement
 	for _, l := range links.Find(text) {
 		if l.InCode {
 			continue
 		}
 		if nt, ok := links.Retarget(l.Target, s, m); ok {
-			b.WriteString(text[last:l.Start])
-			b.WriteString(nt)
-			last = l.End
+			reps = append(reps, refactor.Replacement{Start: l.Start, End: l.End, Text: nt})
 		}
+	}
+	return replace(text, reps), len(reps)
+}
+
+// linkTargets marks the bytes of every link target in text, which a mention
+// never overlaps: the engine repairs them.
+func linkTargets(text string) map[int]bool {
+	out := map[int]bool{}
+	for _, l := range links.Find(text) {
+		for i := l.Start; i < l.End; i++ {
+			out[i] = true
+		}
+	}
+	return out
+}
+
+// fieldPaths marks the bytes of the resource and applies-to values in text's
+// frontmatter, inline or as a list: paths in the project, which name code,
+// never a feature.
+func fieldPaths(text string) map[int]bool {
+	out := map[int]bool{}
+	if !strings.HasPrefix(text, "---") {
+		return out
+	}
+	in, pos := false, 0
+	for i, line := range strings.SplitAfter(text, "\n") {
+		start := pos
+		pos += len(line)
+		t := strings.TrimSpace(line)
+		switch {
+		case i > 0 && t == "---":
+			return out
+		case strings.HasPrefix(line, "resource:") || strings.HasPrefix(line, "applies-to:"):
+			in = true
+		case in && strings.HasPrefix(t, "-"):
+			// an item of the field's list
+		default:
+			in = false
+		}
+		if in {
+			for k := start; k < pos; k++ {
+				out[k] = true
+			}
+		}
+	}
+	return out
+}
+
+// replace applies non-overlapping replacements to text, in any order; of two
+// that overlap, the earlier one wins.
+func replace(text string, reps []refactor.Replacement) string {
+	sort.Slice(reps, func(i, j int) bool { return reps[i].Start < reps[j].Start })
+	var b strings.Builder
+	last := 0
+	for _, r := range reps {
+		if r.Start < last {
+			continue
+		}
+		b.WriteString(text[last:r.Start])
+		b.WriteString(r.Text)
+		last = r.End
 	}
 	b.WriteString(text[last:])
 	return b.String()
@@ -392,21 +732,14 @@ func withCRLF(text string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\n", "\r\n")
 }
 
-// withLogEntry returns the root LOG.md's text with entry added, newest first;
-// a bundle without a LOG.md gets one.
-func withLogEntry(text, entry string) string {
-	if text == "" {
-		text = "# Bundle Update Log\n"
-	}
-	return logs.Insert(text, logs.Entry(entry))
-}
-
-// apply makes the plan's changes to the bundle: each move, through a
-// temporary name so that no move lands on a file another has yet to leave
-// (and a rename that changes only case takes on a disk that ignores case);
-// then each removal; then each text, written where its file now is. A
-// directory a move leaves empty goes too.
-func (p *plan) apply(out io.Writer) error {
+// apply makes the plan's changes to the bundle. First each move the older
+// layouts make, through a temporary name so that no move lands on a file
+// another has yet to leave (and a rename that changes only case takes on a
+// disk that ignores case), and the directories those moves leave empty go.
+// Then each removal. Then each feature group moves into features/, through a
+// hidden directory, since a group may be called features. Last, each text is
+// written where its file now is.
+func (p *plan) apply() error {
 	abs := func(rel string) string { return filepath.Join(p.root, filepath.FromSlash(rel)) }
 	olds := sortedKeys(p.moves)
 	for _, o := range olds {
@@ -422,18 +755,43 @@ func (p *plan) apply(out io.Writer) error {
 		if err := os.Rename(abs(o)+".migrating", abs(n)); err != nil {
 			return fmt.Errorf("moving %s -> %s: %w", o, n, err)
 		}
-		if path.Dir(o) == path.Dir(n) {
-			fmt.Fprintf(out, "renamed %s -> %s\n", o, path.Base(n))
-		} else {
-			fmt.Fprintf(out, "moved %s -> %s\n", o, n)
+	}
+	for _, o := range olds {
+		for d := filepath.Dir(abs(o)); d != p.root && strings.HasPrefix(d, p.root); d = filepath.Dir(d) {
+			if os.Remove(d) != nil {
+				break // not empty
+			}
 		}
 	}
 	for _, g := range p.gone {
 		if err := os.Remove(abs(g)); err != nil {
 			return err
 		}
-		if g == "fdf-spec.md" {
-			fmt.Fprintln(out, "removed vendored fdf-spec.md (the spec is vendored as SPEC.md now)")
+	}
+	if len(p.groups) > 0 {
+		tmp := abs(".fdf-migrate")
+		if err := os.Mkdir(tmp, 0o755); err != nil {
+			return err
+		}
+		for _, g := range p.groups {
+			if err := os.Rename(abs(g), filepath.Join(tmp, g)); err != nil {
+				return fmt.Errorf("moving %s/: %w", g, err)
+			}
+		}
+		if _, err := os.Stat(abs("features")); err != nil {
+			if err := os.Rename(tmp, abs("features")); err != nil {
+				return fmt.Errorf("moving the feature groups into features/: %w", err)
+			}
+		} else {
+			// features/ is there, holding no Markdown: the groups go into it.
+			for _, g := range p.groups {
+				if err := os.Rename(filepath.Join(tmp, g), abs("features/"+g)); err != nil {
+					return fmt.Errorf("moving %s/ into features/: %w", g, err)
+				}
+			}
+			if err := os.Remove(tmp); err != nil {
+				return err
+			}
 		}
 	}
 	for _, rel := range sortedKeys(p.texts) {
@@ -448,16 +806,6 @@ func (p *plan) apply(out io.Writer) error {
 		}
 		if err := writeFile(abs(rel), text, f == ""); err != nil {
 			return err
-		}
-		if n, ok := p.stubs[rel]; ok {
-			fmt.Fprintf(out, "stubbed %s (%d scenario case(s))\n", rel, n)
-		}
-	}
-	for _, o := range olds {
-		for d := filepath.Dir(abs(o)); d != p.root && strings.HasPrefix(d, p.root); d = filepath.Dir(d) {
-			if os.Remove(d) != nil {
-				break // not empty
-			}
 		}
 	}
 	return nil
@@ -484,16 +832,12 @@ func writeFile(name, text string, isNew bool) error {
 	return f.Close()
 }
 
-// lifted counts the plan's trail lifts: the moves that change a file's
-// directory.
-func (p *plan) lifted() int {
-	n := 0
-	for o, to := range p.moves {
-		if path.Dir(o) != path.Dir(to) {
-			n++
-		}
+// count says n of what, as "1 link" or "3 links".
+func count(n int, what string) string {
+	if n == 1 {
+		return "1 " + what
 	}
-	return n
+	return fmt.Sprintf("%d %ss", n, what)
 }
 
 func relSlash(root, p string) string {

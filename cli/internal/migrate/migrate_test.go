@@ -3,7 +3,6 @@ package migrate
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -91,21 +90,21 @@ func TestMigrateChainsToItsTarget(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "features")
 	buildV01Bundle(t, root)
 	var out bytes.Buffer
-	if code := Run(root, "", &out); code != 0 {
+	if code := Run(Options{Root: root}, &out); code != 0 {
 		t.Fatalf("migrate exit %d\n%s", code, out.String())
 	}
 	for _, p := range []string{
-		"INDEX.md", "LOG.md", "wdise/INDEX.md",
-		"wdise/example.spec.md", "wdise/example.plan.md", "wdise/example.test.md",
+		"INDEX.md", "LOG.md", "features/INDEX.md", "features/wdise/INDEX.md",
+		"features/wdise/example.spec.md", "features/wdise/example.plan.md", "features/wdise/example.test.md",
 	} {
 		if _, err := os.Stat(filepath.Join(root, p)); err != nil {
 			t.Fatalf("missing %s after migrate", p)
 		}
 	}
-	// Nested trail must be gone.
-	for _, p := range []string{"wdise/example/SPEC.md", "wdise/example/PLAN.md", "wdise/example/TEST.md"} {
+	// The feature group moved into features/, and its nested trail is gone.
+	for _, p := range []string{"wdise", "features/wdise/example/SPEC.md", "features/wdise/example/PLAN.md", "features/wdise/example/TEST.md"} {
 		if _, err := os.Stat(filepath.Join(root, p)); err == nil {
-			t.Fatalf("nested trail %s must not remain after migrate", p)
+			t.Fatalf("%s must not remain after migrate", p)
 		}
 	}
 	if _, err := os.Stat(filepath.Join(root, "fdf-spec.md")); err == nil {
@@ -115,8 +114,8 @@ func TestMigrateChainsToItsTarget(t *testing.T) {
 	if !strings.Contains(string(idx), `fdf_version: "`+target+`"`) {
 		t.Fatalf("pin not upgraded to the target, %s:\n%s", target, idx)
 	}
-	// v0.4: migration scaffolds the spec copy and the four Context stubs.
-	for _, p := range []string{"SPEC.md", "STACK.md", "ARCHITECTURE.md", "SURFACES.md", "INFRA.md"} {
+	// Migration scaffolds the spec copy and the five Context stubs.
+	for _, p := range []string{"SPEC.md", "STACK.md", "ARCHITECTURE.md", "SURFACES.md", "INFRA.md", "DOMAIN.md"} {
 		if _, err := os.Stat(filepath.Join(root, p)); err != nil {
 			t.Fatalf("migrate did not scaffold %s", p)
 		}
@@ -140,8 +139,13 @@ func TestMigrateChainsToItsTarget(t *testing.T) {
 	if !strings.Contains(string(idx), "(/LOG.md)") {
 		t.Fatalf("root-absolute link not rewritten to /LOG.md:\n%s", idx)
 	}
-	if !strings.Contains(string(idx), "* [FDF format](/SPEC.md) - vendored spec.") {
-		t.Fatalf("a link to the vendored fdf-spec.md names the vendored SPEC.md:\n%s", idx)
+	// The group's listing moved to features/INDEX.md, and the root lists the
+	// Features register where it stood, then the other registers.
+	if !strings.Contains(string(idx), "* [FDF format](/SPEC.md) - vendored spec.\n* [Features](/features/INDEX.md) - what the software does.\n* [Changes](/changes/INDEX.md) - ") {
+		t.Fatalf("the root lists the vendored SPEC.md and the Features register where the group stood:\n%s", idx)
+	}
+	if features := string(mustRead(t, filepath.Join(root, "features", "INDEX.md"))); !strings.Contains(features, "* [Wdise](/features/wdise/INDEX.md) - group.\n") {
+		t.Fatalf("features/INDEX.md lists the group, as the root did:\n%s", features)
 	}
 	if !strings.Contains(string(idx), "(https://example.com/a/log.md)") {
 		t.Fatalf("external URL was modified:\n%s", idx)
@@ -152,14 +156,14 @@ func TestMigrateChainsToItsTarget(t *testing.T) {
 	if !strings.Contains(string(idx), "(../okf/index.md)") {
 		t.Fatalf("out-of-bundle relative link must stay untouched (not rewritten to INDEX.md):\n%s", idx)
 	}
-	feat, _ := os.ReadFile(filepath.Join(root, "wdise", "example.md"))
+	feat, _ := os.ReadFile(filepath.Join(root, "features", "wdise", "example.md"))
 	if !strings.Contains(string(feat), "example.spec.md") || !strings.Contains(string(feat), "example.plan.md") {
 		t.Fatalf("trail links not rewritten to stem form:\n%s", feat)
 	}
 	if strings.Contains(string(feat), "example/SPEC.md") || strings.Contains(string(feat), "example/spec.md") {
 		t.Fatalf("old nested trail links must not remain:\n%s", feat)
 	}
-	tst, _ := os.ReadFile(filepath.Join(root, "wdise", "example.test.md"))
+	tst, _ := os.ReadFile(filepath.Join(root, "features", "wdise", "example.test.md"))
 	if !strings.Contains(string(tst), "# Test Cases\n\n## It works\n") {
 		t.Fatalf("TEST stub missing the scenario's `## It works` case after lift:\n%s", tst)
 	}
@@ -176,7 +180,7 @@ func TestMigrateRefreshesStaleVendoredSpec(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	if code := Run(root, "", &out); code != 0 {
+	if code := Run(Options{Root: root}, &out); code != 0 {
 		t.Fatalf("migrate exit %d\n%s", code, out.String())
 	}
 	spec, _ := os.ReadFile(filepath.Join(root, "SPEC.md"))
@@ -188,11 +192,11 @@ func TestMigrateRefreshesStaleVendoredSpec(t *testing.T) {
 	}
 }
 
-func TestMigrateV03ToV04StemLayout(t *testing.T) {
+func TestMigrateV03To10(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "features")
 	buildV03Bundle(t, root)
 	var out bytes.Buffer
-	if code := Run(root, "", &out); code != 0 {
+	if code := Run(Options{Root: root}, &out); code != 0 {
 		t.Fatalf("migrate exit %d\n%s", code, out.String())
 	}
 
@@ -201,20 +205,20 @@ func TestMigrateV03ToV04StemLayout(t *testing.T) {
 		t.Fatalf("pin not upgraded to %s:\n%s", target, idx)
 	}
 
-	// Stem trail present; nested trail gone.
-	for _, p := range []string{"wdise/example.spec.md", "wdise/example.plan.md", "wdise/example.test.md", "wdise/example.log.md"} {
+	// Stem trail present, under features/; nested trail gone.
+	for _, p := range []string{"features/wdise/example.spec.md", "features/wdise/example.plan.md", "features/wdise/example.test.md", "features/wdise/example.log.md"} {
 		if _, err := os.Stat(filepath.Join(root, p)); err != nil {
 			t.Fatalf("missing stem trail %s after migrate", p)
 		}
 	}
-	for _, p := range []string{"wdise/example/SPEC.md", "wdise/example/PLAN.md", "wdise/example/TEST.md", "wdise/example/LOG.md"} {
+	for _, p := range []string{"features/wdise/example/SPEC.md", "features/wdise/example/PLAN.md", "features/wdise/example/TEST.md", "features/wdise/example/LOG.md"} {
 		if _, err := os.Stat(filepath.Join(root, p)); err == nil {
 			t.Fatalf("nested %s must not remain", p)
 		}
 	}
 
 	// Tasks stay in the feature directory.
-	if _, err := os.Stat(filepath.Join(root, "wdise", "example", "01-do-thing.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(root, "features", "wdise", "example", "01-do-thing.md")); err != nil {
 		t.Fatalf("task must remain under feature dir: %v", err)
 	}
 
@@ -224,7 +228,7 @@ func TestMigrateV03ToV04StemLayout(t *testing.T) {
 	}
 
 	// Feature trail links rewritten to stem form.
-	feat, _ := os.ReadFile(filepath.Join(root, "wdise", "example.md"))
+	feat, _ := os.ReadFile(filepath.Join(root, "features", "wdise", "example.md"))
 	for _, want := range []string{"example.spec.md", "example.plan.md", "example.test.md"} {
 		if !strings.Contains(string(feat), want) {
 			t.Fatalf("feature missing stem link %s:\n%s", want, feat)
@@ -235,7 +239,7 @@ func TestMigrateV03ToV04StemLayout(t *testing.T) {
 	}
 
 	// Plan task links rewritten for new plan location (sibling → slug/task).
-	plan, _ := os.ReadFile(filepath.Join(root, "wdise", "example.plan.md"))
+	plan, _ := os.ReadFile(filepath.Join(root, "features", "wdise", "example.plan.md"))
 	if !strings.Contains(string(plan), "example/01-do-thing.md") {
 		t.Fatalf("plan task link not adjusted for stem layout:\n%s", plan)
 	}
@@ -267,88 +271,102 @@ func TestMigrateV03ToV04StemLayout(t *testing.T) {
 	}
 }
 
-// The pre-0.4 steps repair links with the one link engine, as fdf mv does: a
-// link that leaves the bundle from a lifted trail file gains the ../ its
-// move needs, and a reference definition is repaired like an inline link.
-// migrate's own rewriters left both behind.
+// The pre-0.4 steps repair links with the one link engine, as fdf mv does,
+// in the same pass as the move into features/: a link from a file that moves
+// deeper gains the ../ its move needs, one whose file keeps its depth stays
+// as it was, and a reference definition is repaired like an inline link.
+// migrate's own rewriters left links that leave the bundle, and every
+// reference definition, behind.
 func TestMigrateRepairsLinksWithTheEngine(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "docs", "features")
 	buildV03Bundle(t, root)
 	write(t, root, "wdise/example/SPEC.md", "---\ntype: Spec\ntitle: Example spec\ndescription: Design.\ntimestamp: 2026-07-06T00:00:00Z\n---\n\n# Design\n\nThe handler is [refund.go](../../../../src/refund.go), beside [the map][okf].\n\n[okf]: ../../../okf/index.md\n")
 	feature := filepath.Join(root, "wdise", "example.md")
-	write(t, root, "wdise/example.md", string(mustRead(t, feature))+"\nSee [the plan][plan].\n\n[plan]: example/PLAN.md\n")
+	write(t, root, "wdise/example.md", string(mustRead(t, feature))+"\nIts code is [api.go](../../../src/api.go); see [the plan][plan].\n\n[plan]: example/PLAN.md\n")
 	var out bytes.Buffer
-	if code := Run(root, "", &out); code != 0 {
+	if code := Run(Options{Root: root}, &out); code != 0 {
 		t.Fatalf("migrate exit %d\n%s", code, out.String())
 	}
-	spec := string(mustRead(t, filepath.Join(root, "wdise", "example.spec.md")))
-	for _, want := range []string{"[refund.go](../../../src/refund.go)", "[okf]: ../../okf/index.md"} {
+	// The spec is lifted out of example/ and moved into features/: one
+	// level up, one down.
+	spec := string(mustRead(t, filepath.Join(root, "features", "wdise", "example.spec.md")))
+	for _, want := range []string{"[refund.go](../../../../src/refund.go)", "[okf]: ../../../okf/index.md"} {
 		if !strings.Contains(spec, want) {
 			t.Errorf("the lifted spec should hold %q:\n%s", want, spec)
 		}
 	}
-	if got := string(mustRead(t, feature)); !strings.Contains(got, "[plan]: example.plan.md") {
-		t.Errorf("a reference definition to a lifted file is repaired:\n%s", got)
+	got := string(mustRead(t, filepath.Join(root, "features", "wdise", "example.md")))
+	for _, want := range []string{"[api.go](../../../../src/api.go)", "[plan]: example.plan.md"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the feature should hold %q:\n%s", want, got)
+		}
 	}
 }
 
-func TestMigrateAlready04IsNoop(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "features")
-	// Minimal already-current draft-only bundle (no features → no F9 hard fail).
-	write(t, root, "INDEX.md", "---\nfdf_version: \""+target+"\"\n---\n\n# Bundle\n\n* [Log](/LOG.md) - log.\n")
-	write(t, root, "LOG.md", "# Bundle Update Log\n\n## 2026-07-06\n* Already current.\n")
+// A bundle already at 1.0 moves nothing, however its pin is quoted: migrate
+// restores only what is missing — its spec copy, the registers' indexes and
+// the Context stubs — and a second run changes no byte.
+func TestMigrateRepairsA10BundleInPlace(t *testing.T) {
+	for _, pin := range []string{`"1.0"`, `'1.0'`, `1.0`} {
+		root := t.TempDir()
+		write(t, root, "INDEX.md", "---\nfdf_version: "+pin+"\n---\n\n# Bundle\n\n* [Features](/features/INDEX.md) - features.\n")
+		write(t, root, "LOG.md", "# Bundle Update Log\n\n## 2026-09-25\n* **Initialization**: created.\n")
+		write(t, root, "features/INDEX.md", "# Features\n\n* [Onboarding](/features/onboarding.md) - feature.\n")
+		write(t, root, "features/onboarding.md", "---\ntype: Feature\nstatus: draft\ntitle: Onboarding\ndescription: d.\ntimestamp: 2026-09-25T00:00:00Z\n---\n\n# Feature\n\n```gherkin\nFeature: Onboarding\n  As a user\n  I want to sign up\n  So that I can start\n```\n\n```gherkin\nScenario: It works\n  Given a\n  When b\n  Then c\n```\n")
+		before := tree(t, root)
+		var out bytes.Buffer
+		if code := Run(Options{Root: root}, &out); code != 0 || !strings.Contains(out.String(), "nothing to migrate: the bundle already pins fdf_version 1.0") {
+			t.Fatalf("pin %s: exit %d\n%s", pin, code, out.String())
+		}
+		if !strings.Contains(out.String(), "restored: ARCHITECTURE.md, DOMAIN.md, INFRA.md, SPEC.md, STACK.md, SURFACES.md, bugs/INDEX.md, changes/INDEX.md, debts/INDEX.md, practices/INDEX.md\n") {
+			t.Errorf("pin %s: migrate restores what is missing, and says so:\n%s", pin, out.String())
+		}
+		after := tree(t, root)
+		for _, file := range strings.SplitAfter(before, "\n== ")[1:] {
+			if !strings.Contains(after, "== "+strings.TrimSuffix(file, "== ")) {
+				t.Errorf("pin %s: a file that was there changed:\n%s", pin, file)
+			}
+		}
+		out.Reset()
+		if code := Run(Options{Root: root}, &out); code != 0 || !strings.Contains(out.String(), "nothing to restore") {
+			t.Errorf("pin %s: a second run restores nothing: exit %d\n%s", pin, code, out.String())
+		}
+		if again := tree(t, root); again != after {
+			t.Errorf("pin %s: a second run changes no byte", pin)
+		}
+	}
+	// A spec copy that is not 1.0's own text is restored.
+	root := copyFixture(t, "valid-v10")
 	var out bytes.Buffer
-	if code := Run(root, "", &out); code != 0 {
-		t.Fatalf("migrate exit %d\n%s", code, out.String())
-	}
-	msg := out.String()
-	if !strings.Contains(msg, "already") {
-		t.Fatalf("expected already-at-current no-op message:\n%s", msg)
-	}
-	// Must not re-scaffold as if migrating (no "moved" trail messages).
-	if strings.Contains(msg, "moved ") {
-		t.Fatalf("already-current must not run layout transform:\n%s", msg)
-	}
-	idx, _ := os.ReadFile(filepath.Join(root, "INDEX.md"))
-	if !strings.Contains(string(idx), `fdf_version: "`+target+`"`) {
-		t.Fatalf("pin changed unexpectedly:\n%s", idx)
+	if code := Run(Options{Root: root}, &out); code != 0 || !strings.Contains(out.String(), "restored: SPEC.md\n") {
+		t.Errorf("valid-v10: exit %d\n%s", code, out.String())
 	}
 }
 
-// migrate upgrades a 0.x bundle to 0.7, and a bundle pinned to 1.0 is not
-// one: its steps would pin a conformant 1.0 bundle back to 0.7, and refuse
-// another with messages about v0.4. It is refused before anything but its
-// pin is read, or anything is written, whatever it holds, and however its
-// pin is quoted; so is a pin that is almost 1.0 but no version.
-func TestMigrateLeavesA10BundleAsItIs(t *testing.T) {
-	const at10 = "cannot migrate: the bundle pins fdf_version 1.0, and this binary upgrades a 0.x bundle to 0.7 — the bundle was left as it is."
+// A pin migrate does not know is refused before anything is written: a
+// version newer than this fdf knows, which needs a newer fdf; a 0.x version
+// FDF never had; and a pin that is not a MAJOR.MINOR version at all.
+func TestMigrateRefusesAPinItDoesNotKnow(t *testing.T) {
 	notAVersion := func(pin string) string {
 		return "cannot migrate: the bundle pins fdf_version " + pin + ", which is not a MAJOR.MINOR version such as " + scaffold.CurrentVersion() + " — correct the pin in INDEX.md; the bundle was left as it is."
 	}
-	type refusal struct{ root, says string }
-	var refusals []refusal
-	// A pin that is almost 1.0 is no 0.x version either: migrate used to
-	// take it for one, and pin the bundle back to 0.7.
 	for _, tc := range []struct{ pin, says string }{
-		{`"1.0"`, at10}, {`'1.0'`, at10}, {`1.0`, at10},
+		{`"1.1"`, "cannot migrate: the bundle pins fdf_version 1.1, newer than any spec this binary knows (1.0) — upgrade fdf; the bundle was left as it is."},
+		{`"2.0"`, "cannot migrate: the bundle pins fdf_version 2.0, newer than any spec this binary knows (1.0) — upgrade fdf; the bundle was left as it is."},
+		{`"0.8"`, "cannot migrate: the bundle pins fdf_version 0.8, which is no 0.x version this binary knows (0.1 to 0.7) — correct the pin in INDEX.md; the bundle was left as it is."},
 		{`"1.0.0"`, notAVersion("1.0.0")}, {`"v1.0"`, notAVersion("v1.0")},
 	} {
-		flat := t.TempDir()
-		write(t, flat, "INDEX.md", "---\nfdf_version: "+tc.pin+"\n---\n\n# Bundle\n\n* [Features](/features/INDEX.md) - features.\n")
-		write(t, flat, "LOG.md", "# Bundle Update Log\n\n## 2026-09-25\n* **Initialization**: created.\n")
-		write(t, flat, "features/INDEX.md", "# Features\n\n* [Onboarding](/features/onboarding.md) - feature.\n")
-		write(t, flat, "features/onboarding.md", "---\ntype: Feature\nstatus: draft\ntitle: Onboarding\ndescription: d.\ntimestamp: 2026-09-25T00:00:00Z\n---\n\n# Feature\n\n```gherkin\nFeature: Onboarding\n  As a user\n  I want to sign up\n  So that I can start\n```\n\n```gherkin\nScenario: It works\n  Given a\n  When b\n  Then c\n```\n")
-		refusals = append(refusals, refusal{flat, tc.says})
-	}
-	refusals = append(refusals, refusal{copyFixture(t, "valid-v10"), at10})
-	for _, r := range refusals {
-		before := tree(t, r.root)
+		root := t.TempDir()
+		write(t, root, "INDEX.md", "---\nfdf_version: "+tc.pin+"\n---\n\n# Bundle\n\n* [Venues](/venues/INDEX.md) - group.\n")
+		write(t, root, "LOG.md", "# Bundle Update Log\n\n## 2026-09-25\n* **Initialization**: created.\n")
+		write(t, root, "venues/INDEX.md", "# Venues\n")
+		before := tree(t, root)
 		var out bytes.Buffer
-		if code := Run(r.root, "", &out); code != 1 || !strings.Contains(out.String(), r.says) {
-			t.Errorf("a 1.0 bundle is refused: exit %d, want 1 saying %q:\n%s", code, r.says, out.String())
+		if code := Run(Options{Root: root}, &out); code != 1 || !strings.Contains(out.String(), tc.says) {
+			t.Errorf("pin %s is refused: exit %d, want 1 saying %q:\n%s", tc.pin, code, tc.says, out.String())
 		}
-		if after := tree(t, r.root); after != before {
-			t.Errorf("a refused migration changes nothing:\nbefore:\n%s\nafter:\n%s", before, after)
+		if after := tree(t, root); after != before {
+			t.Errorf("pin %s: a refused migration changes nothing", tc.pin)
 		}
 	}
 }
@@ -373,7 +391,7 @@ func TestMigrateKeepsTheFormOfWhatItRewrites(t *testing.T) {
 		t.Skip("symlinks unavailable:", err)
 	}
 	var out bytes.Buffer
-	if code := Run(root, "", &out); code != 0 {
+	if code := Run(Options{Root: root}, &out); code != 0 {
 		t.Fatalf("migrate exit %d\n%s", code, out.String())
 	}
 	idx := string(mustRead(t, filepath.Join(root, "INDEX.md")))
@@ -388,8 +406,11 @@ func TestMigrateKeepsTheFormOfWhatItRewrites(t *testing.T) {
 	if log := string(mustRead(t, filepath.Join(root, "LOG.md"))); strings.Index(log, "**Migrated**") > strings.Index(log, "## 2026-07-06") {
 		t.Errorf("the migration's entry goes above the older days:\n%q", log)
 	}
-	if fi, err := os.Lstat(filepath.Join(root, "wdise", "shared.md")); err != nil || fi.Mode()&os.ModeSymlink == 0 {
-		t.Errorf("the symlink stays in its group, as a symlink: %v", err)
+	if s := string(mustRead(t, filepath.Join(root, "features", "INDEX.md"))); strings.Contains(s, "\r") {
+		t.Errorf("features/INDEX.md, which migrate writes new, ends every line alike:\n%q", s)
+	}
+	if fi, err := os.Lstat(filepath.Join(root, "features", "wdise", "shared.md")); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("the symlink moves with its group, as a symlink: %v", err)
 	}
 	if got := string(mustRead(t, filepath.Join(dir, "shared.md"))); got != shared {
 		t.Errorf("migrate writes nothing through a symlink:\n%s", got)
@@ -411,7 +432,7 @@ func TestMigrateRefusesABundleThatIsASymlink(t *testing.T) {
 	}
 	before := tree(t, bundle)
 	var out bytes.Buffer
-	if code := Run(link, "", &out); code != 1 || !strings.Contains(out.String(), "  "+link+": a symbolic link to "+bundle+" — migrate the directory it names, with --root\n") {
+	if code := Run(Options{Root: link}, &out); code != 1 || !strings.Contains(out.String(), "  "+link+": a symbolic link to "+bundle+" — migrate the directory it names, with --root\n") {
 		t.Fatalf("a bundle that is a symlink is refused: exit %d\n%s", code, out.String())
 	}
 	if tree(t, bundle) != before {
@@ -435,7 +456,7 @@ func TestMigrateRefusesARootFileThatIsASymlink(t *testing.T) {
 		t.Skip("symlinks unavailable:", err)
 	}
 	var out bytes.Buffer
-	if code := Run(root, "", &out); code != 1 || !strings.Contains(out.String(), "  LOG.md: a symbolic link to ../shared/LOG.md, which migrate would write through — replace it with the file it names\n") {
+	if code := Run(Options{Root: root}, &out); code != 1 || !strings.Contains(out.String(), "  LOG.md: a symbolic link to ../shared/LOG.md, which migrate would write through — replace it with the file it names\n") {
 		t.Fatalf("a root LOG.md that is a symlink is refused: exit %d\n%s", code, out.String())
 	}
 	if got := string(mustRead(t, filepath.Join(dir, "shared", "LOG.md"))); got != log {
@@ -454,7 +475,7 @@ func TestMigrateNeverWritesOverAFileItDidNotRead(t *testing.T) {
 	}
 	p.texts["NOTES.md"] = "migrate's\n"
 	write(t, root, "NOTES.md", "mine\n")
-	if err := p.apply(io.Discard); err == nil || !os.IsExist(err) {
+	if err := p.apply(); err == nil || !os.IsExist(err) {
 		t.Errorf("a file the plan writes new that is there stops it: %v", err)
 	}
 	if got := string(mustRead(t, filepath.Join(root, "NOTES.md"))); got != "mine\n" {
@@ -492,7 +513,7 @@ func TestMigrateRefusesARootInsideABundle(t *testing.T) {
 		before := tree(t, tc.bundle)
 		var out bytes.Buffer
 		want := "error: " + root + " is inside the bundle at " + tc.bundle + ", not a bundle of its own — pass --root " + tc.bundle + ", or leave --root out\n"
-		if code := Run(root, "", &out); code != 1 || out.String() != want {
+		if code := Run(Options{Root: root}, &out); code != 1 || out.String() != want {
 			t.Errorf("fdf migrate --root %s: exit %d\n got: %q\nwant: %q", root, code, out.String(), want)
 		}
 		if after := tree(t, tc.bundle); after != before {
@@ -524,7 +545,7 @@ func TestMigrateRefusesARootWithNoBundle(t *testing.T) {
 	}
 	for _, r := range []string{root, filepath.Join(root, "missing")} {
 		var out bytes.Buffer
-		if code := Run(r, "", &out); code != 1 || !strings.Contains(out.String(), "no bundle at "+r+" (no INDEX.md)") {
+		if code := Run(Options{Root: r}, &out); code != 1 || !strings.Contains(out.String(), "no bundle at "+r+" (no INDEX.md)") {
 			t.Fatalf("%s: exit %d\n%s", r, code, out.String())
 		}
 	}
@@ -549,7 +570,7 @@ func TestMigrateAbortsWhenStemTrailExists(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	code := Run(root, "", &out)
+	code := Run(Options{Root: root}, &out)
 	if code == 0 {
 		t.Fatalf("expected non-zero exit when stem destination exists; output:\n%s", out.String())
 	}
@@ -612,7 +633,7 @@ func TestMigratePreflightsDraftFeatureLog(t *testing.T) {
 	write(t, root, "wdise/pending/LOG.md", "# Pending log\n\n## 2026-07-06\n* Sketched.\n")
 
 	var out bytes.Buffer
-	if code := Run(root, "", &out); code == 0 {
+	if code := Run(Options{Root: root}, &out); code == 0 {
 		t.Fatalf("expected pre-flight abort for draft feature log:\n%s", out.String())
 	}
 	if !strings.Contains(out.String(), "wdise/pending/LOG.md") || !strings.Contains(out.String(), "draft") {
@@ -627,7 +648,7 @@ func TestMigratePreflightsDottedFeatureSlug(t *testing.T) {
 	write(t, root, "wdise/api.v2.md", "---\ntype: Feature\ntitle: API v2\ndescription: Dotted slug.\nstatus: draft\ntimestamp: 2026-07-06T00:00:00Z\n---\n\n# Feature\n\n```gherkin\nFeature: API v2\n```\n\n```gherkin\nScenario: One\n  Given a\n  When b\n  Then c\n```\n")
 
 	var out bytes.Buffer
-	if code := Run(root, "", &out); code == 0 {
+	if code := Run(Options{Root: root}, &out); code == 0 {
 		t.Fatalf("expected pre-flight abort for dotted slug:\n%s", out.String())
 	}
 	if !strings.Contains(out.String(), "wdise/api.v2.md") {
@@ -642,7 +663,7 @@ func TestMigratePreflightsStrayFileInFeatureDir(t *testing.T) {
 	write(t, root, "wdise/example/INDEX.md", "# stray index\n\n* [x](/wdise/example.md)\n")
 
 	var out bytes.Buffer
-	if code := Run(root, "", &out); code == 0 {
+	if code := Run(Options{Root: root}, &out); code == 0 {
 		t.Fatalf("expected pre-flight abort for stray feature-dir file:\n%s", out.String())
 	}
 	if !strings.Contains(out.String(), "wdise/example/INDEX.md") {
@@ -651,16 +672,23 @@ func TestMigratePreflightsStrayFileInFeatureDir(t *testing.T) {
 	requireUntouched(t, root, `fdf_version: "0.3"`, "wdise/example/INDEX.md", "wdise/example/SPEC.md")
 }
 
+// A second run finds the bundle at 1.0, which it leaves as it is: the repair
+// path restores nothing a migration wrote, so running migrate twice in a row
+// cannot flip from success to failure.
 func TestMigrateIsIdempotent(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "features")
 	buildV03Bundle(t, root)
 	var out1 bytes.Buffer
-	if code := Run(root, "", &out1); code != 0 {
+	if code := Run(Options{Root: root}, &out1); code != 0 {
 		t.Fatalf("first migrate exit %d\n%s", code, out1.String())
 	}
+	migrated := tree(t, root)
 	var out2 bytes.Buffer
-	if code := Run(root, "", &out2); code != 0 {
+	if code := Run(Options{Root: root}, &out2); code != 0 {
 		t.Fatalf("second migrate must stay exit 0 (idempotent), got %d\n%s", code, out2.String())
+	}
+	if tree(t, root) != migrated {
+		t.Fatalf("a second migrate changes no byte:\n%s", out2.String())
 	}
 }
 
@@ -670,7 +698,7 @@ func TestMigrateReadsUnquotedPin(t *testing.T) {
 	write(t, root, "LOG.md", "# Bundle Update Log\n\n## 2026-07-06\n* Init.\n")
 
 	var out bytes.Buffer
-	if code := Run(root, "", &out); code != 0 {
+	if code := Run(Options{Root: root}, &out); code != 0 {
 		t.Fatalf("migrate exit %d\n%s", code, out.String())
 	}
 	if !strings.Contains(out.String(), "already pins fdf_version "+target) {
@@ -690,7 +718,7 @@ func TestNoOpMigrateNamesTheBinaryVersion(t *testing.T) {
 	defer func() { Version = "" }()
 
 	var out bytes.Buffer
-	if code := Run(root, "", &out); code != 0 {
+	if code := Run(Options{Root: root}, &out); code != 0 {
 		t.Fatalf("expected exit 0, got %d\n%s", code, out.String())
 	}
 	msg := out.String()
@@ -709,21 +737,26 @@ func TestNoOpMigrateNamesTheBinaryVersion(t *testing.T) {
 }
 
 // A migration's only evidence used to be a scroll of per-file lines. The
-// summary states the version transition and how much moved, so "it did
-// nothing" is distinguishable from "it did a lot".
+// plan states the version transition and how much each step moves, so "it
+// did nothing" is distinguishable from "it did a lot".
 func TestMigrateSummaryReportsTransitionAndCount(t *testing.T) {
 	root := t.TempDir()
 	buildV03Bundle(t, root)
 	var out bytes.Buffer
-	if code := Run(root, "", &out); code != 0 {
+	if code := Run(Options{Root: root}, &out); code != 0 {
 		t.Fatalf("expected exit 0, got %d\n%s", code, out.String())
 	}
-	msg := out.String()
-	if !strings.Contains(msg, "fdf_version 0.3 -> "+target) {
-		t.Errorf("summary should state the version transition:\n%s", msg)
-	}
-	if !strings.Contains(msg, "trail file(s) lifted to stem-qualified siblings") {
-		t.Errorf("summary should count lifted trail files:\n%s", msg)
+	for _, want := range []string{
+		"plan: fdf_version 0.3 → 1.0\n",
+		"  layout     4 trail files lifted (0.3)\n",
+		"  features   wdise/ → features/   (1 feature, 7 files)\n",
+		"  move    wdise/ → features/wdise/  (7 files)\n",
+		"  move    wdise/example/SPEC.md → features/wdise/example.spec.md\n",
+		"\ndone: migrated the bundle at " + root + " to fdf_version 1.0; logged in LOG.md.\n",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output should say %q:\n%s", want, out.String())
+		}
 	}
 }
 
@@ -746,27 +779,26 @@ func buildV06Bundle(t *testing.T, root string) {
 	write(t, root, "changes/INDEX.md", "# Changes\n\n* [x](/changes/INDEX.md) - changes.\n")
 }
 
-func TestMigrateV06ToV07(t *testing.T) {
+func TestMigrateV06To10(t *testing.T) {
 	root := t.TempDir()
 	buildV06Bundle(t, root)
 	var out bytes.Buffer
-	if code := Run(root, "", &out); code != 0 {
+	if code := Run(Options{Root: root}, &out); code != 0 {
 		t.Fatalf("migrate exit %d\n%s", code, out.String())
 	}
 	idx, _ := os.ReadFile(filepath.Join(root, "INDEX.md"))
-	if !strings.Contains(string(idx), `fdf_version: "0.7"`) {
+	if !strings.Contains(string(idx), `fdf_version: "1.0"`) {
 		t.Fatalf("pin not upgraded:\n%s", idx)
 	}
 	if _, err := os.Stat(filepath.Join(root, "bugs", "INDEX.md")); err != nil {
 		t.Fatalf("bugs/INDEX.md not scaffolded: %v", err)
 	}
 	spec, _ := os.ReadFile(filepath.Join(root, "SPEC.md"))
-	if !strings.Contains(string(spec), "Feature Document Format (FDF) — v0.7") {
-		t.Fatal("SPEC.md not re-vendored to v0.7")
+	if !strings.Contains(string(spec), "Feature Document Format (FDF) — v1.0") {
+		t.Fatal("SPEC.md not re-vendored to v1.0")
 	}
 	for _, want := range []string{
-		"fdf_version 0.6 -> 0.7",
-		"0 trail file(s) lifted",
+		"plan: fdf_version 0.6 → 1.0",
 		"the domain language now reaches every document and name — 1 banned word(s) in 1 file(s).",
 		"of the 1 debt(s) on the register",
 		"`fdf mv debts/<id> bugs/<id>`",
@@ -775,29 +807,43 @@ func TestMigrateV06ToV07(t *testing.T) {
 			t.Errorf("output missing %q\n%s", want, out.String())
 		}
 	}
-	// Nothing moved: the feature and its spec are where they were.
-	if _, err := os.Stat(filepath.Join(root, "venues", "hours.spec.md")); err != nil {
-		t.Fatal("a v0.6 → v0.7 migration must not move documents")
+	// The feature group moved into features/; the debt stayed in its register.
+	for _, p := range []string{"features/venues/hours.md", "features/venues/hours.spec.md", "debts/backend/slow-hours.md"} {
+		if _, err := os.Stat(filepath.Join(root, p)); err != nil {
+			t.Errorf("%s: %v", p, err)
+		}
 	}
 }
 
-func TestMigrateRefusesBugsFeatureGroup(t *testing.T) {
+// Under a 0.6 pin bugs/ is a feature group, and 0.7's migrate refused a
+// bundle that had one. It now moves into features/ with the other groups,
+// and bugs/ becomes the bug register; its listing moves too, and every
+// mention of its features' IDs follows.
+func TestMigrateMovesA06BugsGroupIntoFeatures(t *testing.T) {
 	root := t.TempDir()
 	buildV06Bundle(t, root)
+	write(t, root, "INDEX.md", "---\nfdf_version: \"0.6\"\n---\n\n# Bundle\n\n* [Venues](/venues/INDEX.md) - group.\n* [Bugs](/bugs/INDEX.md) - the tracker.\n")
 	write(t, root, "bugs/INDEX.md", "# Bugs\n\n* [Tracker](/bugs/tracker.md) - a feature group named bugs.\n")
 	write(t, root, "bugs/tracker.md", "---\ntype: Feature\nstatus: draft\ntitle: Tracker\ndescription: d.\ntimestamp: 2026-09-16T00:00:00Z\n---\n\n# Feature\n\n```gherkin\nFeature: Tracker\n  As a user\n  I want it\n  So that it helps\n```\n\n# Scenarios\n\n```gherkin\nScenario: It works\n  Given it\n  When it runs\n  Then it works\n```\n")
+	write(t, root, "venues/hours.spec.md", string(mustRead(t, filepath.Join(root, "venues", "hours.spec.md")))+"\nA closed Venue shows on `bugs/tracker`.\n")
 	var out bytes.Buffer
-	if code := Run(root, "", &out); code != 1 {
-		t.Fatalf("migrate exit %d, want 1\n%s", code, out.String())
+	if code := Run(Options{Root: root}, &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
 	}
-	if !strings.Contains(out.String(), "bugs/ is a feature group (bugs/tracker.md)") ||
-		!strings.Contains(out.String(), "rename the group first (its directory, its listing in INDEX.md and the links to it)") ||
-		strings.Contains(out.String(), "fdf mv") {
-		t.Fatalf("refusal does not name the conflict and its fix:\n%s", out.String())
+	for rel, want := range map[string]string{
+		"features/bugs/tracker.md":      "title: Tracker",
+		"features/bugs/INDEX.md":        "* [Tracker](/features/bugs/tracker.md) - a feature group named bugs.",
+		"features/INDEX.md":             "* [Venues](/features/venues/INDEX.md) - group.\n* [Bugs](/features/bugs/INDEX.md) - the tracker.\n",
+		"bugs/INDEX.md":                 "Known defects",
+		"INDEX.md":                      "* [Features](/features/INDEX.md) - what the software does.\n",
+		"features/venues/hours.spec.md": "A closed Venue shows on `features/bugs/tracker`.",
+	} {
+		if got := string(mustRead(t, filepath.Join(root, rel))); !strings.Contains(got, want) {
+			t.Errorf("%s should hold %q:\n%s", rel, want, got)
+		}
 	}
-	idx, _ := os.ReadFile(filepath.Join(root, "INDEX.md"))
-	if !strings.Contains(string(idx), `fdf_version: "0.6"`) {
-		t.Fatal("a refused migration must leave the bundle untouched")
+	if idx := string(mustRead(t, filepath.Join(root, "INDEX.md"))); !strings.Contains(idx, "* [Bugs](/bugs/INDEX.md) - known defects not repaired yet.") || strings.Contains(idx, "the tracker") {
+		t.Errorf("the root lists the bug register, and no longer the group:\n%s", idx)
 	}
 }
 
@@ -810,7 +856,7 @@ func TestMigrateNamesOnlyTheUnfilledStubs(t *testing.T) {
 	// No description: validation warns, naming the file.
 	write(t, root, "debts/stub-gateway.md", "---\ntype: Debt\nstatus: open\ntitle: Stub gateway\nresource: []\ntimestamp: 2026-09-16T00:00:00Z\n---\n\n# Gap\n\nThe gateway is a stand-in.\n")
 	var out bytes.Buffer
-	if code := Run(root, "", &out); code != 0 {
+	if code := Run(Options{Root: root}, &out); code != 0 {
 		t.Fatalf("migrate exit %d\n%s", code, out.String())
 	}
 	if !strings.Contains(out.String(), "debts/stub-gateway.md: missing recommended `description`") {
@@ -821,12 +867,15 @@ func TestMigrateNamesOnlyTheUnfilledStubs(t *testing.T) {
 	}
 
 	// From v0.5, DOMAIN.md arrives as a stub, and the bundle has a feature.
+	// A 0.5 bundle has no practices/ or debts/ register.
 	root = t.TempDir()
 	buildV06Bundle(t, root)
 	os.Remove(filepath.Join(root, "DOMAIN.md"))
+	os.RemoveAll(filepath.Join(root, "debts"))
+	os.RemoveAll(filepath.Join(root, "practices"))
 	write(t, root, "INDEX.md", strings.Replace(string(mustRead(t, filepath.Join(root, "INDEX.md"))), `"0.6"`, `"0.5"`, 1))
 	out.Reset()
-	if code := Run(root, "", &out); code != 0 {
+	if code := Run(Options{Root: root}, &out); code != 0 {
 		t.Fatalf("migrate exit %d\n%s", code, out.String())
 	}
 	for _, want := range []string{
@@ -848,64 +897,26 @@ func mustRead(t *testing.T, p string) []byte {
 	return raw
 }
 
-// The refusal names its way out, and the way out works: once the v0.6
-// feature group is renamed — bugs/ is not a register under that pin — the
-// migration goes through.
-func TestMigrateAfterMovingTheBugsFeatureGroup(t *testing.T) {
-	root := t.TempDir()
-	buildV06Bundle(t, root)
-	write(t, root, "INDEX.md", "---\nfdf_version: \"0.6\"\n---\n\n# Bundle\n\n* [Venues](/venues/INDEX.md) - group.\n* [Bugs](/bugs/INDEX.md) - the tracker.\n")
-	write(t, root, "bugs/INDEX.md", "# Bugs\n\n* [Tracker](/bugs/tracker.md) - a feature group named bugs.\n")
-	write(t, root, "bugs/tracker.md", "---\ntype: Feature\nstatus: draft\ntitle: Tracker\ndescription: d.\ntimestamp: 2026-09-16T00:00:00Z\n---\n\n# Feature\n\n```gherkin\nFeature: Tracker\n  As a user\n  I want it\n  So that it helps\n```\n\n# Scenarios\n\n```gherkin\nScenario: It works\n  Given it\n  When it runs\n  Then it works\n```\n")
-	var out bytes.Buffer
-	if code := Run(root, "", &out); code != 1 || !strings.Contains(out.String(), "rename the group first") {
-		t.Fatalf("migrate should refuse and name the rename: exit %d\n%s", code, out.String())
-	}
-	if err := os.Rename(filepath.Join(root, "bugs"), filepath.Join(root, "issues")); err != nil {
-		t.Fatal(err)
-	}
-	for _, rel := range []string{"INDEX.md", "issues/INDEX.md"} {
-		write(t, root, rel, strings.ReplaceAll(string(mustRead(t, filepath.Join(root, rel))), "/bugs/", "/issues/"))
-	}
-	out.Reset()
-	if code := Run(root, "", &out); code != 0 {
-		t.Fatalf("migrate after the move: exit %d\n%s", code, out.String())
-	}
-	if idx, _ := os.ReadFile(filepath.Join(root, "INDEX.md")); !strings.Contains(string(idx), `fdf_version: "0.7"`) || !strings.Contains(string(idx), "(/issues/INDEX.md)") {
-		t.Fatalf("migrated, with the root index following the moved group:\n%s", idx)
-	}
-	if raw, err := os.ReadFile(filepath.Join(root, "bugs", "INDEX.md")); err != nil || !strings.Contains(string(raw), "Known defects") {
-		t.Fatalf("bugs/ is now the bug register: %v\n%s", err, raw)
-	}
-	if _, err := os.Stat(filepath.Join(root, "issues", "tracker.md")); err != nil {
-		t.Fatalf("the feature moved with its group: %v", err)
-	}
-}
-
-// v0.7 matches a test case exactly: a `## <scenario name>` heading under
-// `# Test Cases`. A 0.6 bundle that lists its cases as bullets migrates, but
-// its validation then fails F8, and migrate says what to rewrite by hand —
-// and which features still owe a surface decision.
 // Older tools wrote a status tag after each index listing and nothing kept it
 // current; migration removes it, leaves other bold text and code alone, and
 // logs the migration in the bundle-root log.
-func TestMigrateV06ToV07DropsIndexStatusTags(t *testing.T) {
+func TestMigrateDropsIndexStatusTags(t *testing.T) {
 	root := t.TempDir()
 	buildV06Bundle(t, root)
 	write(t, root, "venues/INDEX.md", "# Venues\n\n* [Hours](/venues/hours.md) - opening hours. (**draft**)\n* [Menu](/venues/hours.md) - the menu. (**important**)\n\n```\n* [Sample](/venues/hours.md) - a sample. (**done**)\n```\n")
 	write(t, root, "changes/INDEX.md", "# Changes\n\n* [x](/changes/INDEX.md) - changes. (**specified**)\n")
 	var out bytes.Buffer
-	if code := Run(root, "", &out); code != 0 {
+	if code := Run(Options{Root: root}, &out); code != 0 {
 		t.Fatalf("migrate exit %d\n%s", code, out.String())
 	}
-	venues, _ := os.ReadFile(filepath.Join(root, "venues", "INDEX.md"))
+	venues, _ := os.ReadFile(filepath.Join(root, "features", "venues", "INDEX.md"))
 	for _, want := range []string{
-		"* [Hours](/venues/hours.md) - opening hours.\n",
-		"* [Menu](/venues/hours.md) - the menu. (**important**)\n",
+		"* [Hours](/features/venues/hours.md) - opening hours.\n",
+		"* [Menu](/features/venues/hours.md) - the menu. (**important**)\n",
 		"* [Sample](/venues/hours.md) - a sample. (**done**)\n",
 	} {
 		if !strings.Contains(string(venues), want) {
-			t.Errorf("venues/INDEX.md should contain %q:\n%s", want, venues)
+			t.Errorf("features/venues/INDEX.md should contain %q:\n%s", want, venues)
 		}
 	}
 	changes, _ := os.ReadFile(filepath.Join(root, "changes", "INDEX.md"))
@@ -913,36 +924,297 @@ func TestMigrateV06ToV07DropsIndexStatusTags(t *testing.T) {
 		t.Errorf("changes/INDEX.md keeps its tag:\n%s", changes)
 	}
 	log, _ := os.ReadFile(filepath.Join(root, "LOG.md"))
-	if !strings.Contains(string(log), "* **Migrated**: fdf_version 0.6 → 0.7 with `fdf migrate`. Removed the status tag from 2 index listing(s)") {
-		t.Errorf("LOG.md should record the migration:\n%s", log)
+	for _, want := range []string{"* **Migrated**: fdf_version 0.6 → 1.0 with `fdf migrate`: moved `venues/` into `features/` (1 feature)", "Removed the status tag from 2 index listing(s)"} {
+		if !strings.Contains(string(log), want) {
+			t.Errorf("LOG.md should record the migration, %q:\n%s", want, log)
+		}
 	}
-	if !strings.Contains(out.String(), "2 status tag(s) removed from index listings") {
+	if !strings.Contains(out.String(), "; 2 status tags removed\n") {
 		t.Errorf("output should count the tags:\n%s", out.String())
 	}
 }
 
-func TestMigrateV06ToV07ReportsBulletCasesAndSurfaces(t *testing.T) {
+// v0.7 matches a test case exactly: a `## <scenario name>` heading under
+// `# Test Cases`. A 0.6 bundle that lists its cases as bullets migrates, but
+// its validation then fails F8, and migrate says what to rewrite by hand —
+// and which features still owe a surface decision.
+func TestMigrateV06To10ReportsBulletCasesAndSurfaces(t *testing.T) {
 	root := t.TempDir()
 	buildV06Bundle(t, root)
 	write(t, root, "venues/hours.md", "---\ntype: Feature\nstatus: planned\ntitle: Hours\ndescription: Opening hours.\ntimestamp: 2026-09-16T00:00:00Z\n---\n\n# Feature\n\n```gherkin\nFeature: Hours\n  As a Venue owner\n  I want hours\n  So that people know\n```\n\n# Scenarios\n\n```gherkin\nScenario: Owner sets hours\n  Given a Venue\n  When the owner sets hours\n  Then they show\n```\n")
 	write(t, root, "venues/hours.plan.md", "---\ntype: Plan\ntitle: Plan\ndescription: d.\ntimestamp: 2026-09-16T00:00:00Z\n---\n\n# Tasks\n")
 	write(t, root, "venues/hours.test.md", "---\ntype: Test\ntitle: Tests\ndescription: d.\ntimestamp: 2026-09-16 09:30\n---\n\n# Test Cases\n\n- Scenario: Owner sets hours — `go test ./... -run TestHours`\n")
 	var out bytes.Buffer
-	if code := Run(root, "", &out); code != 1 {
+	if code := Run(Options{Root: root}, &out); code != 1 {
 		t.Fatalf("a bundle whose cases are bullets fails F8 once migrated; want exit 1, got %d\n%s", code, out.String())
 	}
 	idx, _ := os.ReadFile(filepath.Join(root, "INDEX.md"))
-	if !strings.Contains(string(idx), `fdf_version: "0.7"`) {
+	if !strings.Contains(string(idx), `fdf_version: "1.0"`) {
 		t.Fatalf("the migration itself still happens:\n%s", idx)
 	}
 	for _, want := range []string{
-		`venues/hours.test.md: scenario "Owner sets hours" has no test case`,
+		`features/venues/hours.test.md: scenario "Owner sets hours" has no test case`,
 		"1 scenario(s) have none (F8). Rewrite those test documents' cases as headings, by hand",
 		"1 feature(s) have no slug.surface.md",
 		"1 timestamp(s) are neither a date nor an RFC 3339 time with Z or an offset (F1)",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output missing %q\n%s", want, out.String())
+		}
+	}
+}
+
+// buildV07Bundle copies valid-bugs-v07, a conformant 0.7 bundle with a
+// feature group venues/, a Change, Fixes and bugs that name its feature,
+// and adds what the move into features/ has to carry or leave alone.
+func buildV07Bundle(t *testing.T) string {
+	root := copyFixture(t, "valid-bugs-v07")
+	feature := filepath.Join(root, "venues", "opening-hours.md")
+	write(t, root, "venues/opening-hours.md", string(mustRead(t, feature))+
+		"\nIts bugs are [on the register](../bugs/hours-off-by-one.md), a fix is [in changes](/changes/old-fix.md),\n"+
+		"its code is [beside the bundle](../../src/hours.go), and its spec is [here][spec].\n"+
+		"Read its history with `fdf history venues/opening-hours`.\n\n[spec]: opening-hours.spec.md\n\n"+
+		"Its handler is venues/opening-hours/handler.go, served as `GET /venues/opening-hours`.\n\n"+
+		"```sh\nfdf new venues/opening-hours\n```\n")
+	task := filepath.Join(root, "venues", "opening-hours", "01-build.md")
+	write(t, root, "venues/opening-hours/01-build.md", strings.Replace(string(mustRead(t, task)), "status: done\n", "status: done\nresource: [venues/opening-hours/api.go]\n", 1))
+	write(t, root, "LOG.md", "# Bundle Update Log\n\n## 2026-09-23\n* **Initialization**: created venues/opening-hours; see [it](venues/opening-hours.md).\n")
+	write(t, root, "venues/diagram.png", "PNG")
+	write(t, root, "assets/logo.png", "PNG")
+	write(t, root, ".obsidian/notes.md", "venues/opening-hours\n")
+	write(t, root, "menus/daily.md", "---\ntype: Feature\nstatus: draft\ntitle: Daily menu\ndescription: d.\ntimestamp: 2026-09-23T00:00:00Z\n---\n\n# Feature\n\n```gherkin\nFeature: Daily menu\n  As a Venue owner\n  I want a daily menu\n  So that people know\n```\n\n```gherkin\nScenario: Owner posts the menu\n  Given a Venue\n  When the owner posts it\n  Then it shows\n```\n")
+	return root
+}
+
+// A 0.7 bundle's feature groups move into features/ with everything in them,
+// and every reference follows. Each mention of a feature's ID gains
+// features/, in frozen documents too, while logs keep their words and a
+// resource path stays a path; the engine repairs every link; and the root
+// lists the Features register where the group's listing stood. A group the
+// root never listed gets a listing, which links its directory when it has no
+// index. A directory that holds no Markdown, and a hidden one, stay where
+// they are.
+func TestMigrateMovesFeatureGroupsIntoFeatures(t *testing.T) {
+	root := buildV07Bundle(t)
+	var out bytes.Buffer
+	if code := Run(Options{Root: root}, &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
+	}
+	for _, p := range []string{
+		"features/venues/INDEX.md", "features/venues/opening-hours.md", "features/venues/opening-hours.spec.md",
+		"features/venues/opening-hours.plan.md", "features/venues/opening-hours.test.md",
+		"features/venues/opening-hours/01-build.md", "features/venues/diagram.png",
+		"features/menus/daily.md", "assets/logo.png", ".obsidian/notes.md",
+	} {
+		if _, err := os.Stat(filepath.Join(root, p)); err != nil {
+			t.Errorf("%s: %v", p, err)
+		}
+	}
+	for _, p := range []string{"venues", "menus"} {
+		if _, err := os.Stat(filepath.Join(root, p)); err == nil {
+			t.Errorf("%s/ moved into features/, and is not left behind", p)
+		}
+	}
+	for rel, wants := range map[string][]string{
+		"features/venues/opening-hours.md": {
+			"[on the register](../../bugs/hours-off-by-one.md)", "[in changes](/changes/old-fix.md)",
+			"[beside the bundle](../../../src/hours.go)", "[spec]: opening-hours.spec.md",
+			"`fdf history features/venues/opening-hours`",
+			// A path that goes on past an ID, a bare /<id> and a code
+			// block keep their words.
+			"Its handler is venues/opening-hours/handler.go, served as `GET /venues/opening-hours`.",
+			"```sh\nfdf new venues/opening-hours\n```",
+		},
+		"changes/closed-hours-fix.md":               {"affects: features/venues/opening-hours\n", "## features/venues/opening-hours\n"},
+		"bugs/hours-off-by-one.md":                  {"affects: features/venues/opening-hours\n", "## features/venues/opening-hours\n"},
+		"features/venues/opening-hours/01-build.md": {"resource: [venues/opening-hours/api.go]\n"},
+		"LOG.md":             {"* **Initialization**: created venues/opening-hours; see [it](features/venues/opening-hours.md).\n"},
+		".obsidian/notes.md": {"venues/opening-hours\n"},
+		"INDEX.md":           {"# Example — Feature Bundle\n\n* [Features](/features/INDEX.md) - what the software does.\n* [Changes](/changes/INDEX.md) - "},
+		"features/INDEX.md":  {"* [Venues](/features/venues/INDEX.md) - venues.\n* [Menus](/features/menus/) - features in menus.\n"},
+	} {
+		got := string(mustRead(t, filepath.Join(root, rel)))
+		for _, want := range wants {
+			if !strings.Contains(got, want) {
+				t.Errorf("%s should hold %q:\n%s", rel, want, got)
+			}
+		}
+	}
+	for _, want := range []string{
+		"  features   menus/, venues/ → features/   (2 features, 8 files)\n",
+		"  ids        9 mentions in 5 documents; logs keep their words (1)\n",
+		"  indexes    features/INDEX.md: 1 listing moved from INDEX.md, 1 listing written for groups INDEX.md did not list\n",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("the plan should say %q:\n%s", want, out.String())
+		}
+	}
+}
+
+// Every old pin goes to 1.0 in one run, and the bundle that comes out is
+// conformant: migrate's own validation, which reads an unfilled Context
+// stub as a warning, passes on a valid bundle of each 0.x version.
+func TestMigrateEveryOldPinTo10(t *testing.T) {
+	v01 := t.TempDir()
+	buildV01Bundle(t, v01)
+	for pin, root := range map[string]string{
+		"0.1": v01,
+		"0.2": copyFixture(t, "valid-minimal"),
+		"0.3": copyFixture(t, "context-docs-no-features"),
+		"0.4": copyFixture(t, "valid-minimal-v04"),
+		"0.5": copyFixture(t, "valid-retired-v05"),
+		"0.6": copyFixture(t, "valid-domain-v06"),
+		"0.7": copyFixture(t, "valid-bugs-v07"),
+	} {
+		var out bytes.Buffer
+		if code := Run(Options{Root: root}, &out); code != 0 || !strings.Contains(out.String(), "plan: fdf_version "+pin+" → 1.0\n") {
+			t.Errorf("%s: exit %d\n%s", pin, code, out.String())
+		}
+		if got := readPin(root); got != target {
+			t.Errorf("%s: pins %q after migrate", pin, got)
+		}
+	}
+}
+
+// A dry run prints the whole plan, as the migration itself prints it, and
+// changes no byte: on a 0.1 bundle, which every step changes, and on a 0.7
+// one.
+func TestMigrateDryRunChangesNothing(t *testing.T) {
+	v01 := t.TempDir()
+	buildV01Bundle(t, v01)
+	for _, root := range []string{v01, buildV07Bundle(t)} {
+		before := tree(t, root)
+		var dry bytes.Buffer
+		if code := Run(Options{Root: root, DryRun: true}, &dry); code != 0 || !strings.Contains(dry.String(), " (dry run: nothing changed)\n") {
+			t.Fatalf("dry run: exit %d\n%s", code, dry.String())
+		}
+		if after := tree(t, root); after != before {
+			t.Fatalf("a dry run changes no byte:\n%s", dry.String())
+		}
+		var real bytes.Buffer
+		if code := Run(Options{Root: root}, &real); code != 0 {
+			t.Fatalf("migrate exit %d\n%s", code, real.String())
+		}
+		if plan := strings.Replace(dry.String(), " (dry run: nothing changed)", "", 1); !strings.HasPrefix(real.String(), plan) {
+			t.Errorf("the migration prints the plan the dry run printed:\ndry run:\n%s\nmigration:\n%s", dry.String(), real.String())
+		}
+	}
+}
+
+// A 0.x feature group may be called features; it moves into the register of
+// that name, and its features' IDs gain features/ like any other.
+func TestMigrateMovesAGroupNamedFeatures(t *testing.T) {
+	root := buildV07Bundle(t)
+	if err := os.Rename(filepath.Join(root, "menus"), filepath.Join(root, "features")); err != nil {
+		t.Fatal(err)
+	}
+	write(t, root, "features/INDEX.md", "# Features\n\n* [Daily menu](/features/daily.md) - the daily menu.\n")
+	write(t, root, "changes/old-fix.md", string(mustRead(t, filepath.Join(root, "changes", "old-fix.md")))+"\nSee `features/daily`.\n")
+	var out bytes.Buffer
+	if code := Run(Options{Root: root}, &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
+	}
+	for rel, want := range map[string]string{
+		"features/features/daily.md": "title: Daily menu",
+		"features/features/INDEX.md": "* [Daily menu](/features/features/daily.md) - the daily menu.",
+		"features/INDEX.md":          "* [Features](/features/features/INDEX.md) - features in features.",
+		"changes/old-fix.md":         "See `features/features/daily`.",
+	} {
+		if got := string(mustRead(t, filepath.Join(root, rel))); !strings.Contains(got, want) {
+			t.Errorf("%s should hold %q:\n%s", rel, want, got)
+		}
+	}
+}
+
+// A scenario's name is matched, word for word, by its test case, by the
+// Fixes that declare it and by the bugs that cite it. When the name holds a
+// feature's ID, every copy gains features/, the Gherkin's Scenario line with
+// them, and the bundle still validates. So does a test stub migrate writes.
+func TestMigrateRewritesAnIDInAScenarioNameEverywhere(t *testing.T) {
+	root := copyFixture(t, "valid-bugs-v07")
+	filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+		if err == nil && strings.HasSuffix(p, ".md") {
+			raw := string(mustRead(t, p))
+			if s := strings.ReplaceAll(raw, "Venue owner sets opening hours", "Venue owner sets venues/opening-hours"); s != raw {
+				write(t, root, relSlash(root, p), s)
+			}
+		}
+		return nil
+	})
+	var out bytes.Buffer
+	if code := Run(Options{Root: root}, &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
+	}
+	for rel, want := range map[string]string{
+		"features/venues/opening-hours.md":      "Scenario: Venue owner sets features/venues/opening-hours\n",
+		"features/venues/opening-hours.test.md": "## Venue owner sets features/venues/opening-hours\n",
+		"changes/closed-hours-fix.md":           "- Venue owner sets features/venues/opening-hours — ",
+		"bugs/hours-off-by-one.md":              "- Venue owner sets features/venues/opening-hours — ",
+	} {
+		if got := string(mustRead(t, filepath.Join(root, rel))); !strings.Contains(got, want) {
+			t.Errorf("%s should hold %q:\n%s", rel, want, got)
+		}
+	}
+
+	root = filepath.Join(t.TempDir(), "handbook")
+	buildV03Bundle(t, root)
+	if err := os.Remove(filepath.Join(root, "wdise", "example", "TEST.md")); err != nil {
+		t.Fatal(err)
+	}
+	feature := string(mustRead(t, filepath.Join(root, "wdise", "example.md")))
+	write(t, root, "wdise/example.md", strings.Replace(feature, "Scenario: It works", "Scenario: It works for wdise/example", 1))
+	out.Reset()
+	if code := Run(Options{Root: root}, &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
+	}
+	if s := string(mustRead(t, filepath.Join(root, "features", "wdise", "example.test.md"))); !strings.Contains(s, "## It works for features/wdise/example\n") {
+		t.Errorf("the test stub names the scenario as its Gherkin does:\n%s", s)
+	}
+}
+
+// A releases/ with no index gets none, since fdf release writes it with the
+// first release it cuts, and the root lists the register only once it has
+// one: never a link to an index that is not there.
+func TestMigrateListsReleasesOnlyWithTheirIndex(t *testing.T) {
+	root := copyFixture(t, "release-shipped-retired-v07")
+	if err := os.Remove(filepath.Join(root, "releases", "INDEX.md")); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if code := Run(Options{Root: root}, &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
+	}
+	if idx := string(mustRead(t, filepath.Join(root, "INDEX.md"))); strings.Contains(idx, "/releases/") {
+		t.Errorf("the root lists no releases/ with no index:\n%s", idx)
+	}
+	if strings.Contains(out.String(), "broken cross-link") {
+		t.Errorf("no link is broken:\n%s", out.String())
+	}
+}
+
+// Which root directories are registers depends on the pin: changes/ from
+// 0.5, practices/ and debts/ from 0.6, bugs/ from 0.7. Under an older pin
+// each is a feature group, and moves into features/.
+func TestMigrateReadsTheRegistersOfItsPin(t *testing.T) {
+	feature := func(title string) string {
+		return "---\ntype: Feature\nstatus: draft\ntitle: " + title + "\ndescription: d.\ntimestamp: 2026-09-16T00:00:00Z\n---\n\n# Feature\n\n```gherkin\nFeature: " + title + "\n  As a user\n  I want it\n  So that it helps\n```\n\n```gherkin\nScenario: It works\n  Given it\n  When it runs\n  Then it works\n```\n"
+	}
+	for _, tc := range []struct {
+		pin, group string
+	}{{"0.4", "changes"}, {"0.5", "practices"}, {"0.5", "debts"}, {"0.6", "bugs"}} {
+		root := t.TempDir()
+		write(t, root, "INDEX.md", "---\nfdf_version: \""+tc.pin+"\"\n---\n\n# Bundle\n")
+		write(t, root, tc.group+"/x.md", feature("X"))
+		var out bytes.Buffer
+		if code := Run(Options{Root: root}, &out); code != 0 {
+			t.Errorf("%s under %s: exit %d\n%s", tc.group, tc.pin, code, out.String())
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(root, "features", tc.group, "x.md")); err != nil {
+			t.Errorf("%s/ is a feature group under %s, and moves into features/: %v", tc.group, tc.pin, err)
+		}
+		if _, err := os.Stat(filepath.Join(root, tc.group, "INDEX.md")); err != nil {
+			t.Errorf("%s/ is a register in 1.0, with its index: %v", tc.group, err)
 		}
 	}
 }

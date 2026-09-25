@@ -351,6 +351,19 @@ func TestFindReadsAnIndentedLineOnItsOwnAsProse(t *testing.T) {
 	checkFind(t, "    * [nested](nested.md) - a nested listing", []wantLink{{target: "nested.md"}})
 }
 
+// Blocks returns the code blocks alone: a fenced block and each line of an
+// indented one, but no code span.
+func TestBlocksReturnsTheCodeBlocksAlone(t *testing.T) {
+	text := "Prose with `a span`.\n\n```sh\nfdf new x\n```\n\n    indented\n"
+	var got []string
+	for _, b := range Blocks(text) {
+		got = append(got, text[b.Start:b.End])
+	}
+	if want := []string{"```sh\nfdf new x\n```\n", "    indented\n"}; strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("Blocks = %q, want %q", got, want)
+	}
+}
+
 // Find reads a text in one pass. A paragraph of 2,000 lines, each with a ]
 // that closes no link's text and a code span, reads in well under a second:
 // read by looking back from each ] over the paragraph, it took seconds.

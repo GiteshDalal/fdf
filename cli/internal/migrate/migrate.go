@@ -1,23 +1,22 @@
-// Package migrate mechanically upgrades a bundle between adjacent FDF spec
-// versions. Chains forward to 0.7, the last 0.x version:
+// Package migrate upgrades a 0.x bundle, at any pin from 0.1 to 0.7 or none,
+// to spec 1.0 in one run:
 //
-//	v0.1 → case renames, vendored-spec removal, TEST stubs
-//	v0.2/v0.3 → lift nested trail to stem-qualified siblings
-//	v0.4/v0.5/v0.6 → nothing structural: 0.4→0.5, 0.5→0.6 and 0.6→0.7 add
-//	      documents, not moves
-//	any → links repaired by the one link engine, index status tags dropped,
-//	      pin 0.7, RefreshSpec, EnsureContextStubs, changes/, practices/,
-//	      debts/ and bugs/ INDEX.md, log, validate
+//	older layouts → 0.7-shaped: v0.1's case renames and the removal of its
+//	      vendored spec, v0.3's trail lift and the test stubs, and the status
+//	      tags older tools wrote after index listings
+//	1.0 → every feature group moves into features/, and every mention of a
+//	      feature's ID gains features/ (logs keep their words); the one link
+//	      engine repairs every link; features/INDEX.md takes the groups'
+//	      listings, the other registers get their indexes; the pin, the spec
+//	      copy and any missing Context stub; the log; then validation
 //
-// The whole migration is worked out first (plan.go), and only then applied,
-// so a bundle it refuses is left as it was.
-//
-// Only a bundle pinned to 0.x, or to nothing, is migrated. A bundle pinned to
-// 1.0 or later is refused: its layout is not one these steps know, and
-// running them over it would pin it back to 0.7. So is a pin that is not a
-// version, such as 1.0.0, and a root whose INDEX.md pins nothing inside a
-// pinned bundle: a register or a group of it, where the steps would build a
-// second bundle.
+// The whole migration is worked out first (plan.go) and printed; a dry run
+// stops there, and nothing is written until the plan is complete, so a
+// bundle migrate refuses is left as it was. A bundle already pinned to 1.0
+// moves nothing: migrate restores its spec copy, indexes and Context stubs.
+// A root whose INDEX.md pins nothing inside a pinned bundle — a register or
+// a group of it, where the steps would build a second bundle — is refused,
+// and so is a pin that is not a version, or one newer than this fdf knows.
 //
 // Ends by validating the result with FreshStubsAdvisory so unfilled Context
 // stubs do not fail the migration (plain `fdf validate` will still enforce F9).
@@ -35,14 +34,17 @@ import (
 
 	"github.com/GiteshDalal/fdf/cli/internal/bundle"
 	"github.com/GiteshDalal/fdf/cli/internal/fdfroot"
+	"github.com/GiteshDalal/fdf/cli/internal/layout"
 	"github.com/GiteshDalal/fdf/cli/internal/refactor"
 	"github.com/GiteshDalal/fdf/cli/internal/scaffold"
 	"github.com/GiteshDalal/fdf/cli/internal/specver"
 )
 
-// target is the pin migrate writes: 0.7, the last 0.x version. Spec 1.0 files
-// every feature under features/, which no step here does.
-const target = "0.7"
+// target is the pin migrate writes: 1.0.
+const target = "1.0"
+
+// known0x are the pins migrate upgrades from: every 0.x version FDF had.
+var known0x = map[string]bool{"0.1": true, "0.2": true, "0.3": true, "0.4": true, "0.5": true, "0.6": true, "0.7": true}
 
 // Version is the CLI version, set by the command wrapper. A migrate that
 // finds the pin already current is indistinguishable from a migrate that has
@@ -79,9 +81,21 @@ var pinValueRe = regexp.MustCompile(`fdf_version:\s*["']?([^"'\s]+)["']?`)
 var taskFileRe = regexp.MustCompile(`^\d{2}-[a-z0-9][a-z0-9-]*\.md$`)
 var statusRe = regexp.MustCompile(`(?m)^status:\s*(\S+)`)
 var scenarioRe = regexp.MustCompile(`(?m)^\s*Scenario(?: Outline)?:\s*(\S[^\n]*)`)
+var scenarioLineRe = regexp.MustCompile(`(?m)^[ \t]*Scenario(?: Outline)?:[^\n]*`)
 var timestampRe = regexp.MustCompile(`(?m)^timestamp:\s*(\S+)`)
 
-func Run(root, repoRoot string, out io.Writer) int {
+// Options are how fdf migrate was asked to run.
+type Options struct {
+	Root    string // the bundle root
+	Project string // the project root R1 checks paths against; "" outside a git repository
+	DryRun  bool   // print the plan and change nothing
+}
+
+// Run upgrades the bundle at o.Root to target: it works out the whole
+// migration, prints it, and, unless o.DryRun, applies it and validates the
+// result.
+func Run(o Options, out io.Writer) int {
+	root := o.Root
 	// Nothing to migrate without a bundle: an INDEX.md, or the lowercase
 	// index.md of a v0.1 bundle, which the migration renames.
 	if !exists(filepath.Join(root, "INDEX.md")) && !exists(filepath.Join(root, "index.md")) {
@@ -93,7 +107,8 @@ func Run(root, repoRoot string, out io.Writer) int {
 		rootAbs = root
 	}
 
-	// Only a bundle pinned to 0.x, or to nothing, goes ahead.
+	// A bundle pinned to 0.x, or to nothing, is migrated; one at target takes
+	// the repair path.
 	pin := readPin(root)
 	switch v, ok := specver.Parse(pin); {
 	case pin == "":
@@ -106,46 +121,13 @@ func Run(root, repoRoot string, out io.Writer) int {
 	case !ok:
 		fmt.Fprintf(out, "cannot migrate: the bundle pins fdf_version %s, which is not a MAJOR.MINOR version such as %s — correct the pin in INDEX.md; the bundle was left as it is.\n", pin, scaffold.CurrentVersion())
 		return 1
-	case v.Major != 0:
-		fmt.Fprintf(out, "cannot migrate: the bundle pins fdf_version %s, and %s upgrades a 0.x bundle to %s — the bundle was left as it is.\n", pin, binaryName(), target)
+	case pin == target:
+		return repair(o, rootAbs, out)
+	case v.Major == 0 && !known0x[pin]:
+		fmt.Fprintf(out, "cannot migrate: the bundle pins fdf_version %s, which is no 0.x version %s knows (0.1 to 0.7) — correct the pin in INDEX.md; the bundle was left as it is.\n", pin, binaryName())
 		return 1
-	}
-	if pin == target {
-		// Idempotent repair path: a re-run (or a hand-pinned bundle) still
-		// gets the spec copy and any missing Context stubs, and validates
-		// with the same stub leniency as a fresh migration — so running
-		// migrate twice in a row cannot flip from success to failure.
-		fmt.Fprintf(out, "nothing to migrate: the bundle already pins fdf_version %s, the version %s upgrades a bundle to.\n", target, binaryName())
-		fmt.Fprintln(out, "if a newer spec version exists, upgrade fdf and re-run — a version-pinned shim (mise, asdf) can hold an older fdf in this directory.")
-		fmt.Fprintln(out, "ensuring spec copy and context stubs:")
-		if code := scaffold.RefreshSpec(root, target, out); code != 0 {
-			return code
-		}
-		if code := scaffold.EnsureContextStubs(root, out); code != 0 {
-			return code
-		}
-		if code := scaffold.EnsureChangesIndex(root, out); code != 0 {
-			return code
-		}
-		if code := scaffold.EnsurePracticesIndex(root, out); code != 0 {
-			return code
-		}
-		if code := scaffold.EnsureDebtsIndex(root, out); code != 0 {
-			return code
-		}
-		if code := scaffold.EnsureBugsIndex(root, out); code != 0 {
-			return code
-		}
-		fmt.Fprintln(out, "\nvalidating bundle:")
-		return bundle.Validate(root, bundle.Options{RepoRoot: repoRoot, Out: out, FreshStubsAdvisory: true})
-	}
-
-	// v0.7 reserves bugs/ for the bug register. A bundle that already uses it
-	// as a feature group has to move that group first; nothing else here can
-	// decide its new name. Refused before anything is touched.
-	if problem := bugsGroupConflict(root); problem != "" {
-		fmt.Fprintln(out, "cannot migrate — fix this first (bundle left unchanged):")
-		fmt.Fprintln(out, "  "+problem)
+	case v.Major != 0:
+		fmt.Fprintf(out, "cannot migrate: the bundle pins fdf_version %s, newer than any spec %s knows (%s) — upgrade fdf; the bundle was left as it is.\n", pin, binaryName(), target)
 		return 1
 	}
 
@@ -161,65 +143,26 @@ func Run(root, repoRoot string, out io.Writer) int {
 		}
 		return 1
 	}
-
-	// The pin, and the migration's entry in the bundle-root log, where every
-	// bundle-wide event goes.
 	from := pin
 	if from == "" {
 		from = "unpinned"
 	}
-	p.texts["INDEX.md"] = withPin(p.text("INDEX.md"), target)
-	entry := fmt.Sprintf("**Migrated**: fdf_version %s → %s with `fdf migrate`.", from, target)
-	if p.tags > 0 {
-		entry += fmt.Sprintf(" Removed the status tag from %d index listing(s); a document's status lives only in its frontmatter.", p.tags)
+	p.logEntry(from)
+	p.print(out, from, o.DryRun)
+	if o.DryRun {
+		return 0
 	}
-	p.texts["LOG.md"] = withLogEntry(p.text("LOG.md"), entry)
-	if err := p.apply(out); err != nil {
+	if err := p.apply(); err != nil {
 		fmt.Fprintf(out, "error: %v\n", err)
 		return 1
 	}
-
-	// Refresh the bundle-root spec copy and scaffold missing Context stubs
-	// (including SURFACES.md on v0.4) and the registers' indexes.
-	if code := scaffold.RefreshSpec(root, target, out); code != 0 {
-		return code
-	}
-	if code := scaffold.EnsureContextStubs(root, out); code != 0 {
-		return code
-	}
-	if code := scaffold.EnsureChangesIndex(root, out); code != 0 {
-		return code
-	}
-	if code := scaffold.EnsurePracticesIndex(root, out); code != 0 {
-		return code
-	}
-	if code := scaffold.EnsureDebtsIndex(root, out); code != 0 {
-		return code
-	}
-	if code := scaffold.EnsureBugsIndex(root, out); code != 0 {
-		return code
-	}
-
-	// Report what actually changed, then validate. Without this the only
-	// evidence of a migration is a scroll of per-file lines, and a migration
-	// that moved nothing is indistinguishable from one that did.
-	fmt.Fprintf(out, "\ndone: migrated bundle at %s\n", rootAbs)
-	fmt.Fprintf(out, "  fdf_version %s -> %s\n", from, target)
-	lifted := p.lifted()
-	fmt.Fprintf(out, "  %d trail file(s) lifted to stem-qualified siblings\n", lifted)
-	if lifted == 0 {
-		fmt.Fprintln(out, "  (no nested trail files were present — layout already matched)")
-	}
-	if p.tags > 0 {
-		fmt.Fprintf(out, "  %d status tag(s) removed from index listings\n", p.tags)
-	}
-	fmt.Fprintln(out, "  logged in LOG.md")
+	fmt.Fprintf(out, "\ndone: migrated the bundle at %s to fdf_version %s; logged in LOG.md.\n", rootAbs, target)
 
 	// Freshly scaffolded Context stubs are advisory here — migration
 	// succeeded; filling them is the human's next step via fdf-init.
 	fmt.Fprintln(out, "\nvalidating migrated bundle:")
 	var report bytes.Buffer
-	code := bundle.Validate(root, bundle.Options{RepoRoot: repoRoot, Out: io.MultiWriter(out, &report), FreshStubsAdvisory: true})
+	code := bundle.Validate(root, bundle.Options{RepoRoot: o.Project, Out: io.MultiWriter(out, &report), FreshStubsAdvisory: true})
 	// Say so only when validation found a stub, and name the ones it found:
 	// F9 fails a plain validate only while one is unfilled and the bundle has
 	// a feature.
@@ -229,8 +172,84 @@ func Run(root, repoRoot string, out io.Writer) int {
 			fmt.Fprintln(out, "warning: the next plain `fdf validate` will fail F9 until those stubs are filled (migrate reports an unfilled stub as a warning, not an error).")
 		}
 	}
-	reportV07(root, report.String(), out)
+	// 0.7's checks reach further than older versions did: a bundle from
+	// before 0.7 hears what they found.
+	if v, _ := specver.Parse(pin); v.Less(specver.Version{Minor: 7}) {
+		reportV07(root, report.String(), out)
+	}
+	fmt.Fprintln(out, "\nnext: re-run `fdf install` as you installed fdf: the installed skills and primer still describe 0.7.")
+	fmt.Fprintln(out, "      then review the migration, and commit it.")
 	return code
+}
+
+// repair takes a bundle already at target, in which nothing moves: it
+// restores the vendored spec when it is missing or not target's, each
+// register's index but releases/', and each missing Context stub, then
+// validates the bundle with the same stub leniency as a migration — so
+// running migrate twice in a row cannot flip from success to failure.
+func repair(o Options, root string, out io.Writer) int {
+	fmt.Fprintf(out, "nothing to migrate: the bundle already pins fdf_version %s, the version %s upgrades a bundle to.\n", target, binaryName())
+	fmt.Fprintln(out, "if a newer spec version exists, upgrade fdf and re-run — a version-pinned shim (mise, asdf) can hold an older fdf in this directory.")
+	restore := map[string]string{}
+	if !specCurrent(root) {
+		doc, err := scaffold.SpecDoc(target)
+		if err != nil {
+			fmt.Fprintln(out, "error:", err)
+			return 1
+		}
+		restore["SPEC.md"] = string(doc)
+	}
+	for _, reg := range layout.Registers {
+		if idx := reg + "/INDEX.md"; reg != "releases" && !exists(filepath.Join(root, idx)) {
+			restore[idx], _ = scaffold.IndexText(reg)
+		}
+	}
+	for _, name := range layout.ContextDocs {
+		if !exists(filepath.Join(root, name)) {
+			restore[name], _ = scaffold.ContextStub(name)
+		}
+	}
+	switch {
+	case len(restore) == 0:
+		fmt.Fprintln(out, "nothing to restore: the spec copy, the registers' indexes and the Context documents are all there.")
+	case o.DryRun:
+		fmt.Fprintln(out, "would restore: "+strings.Join(sortedKeys(restore), ", "))
+	default:
+		fmt.Fprintln(out, "restored: "+strings.Join(sortedKeys(restore), ", "))
+	}
+	if o.DryRun {
+		return 0
+	}
+	for _, rel := range sortedKeys(restore) {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			fmt.Fprintln(out, "error:", err)
+			return 1
+		}
+		if err := os.WriteFile(p, []byte(restore[rel]), 0o644); err != nil {
+			fmt.Fprintln(out, "error:", err)
+			return 1
+		}
+	}
+	fmt.Fprintln(out, "\nvalidating bundle:")
+	return bundle.Validate(root, bundle.Options{RepoRoot: o.Project, Out: out, FreshStubsAdvisory: true})
+}
+
+// specCurrent reports whether the bundle's SPEC.md is the vendored spec of
+// target: the embedded text under its frontmatter.
+func specCurrent(root string) bool {
+	raw, err := os.ReadFile(filepath.Join(root, "SPEC.md"))
+	want, werr := scaffold.SpecText(target)
+	if err != nil || werr != nil {
+		return false
+	}
+	text := string(raw)
+	if rest, ok := strings.CutPrefix(text, "---\n"); ok {
+		if i := strings.Index(rest, "\n---\n"); i >= 0 {
+			text = strings.TrimPrefix(rest[i+len("\n---\n"):], "\n")
+		}
+	}
+	return text == string(want)
 }
 
 // stubRe matches the validator's messages for a Context document that is
@@ -318,35 +337,6 @@ func countRegisterEntries(dir string) int {
 	})
 	return n
 }
-
-// bugsGroupConflict reports a bundle that uses bugs/ as a feature group, which
-// v0.7 reserves for the bug register. Bug documents already there are fine.
-func bugsGroupConflict(root string) string {
-	var offender string
-	filepath.WalkDir(filepath.Join(root, "bugs"), func(p string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || offender != "" || !strings.HasSuffix(p, ".md") {
-			return nil
-		}
-		base := filepath.Base(p)
-		if base == "INDEX.md" || base == "LOG.md" || strings.HasSuffix(base, ".log.md") {
-			return nil
-		}
-		raw, rerr := os.ReadFile(p)
-		if rerr != nil {
-			return nil
-		}
-		if m := typeLineRe.FindSubmatch(raw); m == nil || strings.Trim(string(m[1]), `"'`) != "Bug" {
-			offender = rel(root, p)
-		}
-		return nil
-	})
-	if offender == "" {
-		return ""
-	}
-	return fmt.Sprintf("bugs/ is a feature group (%s), but v0.7 reserves bugs/ for the bug register — rename the group first (its directory, its listing in INDEX.md and the links to it), then re-run fdf migrate", filepath.ToSlash(offender))
-}
-
-var typeLineRe = regexp.MustCompile(`(?m)^type:\s*(\S+)`)
 
 // preflightV4 scans for content the v0.4 layout cannot represent and that
 // this migration cannot mechanically fix: dotted group-level filenames
