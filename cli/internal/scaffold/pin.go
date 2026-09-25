@@ -82,6 +82,47 @@ func ReservedDirs(root string) map[string]bool {
 	return out
 }
 
+// Supported lists the spec versions the commands work on: the embedded ones of
+// the current major version, oldest first. A minor version only adds, so the
+// commands read a bundle pinned to any of them. They must not write into one
+// what a later minor adds, which is an error there (design §4): a command
+// that writes something 1.x added checks the bundle's pin first.
+func Supported() []string {
+	cur, _ := specver.Parse(currentVersion)
+	var out []string
+	for _, v := range SpecVersions() {
+		if p, _ := specver.Parse(v); p.Major == cur.Major {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// RequireSupported reports whether the commands can work on the bundle at
+// root, and when they cannot, says why and what to run: a bundle that pins a
+// 0.x version, or none, is upgraded with `fdf migrate` first, and one that
+// pins a version newer than this fdf knows needs a newer fdf.
+func RequireSupported(root string, out io.Writer) bool {
+	pin := Pin(root)
+	supported := Supported()
+	for _, v := range supported {
+		if pin == v {
+			return true
+		}
+	}
+	list := strings.Join(supported, ", ")
+	newest, _ := specver.Parse(supported[len(supported)-1])
+	switch v, ok := specver.Parse(pin); {
+	case pin == "":
+		fmt.Fprintf(out, "error: this bundle's INDEX.md pins no fdf_version; fdf's commands work on spec %s bundles — run `fdf migrate` to upgrade it first\n", list)
+	case ok && newest.Less(v):
+		fmt.Fprintf(out, "error: this bundle pins fdf_version %s, newer than any spec this fdf knows (%s) — upgrade fdf\n", pin, list)
+	default:
+		fmt.Fprintf(out, "error: this bundle pins fdf_version %s; fdf's commands work on spec %s bundles — run `fdf migrate` to upgrade it first\n", pin, list)
+	}
+	return false
+}
+
 // RequirePin reports whether the bundle at root pins spec 0.<minor> or later,
 // and when it does not, says why the command stops and what to run instead.
 // what names what the command writes ("the bug register"); why is what goes

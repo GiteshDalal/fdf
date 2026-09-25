@@ -106,18 +106,19 @@ var helpTopics = []helpTopic{
 	{
 		name:    "init",
 		group:   "Set up",
-		summary: "Create a bundle: INDEX.md, SPEC.md and the five Context documents",
+		summary: "Create a bundle: INDEX.md, SPEC.md, Context documents, registers",
 		usage:   "fdf init [--root <dir>]",
-		body: "Scaffold a new bundle at the resolved root: INDEX.md carrying the\n" +
-			"fdf_version pin, LOG.md, the spec at SPEC.md, the five Context stubs\n" +
-			"(STACK.md, ARCHITECTURE.md, SURFACES.md, INFRA.md, DOMAIN.md), and the\n" +
-			"changes/, practices/, debts/ and bugs/ indexes. It never overwrites: on a\n" +
-			"bundle already at this version it only adds what is missing, and on an\n" +
-			"older one it points you to `fdf migrate`. Fill the Context stubs with the\n" +
+		body: "Scaffold a new bundle at the resolved root, docs/fdf by default: INDEX.md\n" +
+			"carrying the fdf_version pin and listing the registers, LOG.md, the spec\n" +
+			"at SPEC.md, the five Context stubs (STACK.md, ARCHITECTURE.md,\n" +
+			"SURFACES.md, INFRA.md, DOMAIN.md), and the indexes of features/,\n" +
+			"changes/, practices/, debts/ and bugs/. It never overwrites: on a bundle\n" +
+			"already at this version it only adds what is missing, and on an older\n" +
+			"one it points you to `fdf migrate`. Fill the Context stubs with the\n" +
 			"fdf-init skill before feature work: once a feature exists, F9 fails while\n" +
 			"any of them is still a stub.",
 		flags:    []flagDoc{rootFlagDoc},
-		examples: []string{"fdf init", "fdf init --root docs/features"},
+		examples: []string{"fdf init", "fdf init --root wiki/fdf"},
 	},
 	{
 		name:    "install",
@@ -165,33 +166,35 @@ var helpTopics = []helpTopic{
 	{
 		name:    "new",
 		group:   "Features",
-		summary: "Start a feature to build: fdf new <group>/<slug>",
-		usage:   "fdf new [--root <dir>] <group>/<slug>",
-		body: "Scaffold a draft feature at <group>/<slug>.md with frontmatter and\n" +
-			"placeholder Gherkin, listed in its group's INDEX.md. A new group gets its\n" +
-			"directory and INDEX.md, and is listed in the root INDEX.md. Group and\n" +
-			"slug are lowercase [a-z0-9-], and the group is not a directory the\n" +
-			"bundle's pin reserves: releases, and changes (from v0.5), practices and\n" +
-			"debts (v0.6) and bugs (v0.7). A draft may have a log (v0.7) but no other\n" +
-			"sibling and no task directory; the rest arrive as the feature advances.",
+		summary: "Start a feature to build: fdf new [<group>/…]<slug>",
+		usage:   "fdf new [--root <dir>] [<group>/…]<slug>",
+		body: "Scaffold a draft feature at features/[<group>/…]<slug>.md with\n" +
+			"frontmatter and placeholder Gherkin, listed in the index beside it. A\n" +
+			"feature is filed flat or in groups nested to any depth; a new group gets\n" +
+			"its directory and INDEX.md, and is listed in its parent's. Names are\n" +
+			"lowercase [a-z0-9-], and none is reserved inside features/. A name that\n" +
+			"clashes with what is beside it is refused: a feature named like a group\n" +
+			"would make that group its task directory. A draft may have a log but no\n" +
+			"other sibling and no task directory; the rest arrive as it advances.",
 		flags: []flagDoc{rootFlagDoc},
 		examples: []string{
 			"fdf new payments/instant-refunds",
-			"fdf new --root docs/features payments/refund-status",
+			"fdf new onboarding",
+			"fdf new platform/payouts/weekly-payouts",
 		},
 	},
 	{
 		name:    "adopt",
 		group:   "Features",
 		summary: "Map code that predates the bundle, or show what is still unmapped",
-		usage:   "fdf adopt [--root <dir>] [--resource <paths>] [--depth <n>] [<group>/<slug>]",
-		body: "Map what a codebase already does (v0.7). With a feature ID it scaffolds\n" +
-			"an adopted feature: a capability documented from the code as it stands,\n" +
-			"never built through FDF, so it has no spec, plan or tasks. It starts as a\n" +
-			"map entry: a `Feature:` block, and `resource` naming the code it lives in\n" +
-			"(which must exist). Scenarios are backfilled later, each with its case in\n" +
-			"slug.test.md, passing against the code as it stands. Older pins have no\n" +
-			"`adopted` status, so mapping one needs a v0.7 bundle.\n" +
+		usage:   "fdf adopt [--root <dir>] [--resource <paths>] [--depth <n>] [[<group>/…]<slug>]",
+		body: "Map what a codebase already does. With a name it scaffolds an adopted\n" +
+			"feature at features/[<group>/…]<slug>.md: a capability documented from\n" +
+			"the code as it stands, never built through FDF, so it has no spec, plan\n" +
+			"or tasks. It starts as a map entry: a `Feature:` block, and `resource`\n" +
+			"naming the code it lives in (which must exist). Scenarios are backfilled\n" +
+			"later, each with its case in slug.test.md, passing against the code as\n" +
+			"it stands.\n" +
 			"\n" +
 			"Without an ID it prints the adoption map: every feature with its status,\n" +
 			"scenario count and tested count, then the tracked code (git ls-files) that\n" +
@@ -344,17 +347,17 @@ var helpTopics = []helpTopic{
 		name:    "practice",
 		group:   "Registers and practices",
 		summary: "Write down the one way the project does a recurring mechanism",
-		usage:   "fdf practice [--root <dir>] [<group>/]<slug>",
+		usage:   "fdf practice [--root <dir>] [<group>/…]<slug>",
 		body: "Scaffold a Practice under practices/: the project's binding answer to\n" +
 			"how one recurring mechanism is done (authorization, permission checks,\n" +
 			"payment capture, database access). It is listed in practices/INDEX.md,\n" +
-			"or in its group's index, created on first use. A practice is a living\n" +
-			"document with no spec, plan, test or tasks; its only sibling is an\n" +
-			"optional <slug>.log.md. Fill `# Rules` with the binding statements and\n" +
-			"set `applies-to` to the project paths it governs: that is how later\n" +
-			"work is routed to it, since features never list the practices they\n" +
-			"follow. A practice binds all future code: land one only with human\n" +
-			"approval. v0.6 bundles and later.",
+			"or in its group's index; groups nest to any depth, and each new one is\n" +
+			"listed in its parent's. A practice is a living document with no spec,\n" +
+			"plan, test or tasks; its only sibling is an optional <slug>.log.md. Fill\n" +
+			"`# Rules` with the binding statements and set `applies-to` to the\n" +
+			"project paths it governs: that is how later work is routed to it, since\n" +
+			"features never list the practices they follow. A practice binds all\n" +
+			"future code: land one only with human approval.",
 		flags: []flagDoc{rootFlagDoc},
 		examples: []string{
 			"fdf practice permission-checks",

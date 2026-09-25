@@ -36,7 +36,7 @@ func runAdopt(args []string, stdout io.Writer) int {
 		return 2
 	}
 	if len(rest) == 0 && *resource != "" {
-		fmt.Fprintln(stdout, "usage: --resource names the code of the capability being mapped: fdf adopt --resource <paths> <group>/<slug>")
+		fmt.Fprintln(stdout, "usage: --resource names the code of the capability being mapped: fdf adopt --resource <paths> [<group>/…]<slug>")
 		return 2
 	}
 	projectRoot := ""
