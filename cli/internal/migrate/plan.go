@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -130,6 +131,10 @@ func (p *plan) after(rel string) string {
 	}
 	return rel
 }
+
+// goes reports whether the file at rel goes, as v0.1's vendored fdf-spec.md
+// does: migrate writes nothing in its place.
+func (p *plan) goes(rel string) bool { return slices.Contains(p.gone, rel) }
 
 // present is the set of the bundle's files once the moves made so far are
 // made.
@@ -262,12 +267,12 @@ func (p *plan) move() links.Move {
 // frontmatter a stem sibling needs, an index loses the status tags older
 // tools wrote after its listings, and every link is repaired by the engine,
 // from where its file was to where it is now. The vendored SPEC.md, which
-// migrate replaces, is left to it.
+// migrate replaces, is left to it, and a file that goes is left alone.
 func (p *plan) repair() {
 	mv := p.move()
 	for _, f := range p.files {
 		text, ok := p.texts0[f]
-		if !ok || f == "SPEC.md" {
+		if !ok || f == "SPEC.md" || p.goes(f) {
 			continue
 		}
 		to := p.after(f)
