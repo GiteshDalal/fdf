@@ -7,6 +7,7 @@ package migrate
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -151,6 +152,9 @@ func newPlan(root, pin string) (p *plan, problems []string, err error) {
 		}
 	}
 	p.findGroups()
+	if problems := p.refusals(); len(problems) > 0 {
+		return nil, problems, nil
+	}
 	if !stem {
 		p.stubTests()
 	}
@@ -159,6 +163,96 @@ func newPlan(root, pin string) (p *plan, problems []string, err error) {
 		return nil, nil, err
 	}
 	return p, nil, nil
+}
+
+// refusals are what 1.0 has no place for, and migrate cannot move for the
+// bundle: a Markdown file at the root that is none of 1.0's own; a document
+// named index.md or log.md, which a disk that ignores case reads as the
+// INDEX.md or LOG.md beside it; a practice, debt or bug that shares its name
+// with a directory beside it that holds Markdown; and a feature group whose
+// place in features/ is taken, or a features at the root that is no
+// directory. 0.7 read each of these, and 1.0 rejects it (F3), so each is
+// fixed by hand before migrating. They are read once the older layouts'
+// moves are made, and named where they are now. So is a directory of
+// Markdown that is a symbolic link, wherever it is, which the plan does not
+// read through: its documents would be left as they are, and a register's
+// index written through it.
+func (p *plan) refusals() []string {
+	b := layout.New(os.DirFS(p.root))
+	var out []string
+	for _, f := range p.files {
+		full := filepath.Join(p.root, filepath.FromSlash(f))
+		if fi, err := os.Lstat(full); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+			continue
+		}
+		if fi, err := os.Stat(full); err == nil && fi.IsDir() && holdsMarkdown(full) {
+			to, _ := os.Readlink(full)
+			out = append(out, fmt.Sprintf("%s: a symbolic link to %s, a directory of Markdown that migrate does not read through — replace it with the directory it names", f, to))
+		}
+	}
+	gone := map[string]bool{}
+	for _, g := range p.gone {
+		gone[g] = true
+	}
+	for _, f := range p.files {
+		shaped := p.after(f)
+		switch {
+		case !strings.HasSuffix(f, ".md") || gone[f]:
+		case !strings.Contains(shaped, "/"):
+			if pos := b.File(shaped); pos.Kind == layout.Stray {
+				out = append(out, f+": "+pos.Problem)
+			}
+		case layout.CaseTwin(path.Base(shaped)) != "":
+			out = append(out, f+": "+layout.CaseTwin(path.Base(shaped)))
+		}
+	}
+	for _, reg := range []string{"practices", "debts", "bugs"} {
+		if !reserved(reg, p.from) {
+			continue
+		}
+		filepath.WalkDir(filepath.Join(p.root, reg), func(q string, d os.DirEntry, err error) error {
+			if err != nil || !d.IsDir() {
+				return nil
+			}
+			if strings.HasPrefix(d.Name(), ".") {
+				return filepath.SkipDir
+			}
+			rel := relSlash(p.root, q)
+			if _, err := os.Stat(q + ".md"); err == nil && b.HoldsMarkdown(rel) {
+				if pos := b.Dir(rel); pos.Kind == layout.Stray {
+					out = append(out, pos.Where+": "+pos.Problem)
+					return filepath.SkipDir
+				}
+			}
+			return nil
+		})
+	}
+	if fi, err := os.Lstat(filepath.Join(p.root, "features")); err == nil && !fi.IsDir() {
+		out = append(out, "features: not a directory, where the features/ register goes — move it out of the bundle root")
+	}
+	if !p.isGroup["features"] {
+		for _, g := range p.groups {
+			if _, err := os.Stat(filepath.Join(p.root, "features", g)); err == nil {
+				out = append(out, fmt.Sprintf("features/%s: already there, where the feature group %s/ moves — move it out of features/", g, g))
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// holdsMarkdown reports whether the directory at dir, which may be a
+// symbolic link, holds a Markdown file at any depth.
+func holdsMarkdown(dir string) bool {
+	found := false
+	fs.WalkDir(os.DirFS(dir), ".", func(q string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && strings.HasSuffix(q, ".md") {
+			found = true
+			return fs.SkipAll
+		}
+		return nil
+	})
+	return found
 }
 
 // after is where the file at rel is once the older layouts' moves are made:

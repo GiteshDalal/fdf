@@ -160,15 +160,16 @@ var helpTopics = []helpTopic{
 			"listings). Then every feature group moves into features/, and every\n" +
 			"mention of a feature's ID gains features/, in frozen documents too; logs\n" +
 			"keep their words. Every link is repaired, features/INDEX.md takes the\n" +
-			"groups' listings from INDEX.md, the other registers get their indexes,\n" +
-			"and the pin, the vendored SPEC.md and any missing Context stub follow. The\n" +
-			"migration is logged in LOG.md. A pre-flight refuses content the new layout\n" +
-			"cannot hold and leaves the bundle untouched, so a refused run is safe to\n" +
-			"retry after fixing what it names. A bundle already at 1.0 moves nothing:\n" +
-			"its spec copy, indexes and Context stubs are restored. An unfilled Context\n" +
-			"stub is only a warning here; once the bundle has a feature, a plain\n" +
-			"`fdf validate` fails F9 until it is filled. Re-run `fdf install`\n" +
-			"afterwards.",
+			"groups' listings from INDEX.md, the other registers get their indexes, and\n" +
+			"the pin, the vendored SPEC.md and any missing Context stub follow. The\n" +
+			"migration is logged in LOG.md. A pre-flight refuses what 1.0 has no place\n" +
+			"for — a stray Markdown file at the root, a document named index.md or\n" +
+			"log.md, a practice, debt or bug beside a directory of Markdown — and\n" +
+			"leaves the bundle untouched, so a refused run is safe to retry after\n" +
+			"fixing what it names. A bundle already at 1.0 moves nothing: its spec\n" +
+			"copy, indexes and Context stubs are restored. An unfilled Context stub is\n" +
+			"only a warning here; once the bundle has a feature, a plain `fdf validate`\n" +
+			"fails F9 until it is filled. Re-run `fdf install` afterwards.",
 		flags: []flagDoc{
 			{"--dry-run", "print the plan, and change nothing"},
 			rootFlagDoc,

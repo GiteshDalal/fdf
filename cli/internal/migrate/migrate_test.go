@@ -522,13 +522,19 @@ func TestMigrateRefusesARootInsideABundle(t *testing.T) {
 	}
 }
 
-// tree lists every file under root with its content, in path order.
+// tree lists every file under root with its content, and every symbolic
+// link with what it names, in path order.
 func tree(t *testing.T, root string) string {
 	t.Helper()
 	var b strings.Builder
 	filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
-		if err == nil && !d.IsDir() {
-			rel, _ := filepath.Rel(root, p)
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		rel, _ := filepath.Rel(root, p)
+		if to, err := os.Readlink(p); err == nil {
+			fmt.Fprintf(&b, "== %s -> %s\n", filepath.ToSlash(rel), to)
+		} else {
 			fmt.Fprintf(&b, "== %s\n%s", filepath.ToSlash(rel), mustRead(t, p))
 		}
 		return nil
@@ -1189,6 +1195,61 @@ func TestMigrateListsReleasesOnlyWithTheirIndex(t *testing.T) {
 	}
 	if strings.Contains(out.String(), "broken cross-link") {
 		t.Errorf("no link is broken:\n%s", out.String())
+	}
+}
+
+// What 1.0 has no place for, and migrate cannot move for the bundle, is
+// refused before anything is written, each named where it is now: a stray
+// Markdown file at the root, a document named index.md or log.md, a debt
+// beside a directory of Markdown, a feature group whose place in features/
+// is taken, and a directory of Markdown that is a symbolic link, at the root
+// or in a group. A directory of images beside a debt is outside FDF, and no
+// reason to refuse.
+func TestMigrateRefusesWhat10HasNoPlaceFor(t *testing.T) {
+	root := buildV07Bundle(t)
+	debt := func(title string) string {
+		return "---\ntype: Debt\nstatus: open\ntitle: " + title + "\ndescription: d.\ntimestamp: 2026-09-23T00:00:00Z\n---\n\n# Gap\n\n" + title + ".\n"
+	}
+	write(t, root, "worklog.md", "# Work log\n")
+	write(t, root, "venues/log.md", strings.Replace(string(mustRead(t, filepath.Join(root, "menus", "daily.md"))), "title: Daily menu", "title: Log", 1))
+	write(t, root, "debts/rounding.md", debt("Rounding"))
+	write(t, root, "debts/rounding/notes.md", "# Notes\n")
+	write(t, root, "debts/slow.md", debt("Slow"))
+	write(t, root, "debts/slow/chart.png", "PNG")
+	write(t, root, "features/menus/menu.png", "PNG")
+	shared := t.TempDir()
+	write(t, shared, "x.md", "# X\n")
+	if err := os.Symlink(shared, filepath.Join(root, "specials")); err != nil {
+		t.Skip("symlinks unavailable:", err)
+	}
+	if err := os.Symlink(shared, filepath.Join(root, "venues", "sub")); err != nil {
+		t.Fatal(err)
+	}
+	before := tree(t, root)
+	var out bytes.Buffer
+	if code := Run(Options{Root: root}, &out); code != 1 {
+		t.Fatalf("migrate exit %d, want 1\n%s", code, out.String())
+	}
+	want := "cannot migrate — fix these first (bundle left unchanged):\n" +
+		"  debts/rounding/: shares its name with the debt debts/rounding.md, and a debt owns no directory — rename one of them\n" +
+		"  features/menus: already there, where the feature group menus/ moves — move it out of features/\n" +
+		"  specials: a symbolic link to " + shared + ", a directory of Markdown that migrate does not read through — replace it with the directory it names\n" +
+		"  venues/log.md: no document is named log.md: a disk that ignores case reads it as the LOG.md beside it — rename it\n" +
+		"  venues/sub: a symbolic link to " + shared + ", a directory of Markdown that migrate does not read through — replace it with the directory it names\n" +
+		"  worklog.md: the bundle root holds only INDEX.md, LOG.md, SPEC.md, README.md and the five Context documents — file it in a register, or move it out of the bundle\n"
+	if out.String() != want {
+		t.Errorf("migrate names what it cannot place:\n got: %q\nwant: %q", out.String(), want)
+	}
+	if after := tree(t, root); after != before {
+		t.Errorf("a refused migration changes nothing")
+	}
+	// A features that is no directory leaves the register no place.
+	root = buildV07Bundle(t)
+	write(t, root, "features", "notes\n")
+	out.Reset()
+	if code := Run(Options{Root: root}, &out); code != 1 || out.String() != "cannot migrate — fix these first (bundle left unchanged):\n"+
+		"  features: not a directory, where the features/ register goes — move it out of the bundle root\n" {
+		t.Errorf("a features that is no directory is refused: exit %d\n%s", code, out.String())
 	}
 }
 

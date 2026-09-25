@@ -99,6 +99,17 @@ var nouns = map[string]string{"features": "feature", "changes": "Change or Fix",
 // default, index.md and INDEX.md in one directory are one file.
 var caseTwins = map[string]string{"index.md": "INDEX.md", "log.md": "LOG.md"}
 
+// CaseTwin says why no document takes the file name name, when a disk that
+// ignores case reads it as the reserved file beside it — index.md as
+// INDEX.md — and returns "" for any other name.
+func CaseTwin(name string) string {
+	twin := caseTwins[name]
+	if twin == "" {
+		return ""
+	}
+	return fmt.Sprintf("no document is named %s: a disk that ignores case reads it as the %s beside it — rename it", name, twin)
+}
+
 const (
 	rootFileProblem = "the bundle root holds only INDEX.md, LOG.md, SPEC.md, README.md and the five Context documents — file it in a register, or move it out of the bundle"
 	rootDirProblem  = "the bundle root holds only the registers features/, changes/, practices/, debts/, bugs/ and releases/ — a feature group belongs under features/; file anything else in its register, or move it out of the bundle"
@@ -243,8 +254,8 @@ func (b *Bundle) File(rel string) Position {
 		return Position{Kind: Index, Register: d.Register, ID: d.ID}
 	case name == "LOG.md":
 		return Position{Kind: Log, Register: d.Register, ID: d.ID}
-	case caseTwins[name] != "":
-		return stray(rel, fmt.Sprintf("no document is named %s: a disk that ignores case reads it as the %s beside it — rename it", name, caseTwins[name]))
+	case CaseTwin(name) != "":
+		return stray(rel, CaseTwin(name))
 	case !fileRe.MatchString(name):
 		return stray(rel, "filenames are lowercase; uppercase is reserved for INDEX/LOG/SPEC/STACK/ARCHITECTURE/SURFACES/INFRA/DOMAIN.md")
 	case d.Register == "releases":
