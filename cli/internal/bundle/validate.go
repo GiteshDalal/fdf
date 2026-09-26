@@ -516,7 +516,7 @@ func Validate(root string, opts Options) int {
 	} else {
 		for _, r := range resources {
 			if !exists(filepath.Join(opts.RepoRoot, r.path)) {
-				repoErrs = append(repoErrs, fmt.Sprintf("%s: `%s` path does not exist in repo -> %s (R1)", r.rel, r.field, r.path))
+				repoErrs = append(repoErrs, fmt.Sprintf("%s: `%s` path does not exist in repo -> %s — %s (R1)", r.rel, r.field, r.path, missingPathRepair(opts.RepoRoot, r)))
 			}
 		}
 	}
@@ -687,6 +687,25 @@ func relTo(root, path string) string {
 		return path
 	}
 	return r
+}
+
+// missingPathRepair says how to repair a path R1 refuses. Code that moved is
+// named where it lives now. A task, Change or Fix still being worked may name
+// code it has yet to create: it lists the nearest directory above that path
+// that exists — never the project root — or leaves the path out while none
+// does. Anything else names code that was there once, and what its deletion
+// means depends on the document, which fdf-validate's R1 lays out.
+func missingPathRepair(repoRoot string, r resourceRef) string {
+	const moved = "if the code moved, write where it lives now"
+	if !r.toBuild {
+		return moved + "; if it was deleted, the fdf-validate skill's R1 says what this document needs"
+	}
+	for d := filepath.Dir(filepath.Clean(filepath.FromSlash(r.path))); d != "." && d != ".." && !strings.HasPrefix(d, ".."+string(filepath.Separator)) && d != filepath.Dir(d); d = filepath.Dir(d) {
+		if isDir(filepath.Join(repoRoot, d)) {
+			return fmt.Sprintf("if this work will create it, list its nearest existing directory, %s, instead; %s", filepath.ToSlash(d), moved)
+		}
+	}
+	return "if this work will create it, leave it out until a directory for it exists — never `.`; " + moved
 }
 
 func isDir(p string) bool  { fi, err := os.Stat(p); return err == nil && fi.IsDir() }

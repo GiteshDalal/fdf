@@ -1,0 +1,4 @@
+exit: 1
+contains: features/wdise/example/01-do-thing.md: `resource` path does not exist in repo -> src/refunds/policy.ts — if this work will create it, list its nearest existing directory, src, instead; if the code moved, write where it lives now (R1)
+contains: features/wdise/example/01-do-thing.md: `resource` path does not exist in repo -> lib/refunds/policy.go — if this work will create it, leave it out until a directory for it exists — never `.`; if the code moved, write where it lives now (R1)
+not-contains: (F4)
