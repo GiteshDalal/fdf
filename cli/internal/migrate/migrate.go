@@ -1,19 +1,31 @@
-// Package migrate mechanically upgrades a bundle between adjacent FDF spec
-// versions. Chains forward to 0.7, the last 0.x version:
+// Package migrate upgrades a 0.x bundle, at any pin from 0.1 to 0.7 or none,
+// to spec 1.0 in one run:
 //
-//	v0.1 → case renames, vendored-spec removal, link rewrites, TEST stubs
-//	v0.2/v0.3 → lift nested trail to stem-qualified siblings, rewrite links
-//	v0.4/v0.5/v0.6 → nothing structural: 0.4→0.5, 0.5→0.6 and 0.6→0.7 add
-//	      documents, not moves
-//	any → pin 0.7, RefreshSpec, EnsureContextStubs, changes/, practices/,
-//	      debts/ and bugs/ INDEX.md, drop index status tags, log, validate
+//	older layouts → 0.7-shaped: v0.1's case renames and the removal of its
+//	      vendored spec, v0.3's trail lift and the test stubs, and the status
+//	      tags older tools wrote after index listings
+//	1.0 → every feature group moves into features/, and every mention of a
+//	      feature's ID gains features/ (logs keep their words); the one link
+//	      engine repairs every link; features/INDEX.md takes the groups'
+//	      listings, the other registers get their indexes; the pin, the spec
+//	      copy and any missing Context stub; the log
+//	then → a bundle at …/docs/features moves to …/docs/fdf beside it, or
+//	      where --to says, a submodule with git mv (relocate.go); the rest of
+//	      the project's git-tracked text files follow it, links into it and
+//	      mentions of its path (outside.go); then validation
 //
-// Only a bundle pinned to 0.x, or to nothing, is migrated. A bundle pinned to
-// 1.0 or later is refused: its layout is not one these steps know, and
-// running them over it would pin it back to 0.7. So is a pin that is not a
-// version, such as 1.0.0, and a root whose INDEX.md pins nothing inside a
-// pinned bundle: a register or a group of it, where the steps would build a
-// second bundle.
+// The whole migration is worked out first (plan.go) and printed; a dry run
+// stops there, and nothing is written until the plan is complete, so a
+// bundle migrate refuses is left as it was. In a git repository, which is
+// its undo, migrate starts only from a clean tree, puts no file where git
+// would ignore it, marks what it wrote with git add -N so that git diff -M
+// shows every move, and prints the git commands that put everything back,
+// should it stop partway, or, once done, that back it out, after a git
+// reset of those marks. A bundle already pinned to 1.0 moves nothing:
+// migrate restores its spec copy, indexes and Context stubs. A root whose
+// INDEX.md pins nothing inside a pinned bundle — a register or a group of
+// it, where the steps would build a second bundle — is refused, and so is a
+// pin that is not a version, or one newer than this fdf knows.
 //
 // Ends by validating the result with FreshStubsAdvisory so unfilled Context
 // stubs do not fail the migration (plain `fdf validate` will still enforce F9).
@@ -24,6 +36,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -31,17 +44,17 @@ import (
 
 	"github.com/GiteshDalal/fdf/cli/internal/bundle"
 	"github.com/GiteshDalal/fdf/cli/internal/fdfroot"
-	"github.com/GiteshDalal/fdf/cli/internal/logs"
+	"github.com/GiteshDalal/fdf/cli/internal/layout"
 	"github.com/GiteshDalal/fdf/cli/internal/refactor"
 	"github.com/GiteshDalal/fdf/cli/internal/scaffold"
 	"github.com/GiteshDalal/fdf/cli/internal/specver"
 )
 
-const specURL = "https://github.com/GiteshDalal/fdf/blob/main/SPEC.md"
+// target is the pin migrate writes: 1.0.
+const target = "1.0"
 
-// target is the pin migrate writes: 0.7, the last 0.x version. Spec 1.0 files
-// every feature under features/, which no step here does.
-const target = "0.7"
+// known0x are the pins migrate upgrades from: every 0.x version FDF had.
+var known0x = map[string]bool{"0.1": true, "0.2": true, "0.3": true, "0.4": true, "0.5": true, "0.6": true, "0.7": true}
 
 // Version is the CLI version, set by the command wrapper. A migrate that
 // finds the pin already current is indistinguishable from a migrate that has
@@ -68,8 +81,7 @@ var trailBasenames = map[string]string{
 	"LOG.md":  "log",
 }
 
-var linkRe = regexp.MustCompile(`(\]\()([^)]*)(\))`)
-var pinLineRe = regexp.MustCompile(`(?m)^fdf_version:.*$`)
+var pinLineRe = regexp.MustCompile(`(?m)^fdf_version:[^\r\n]*`)
 
 // pinValueRe tolerates unquoted pins (`fdf_version: 0.4`) and single-quoted
 // ones (`fdf_version: '1.0'`): the validator's YAML-based readPin accepts
@@ -79,9 +91,23 @@ var pinValueRe = regexp.MustCompile(`fdf_version:\s*["']?([^"'\s]+)["']?`)
 var taskFileRe = regexp.MustCompile(`^\d{2}-[a-z0-9][a-z0-9-]*\.md$`)
 var statusRe = regexp.MustCompile(`(?m)^status:\s*(\S+)`)
 var scenarioRe = regexp.MustCompile(`(?m)^\s*Scenario(?: Outline)?:\s*(\S[^\n]*)`)
+var scenarioLineRe = regexp.MustCompile(`(?m)^[ \t]*Scenario(?: Outline)?:[^\n]*`)
 var timestampRe = regexp.MustCompile(`(?m)^timestamp:\s*(\S+)`)
 
-func Run(root, repoRoot string, out io.Writer) int {
+// Options are how fdf migrate was asked to run.
+type Options struct {
+	Root    string // the bundle root
+	Project string // the project root: git's, which R1 checks paths against; "" outside a git repository
+	DryRun  bool   // print the plan and change nothing
+	To      string // where the bundle goes, absolute; "" for the default
+	EnvRoot string // the bundle root FDF_ROOT_DIR names, absolute; "" when it is not set
+}
+
+// Run upgrades the bundle at o.Root to target: it works out the whole
+// migration, prints it, and, unless o.DryRun, applies it and validates the
+// result.
+func Run(o Options, out io.Writer) int {
+	root := o.Root
 	// Nothing to migrate without a bundle: an INDEX.md, or the lowercase
 	// index.md of a v0.1 bundle, which the migration renames.
 	if !exists(filepath.Join(root, "INDEX.md")) && !exists(filepath.Join(root, "index.md")) {
@@ -92,8 +118,10 @@ func Run(root, repoRoot string, out io.Writer) int {
 	if err != nil {
 		rootAbs = root
 	}
+	rootAbs = onDisk(rootAbs)
 
-	// Only a bundle pinned to 0.x, or to nothing, goes ahead.
+	// A bundle pinned to 0.x, or to nothing, is migrated; one at target takes
+	// the repair path.
 	pin := readPin(root)
 	switch v, ok := specver.Parse(pin); {
 	case pin == "":
@@ -106,204 +134,94 @@ func Run(root, repoRoot string, out io.Writer) int {
 	case !ok:
 		fmt.Fprintf(out, "cannot migrate: the bundle pins fdf_version %s, which is not a MAJOR.MINOR version such as %s — correct the pin in INDEX.md; the bundle was left as it is.\n", pin, scaffold.CurrentVersion())
 		return 1
+	case pin == target && o.To != "" && onDisk(filepath.Clean(o.To)) != rootAbs:
+		fmt.Fprintf(out, "cannot migrate: the bundle already pins fdf_version %s, and migrate moves nothing in a bundle at %s — move it with git mv, then point --root or FDF_ROOT_DIR at it; the bundle was left as it is.\n", target, target)
+		return 1
+	case pin == target:
+		return repair(o, rootAbs, out)
+	case v.Major == 0 && !known0x[pin]:
+		fmt.Fprintf(out, "cannot migrate: the bundle pins fdf_version %s, which is no 0.x version %s knows (0.1 to 0.7) — correct the pin in INDEX.md; the bundle was left as it is.\n", pin, binaryName())
+		return 1
 	case v.Major != 0:
-		fmt.Fprintf(out, "cannot migrate: the bundle pins fdf_version %s, and %s upgrades a 0.x bundle to %s — the bundle was left as it is.\n", pin, binaryName(), target)
-		return 1
-	}
-	if pin == target {
-		// Idempotent repair path: a re-run (or a hand-pinned bundle) still
-		// gets the spec copy and any missing Context stubs, and validates
-		// with the same stub leniency as a fresh migration — so running
-		// migrate twice in a row cannot flip from success to failure.
-		fmt.Fprintf(out, "nothing to migrate: the bundle already pins fdf_version %s, the version %s upgrades a bundle to.\n", target, binaryName())
-		fmt.Fprintln(out, "if a newer spec version exists, upgrade fdf and re-run — a version-pinned shim (mise, asdf) can hold an older fdf in this directory.")
-		fmt.Fprintln(out, "ensuring spec copy and context stubs:")
-		if code := scaffold.RefreshSpec(root, target, out); code != 0 {
-			return code
-		}
-		if code := scaffold.EnsureContextStubs(root, out); code != 0 {
-			return code
-		}
-		if code := scaffold.EnsureChangesIndex(root, out); code != 0 {
-			return code
-		}
-		if code := scaffold.EnsurePracticesIndex(root, out); code != 0 {
-			return code
-		}
-		if code := scaffold.EnsureDebtsIndex(root, out); code != 0 {
-			return code
-		}
-		if code := scaffold.EnsureBugsIndex(root, out); code != 0 {
-			return code
-		}
-		fmt.Fprintln(out, "\nvalidating bundle:")
-		return bundle.Validate(root, bundle.Options{RepoRoot: repoRoot, Out: out, FreshStubsAdvisory: true})
-	}
-
-	// v0.7 reserves bugs/ for the bug register. A bundle that already uses it
-	// as a feature group has to move that group first; nothing else here can
-	// decide its new name. Refused before anything is touched.
-	if problem := bugsGroupConflict(root); problem != "" {
-		fmt.Fprintln(out, "cannot migrate — fix this first (bundle left unchanged):")
-		fmt.Fprintln(out, "  "+problem)
+		fmt.Fprintf(out, "cannot migrate: the bundle pins fdf_version %s, newer than any spec %s knows (%s) — upgrade fdf; the bundle was left as it is.\n", pin, binaryName(), target)
 		return 1
 	}
 
-	// A bundle already in the stem-qualified layout (v0.4 onward) needs no
-	// structural work: 0.4 → 0.5 only adds changes/, 0.5 → 0.6 only adds
-	// practices/, debts/ and DOMAIN.md, and 0.6 → 0.7 only adds bugs/.
-	// Running the pre-0.4 chain over one would be actively wrong — pre-flight
-	// reads every `slug.spec.md` as an illegal dotted basename.
-	stem := pin == "0.4" || pin == "0.5" || pin == "0.6"
-	var moves map[string]string
-	if !stem {
-
-		// 0. Pre-flight: refuse to start on content the v0.4 layout cannot hold.
-		// Nothing has been modified when this fails, so the bundle stays valid
-		// under its current pin and re-running after fixes is safe.
-		if problems := preflightV4(root); len(problems) > 0 {
-			fmt.Fprintln(out, "cannot migrate — fix these first (bundle left unchanged):")
-			for _, p := range problems {
-				fmt.Fprintln(out, "  "+p)
-			}
-			return 1
+	// Git is the migration's undo, in the repository that tracks the bundle.
+	project := ""
+	if o.Project != "" {
+		project = repository(rootAbs)
+	}
+	dest, problem := destination(o.To, rootAbs, project)
+	if problem != "" {
+		fmt.Fprintf(out, "cannot migrate: %s; the bundle was left as it is.\n", problem)
+		return 1
+	}
+	p, problems, err := newPlan(rootAbs, pin, project, dest)
+	if err != nil {
+		fmt.Fprintf(out, "error: %v\n", err)
+		return 1
+	}
+	if len(problems) > 0 {
+		fmt.Fprintln(out, "cannot migrate — fix these first (bundle left unchanged):")
+		for _, problem := range problems {
+			fmt.Fprintln(out, "  "+problem)
 		}
-
-		// 1. Two-step case renames (v0.1 → uppercase). All files are collected
-		// before any rename so every collected path stays valid throughout.
-		var files []string
-		filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
-			if err == nil && !d.IsDir() {
-				files = append(files, p)
-			}
-			return nil
-		})
-		renameFailed := false
-		for _, p := range files {
-			if to, ok := renames[filepath.Base(p)]; ok {
-				tmp := p + ".migrating"
-				final := filepath.Join(filepath.Dir(p), to)
-				if err := os.Rename(p, tmp); err != nil {
-					fmt.Fprintf(out, "error: renaming %s: %v\n", rel(root, p), err)
-					renameFailed = true
-					continue
-				}
-				if err := os.Rename(tmp, final); err != nil {
-					fmt.Fprintf(out, "error: renaming %s: %v\n", rel(root, p), err)
-					renameFailed = true
-					continue
-				}
-				fmt.Fprintf(out, "renamed %s -> %s\n", rel(root, p), to)
-			}
-		}
-		if renameFailed {
-			return 1
-		}
-
-		// 2. Delete the vendored v0.1 spec.
-		if vend := filepath.Join(root, "fdf-spec.md"); exists(vend) {
-			os.Remove(vend)
-			fmt.Fprintln(out, "removed vendored fdf-spec.md (spec is pinned by URL now)")
-		}
-
-		// 3. Rewrite casing / fdf-spec.md links in every markdown file.
-		rewriteCasingLinks(root, rootAbs)
-
-		// 4. TEST.md stubs for planned+ features (nested path; lifted in step 5).
-		stubMissingTests(root, out)
-
-		// 5. Lift nested trail files to stem-qualified siblings (0.3 → 0.4 layout).
-		var err error
-		moves, err = collectTrailMoves(root)
+		return 1
+	}
+	// Git is the migration's undo: it starts from a clean tree.
+	if project != "" {
+		lines, err := p.dirty(project)
 		if err != nil {
 			fmt.Fprintf(out, "error: %v\n", err)
 			return 1
 		}
-		if err := applyTrailMoves(root, moves, out); err != nil {
-			fmt.Fprintf(out, "error: %v\n", err)
+		if len(lines) > 0 {
+			fmt.Fprintln(out, "cannot migrate: files migrate would change have changes not committed, or are files git does not track — commit them, stash them or move them out of the bundle first, so that git can show the migration and undo it (bundle left unchanged):")
+			for i, l := range lines {
+				if i == 10 {
+					fmt.Fprintf(out, "  …and %d more\n", len(lines)-10)
+					break
+				}
+				fmt.Fprintln(out, "  "+l)
+			}
 			return 1
 		}
-
-		// 6. Rewrite all in-bundle links so resolved destinations stay correct
-		// after the layout lift (feature → stem trail, plan → tasks, etc.).
-		if len(moves) > 0 {
-			rewriteLinksAfterMoves(root, rootAbs, moves)
-		}
-
-	} // end of the pre-stem layout transform
-
-	// 7. Upgrade the root pin to the current version.
-	idx := filepath.Join(root, "INDEX.md")
-	if raw, err := os.ReadFile(idx); err == nil {
-		s := string(raw)
-		pinLine := fmt.Sprintf(`fdf_version: "%s"`, target)
-		if pinLineRe.MatchString(s) {
-			s = pinLineRe.ReplaceAllString(s, pinLine)
-		} else {
-			s = "---\n" + pinLine + "\n---\n\n" + s
-		}
-		os.WriteFile(idx, []byte(s), 0o644)
 	}
-
-	// 8. Refresh the bundle-root spec copy and scaffold missing Context stubs
-	// (including SURFACES.md on v0.4).
-	if code := scaffold.RefreshSpec(root, target, out); code != 0 {
-		return code
-	}
-	if code := scaffold.EnsureContextStubs(root, out); code != 0 {
-		return code
-	}
-	if code := scaffold.EnsureChangesIndex(root, out); code != 0 {
-		return code
-	}
-	if code := scaffold.EnsurePracticesIndex(root, out); code != 0 {
-		return code
-	}
-	if code := scaffold.EnsureDebtsIndex(root, out); code != 0 {
-		return code
-	}
-	if code := scaffold.EnsureBugsIndex(root, out); code != 0 {
-		return code
-	}
-
-	// 9. Drop the status tag older tools put after an index listing
-	// (` (**draft**)`). Nothing kept it current, so it went stale as soon as
-	// the document moved on; a status lives only in its document.
-	tags := stripIndexStatusTags(root)
-
-	// 10. Log the migration in the bundle-root log, where every bundle-wide
-	// event goes.
 	from := pin
 	if from == "" {
 		from = "unpinned"
 	}
-	entry := fmt.Sprintf("**Migrated**: fdf_version %s → %s with `fdf migrate`.", from, target)
-	if tags > 0 {
-		entry += fmt.Sprintf(" Removed the status tag from %d index listing(s); a document's status lives only in its frontmatter.", tags)
+	p.logEntry(from)
+	p.print(out, from, o.DryRun)
+	if o.DryRun {
+		return 0
 	}
-	logged := logMigration(root, entry)
-
-	// 11. Report what actually changed, then validate. Without this the only
-	// evidence of a migration is a scroll of per-file lines, and a migration
-	// that moved nothing is indistinguishable from one that did.
-	fmt.Fprintf(out, "\ndone: migrated bundle at %s\n", rootAbs)
-	fmt.Fprintf(out, "  fdf_version %s -> %s\n", from, target)
-	fmt.Fprintf(out, "  %d trail file(s) lifted to stem-qualified siblings\n", len(moves))
-	if len(moves) == 0 {
-		fmt.Fprintln(out, "  (no nested trail files were present — layout already matched)")
+	if err := p.apply(); err != nil {
+		fmt.Fprintf(out, "error: %v\n", err)
+		fmt.Fprintln(out, "the migration stopped partway. To put everything back as it was:")
+		for _, l := range p.undo(project) {
+			fmt.Fprintln(out, "  "+l)
+		}
+		return 1
 	}
-	if tags > 0 {
-		fmt.Fprintf(out, "  %d status tag(s) removed from index listings\n", tags)
+	if project != "" {
+		if err := p.markNew(project); err != nil {
+			fmt.Fprintf(out, "warning: %v — mark the new files with `git add -N` yourself, so that `git diff -M` shows each move\n", err)
+		}
 	}
-	if logged {
-		fmt.Fprintln(out, "  logged in LOG.md")
+	root = p.dest()
+	if p.relocates() {
+		fmt.Fprintf(out, "\ndone: migrated the bundle at %s to fdf_version %s, and moved it to %s; logged in LOG.md.\n", rootAbs, target, root)
+	} else {
+		fmt.Fprintf(out, "\ndone: migrated the bundle at %s to fdf_version %s; logged in LOG.md.\n", rootAbs, target)
 	}
 
 	// Freshly scaffolded Context stubs are advisory here — migration
 	// succeeded; filling them is the human's next step via fdf-init.
 	fmt.Fprintln(out, "\nvalidating migrated bundle:")
 	var report bytes.Buffer
-	code := bundle.Validate(root, bundle.Options{RepoRoot: repoRoot, Out: io.MultiWriter(out, &report), FreshStubsAdvisory: true})
+	code := bundle.Validate(root, bundle.Options{RepoRoot: o.Project, Out: io.MultiWriter(out, &report), FreshStubsAdvisory: true})
 	// Say so only when validation found a stub, and name the ones it found:
 	// F9 fails a plain validate only while one is unfilled and the bundle has
 	// a feature.
@@ -313,8 +231,127 @@ func Run(root, repoRoot string, out io.Writer) int {
 			fmt.Fprintln(out, "warning: the next plain `fdf validate` will fail F9 until those stubs are filled (migrate reports an unfilled stub as a warning, not an error).")
 		}
 	}
-	reportV07(root, report.String(), out)
+	// 0.7's checks reach further than older versions did: a bundle from
+	// before 0.7 hears what they found.
+	if v, _ := specver.Parse(pin); v.Less(specver.Version{Minor: 7}) {
+		reportV07(root, report.String(), out)
+	}
+	fmt.Fprintln(out, "\nnext: re-run `fdf install` as you installed fdf: the installed skills and primer still describe 0.7.")
+	switch {
+	case project == "":
+		fmt.Fprintln(out, "      then review the migration: the bundle is not in a git repository, so nothing can undo it.")
+	case p.submodule:
+		fmt.Fprintf(out, "      then review it inside the submodule, with `git -C %s diff -M`, and commit it there first;\n", root)
+		fmt.Fprintln(out, "      then commit the submodule's new commit here, with .gitmodules when it moved.")
+	default:
+		fmt.Fprintln(out, "      then review it with `git diff -M` — migrate marked the files it wrote with `git add -N`,")
+		fmt.Fprintln(out, "      so each move shows as a rename — and commit it.")
+	}
+	if o.EnvRoot != "" && onDisk(o.EnvRoot) == rootAbs && p.relocates() {
+		fmt.Fprintf(out, "      FDF_ROOT_DIR still names %s: point it at %s.\n", rootAbs, root)
+	}
+	if project != "" {
+		fmt.Fprintln(out, "      to back the migration out instead, run these commands; the first takes back the")
+		fmt.Fprintln(out, "      marks of `git add -N`, on which git stash and git clean would trip:")
+		for _, l := range p.backOut(project) {
+			fmt.Fprintln(out, "        "+l)
+		}
+	}
 	return code
+}
+
+// repair takes a bundle already at target, in which nothing moves: it
+// restores the vendored spec when it is missing or not target's, each
+// register's index but releases/', and each missing Context stub, never
+// through a symbolic link, then validates the bundle with the same stub
+// leniency as a migration — so running migrate twice in a row cannot flip
+// from success to failure.
+func repair(o Options, root string, out io.Writer) int {
+	fmt.Fprintf(out, "nothing to migrate: the bundle already pins fdf_version %s, the version %s upgrades a bundle to.\n", target, binaryName())
+	fmt.Fprintln(out, "if a newer spec version exists, upgrade fdf and re-run — a version-pinned shim (mise, asdf) can hold an older fdf in this directory.")
+	restore := map[string]string{}
+	if !specCurrent(root) {
+		doc, err := scaffold.SpecDoc(target)
+		if err != nil {
+			fmt.Fprintln(out, "error:", err)
+			return 1
+		}
+		restore["SPEC.md"] = string(doc)
+	}
+	for _, reg := range layout.Registers {
+		if idx := reg + "/INDEX.md"; reg != "releases" && !exists(filepath.Join(root, idx)) {
+			restore[idx], _ = scaffold.IndexText(reg)
+		}
+	}
+	for _, name := range layout.ContextDocs {
+		if !exists(filepath.Join(root, name)) {
+			restore[name], _ = scaffold.ContextStub(name)
+		}
+	}
+	// Nothing is written through a symbolic link: a file it would restore
+	// that is one, such as a SPEC.md or a dangling Context document, or a
+	// register it would restore an index into, is refused first, as a
+	// migration refuses it.
+	var linked []string
+	for _, rel := range sortedKeys(restore) {
+		if reg := path.Dir(rel); reg != "." {
+			if to, err := os.Readlink(filepath.Join(root, reg)); err == nil {
+				linked = append(linked, linkedRegister(reg, to))
+				continue
+			}
+		}
+		if to, err := os.Readlink(filepath.Join(root, filepath.FromSlash(rel))); err == nil {
+			linked = append(linked, linkedFile(rel, to))
+		}
+	}
+	if len(linked) > 0 {
+		fmt.Fprintln(out, "cannot restore — fix these first (bundle left unchanged):")
+		for _, l := range linked {
+			fmt.Fprintln(out, "  "+l)
+		}
+		return 1
+	}
+	switch {
+	case len(restore) == 0:
+		fmt.Fprintln(out, "nothing to restore: the spec copy, the registers' indexes and the Context documents are all there.")
+	case o.DryRun:
+		fmt.Fprintln(out, "would restore: "+strings.Join(sortedKeys(restore), ", "))
+	default:
+		fmt.Fprintln(out, "restored: "+strings.Join(sortedKeys(restore), ", "))
+	}
+	if o.DryRun {
+		return 0
+	}
+	for _, rel := range sortedKeys(restore) {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			fmt.Fprintln(out, "error:", err)
+			return 1
+		}
+		if err := os.WriteFile(p, []byte(restore[rel]), 0o644); err != nil {
+			fmt.Fprintln(out, "error:", err)
+			return 1
+		}
+	}
+	fmt.Fprintln(out, "\nvalidating bundle:")
+	return bundle.Validate(root, bundle.Options{RepoRoot: o.Project, Out: out, FreshStubsAdvisory: true})
+}
+
+// specCurrent reports whether the bundle's SPEC.md is the vendored spec of
+// target: the embedded text under its frontmatter.
+func specCurrent(root string) bool {
+	raw, err := os.ReadFile(filepath.Join(root, "SPEC.md"))
+	want, werr := scaffold.SpecText(target)
+	if err != nil || werr != nil {
+		return false
+	}
+	text := string(raw)
+	if rest, ok := strings.CutPrefix(text, "---\n"); ok {
+		if i := strings.Index(rest, "\n---\n"); i >= 0 {
+			text = strings.TrimPrefix(rest[i+len("\n---\n"):], "\n")
+		}
+	}
+	return text == string(want)
 }
 
 // stubRe matches the validator's messages for a Context document that is
@@ -387,65 +424,6 @@ func reportV07(root, validation string, out io.Writer) {
 // text in parentheses stays.
 var statusTagRe = regexp.MustCompile(`^([ \t]*[-*+][ \t].*\]\(.*\).*?)[ \t]*\(\*\*(?:draft|specified|planned|implementing|done|retired|adopted|pending|in-progress|active|superseded|open|accepted|resolved|shipped)\*\*\)[ \t]*(\r?)$`)
 
-// stripIndexStatusTags removes the status tag from every listing in every
-// INDEX.md, outside code, and says how many it removed.
-func stripIndexStatusTags(root string) int {
-	n := 0
-	filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if d.IsDir() {
-			if p != root && strings.HasPrefix(d.Name(), ".") {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if d.Name() != "INDEX.md" {
-			return nil
-		}
-		raw, err := os.ReadFile(p)
-		if err != nil {
-			return nil
-		}
-		lines := strings.Split(string(raw), "\n")
-		fence, removed := "", 0
-		for i, line := range lines {
-			t := strings.TrimSpace(line)
-			if fence != "" {
-				if strings.HasPrefix(t, fence) {
-					fence = ""
-				}
-				continue
-			}
-			if strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~") {
-				fence = t[:3]
-				continue
-			}
-			if m := statusTagRe.FindStringSubmatch(line); m != nil {
-				lines[i] = m[1] + m[2]
-				removed++
-			}
-		}
-		if removed > 0 && os.WriteFile(p, []byte(strings.Join(lines, "\n")), 0o644) == nil {
-			n += removed
-		}
-		return nil
-	})
-	return n
-}
-
-// logMigration adds entry to the bundle-root LOG.md, creating it if missing,
-// and reports whether it was written.
-func logMigration(root, entry string) bool {
-	p := filepath.Join(root, "LOG.md")
-	body := "# Bundle Update Log\n"
-	if raw, err := os.ReadFile(p); err == nil {
-		body = string(raw)
-	}
-	return os.WriteFile(p, []byte(logs.Insert(body, logs.Entry(entry))), 0o644) == nil
-}
-
 // countRegisterEntries counts the documents in a register directory, groups
 // included, leaving out its index, its log and each entry's log sibling.
 func countRegisterEntries(dir string) int {
@@ -461,35 +439,6 @@ func countRegisterEntries(dir string) int {
 	})
 	return n
 }
-
-// bugsGroupConflict reports a bundle that uses bugs/ as a feature group, which
-// v0.7 reserves for the bug register. Bug documents already there are fine.
-func bugsGroupConflict(root string) string {
-	var offender string
-	filepath.WalkDir(filepath.Join(root, "bugs"), func(p string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || offender != "" || !strings.HasSuffix(p, ".md") {
-			return nil
-		}
-		base := filepath.Base(p)
-		if base == "INDEX.md" || base == "LOG.md" || strings.HasSuffix(base, ".log.md") {
-			return nil
-		}
-		raw, rerr := os.ReadFile(p)
-		if rerr != nil {
-			return nil
-		}
-		if m := typeLineRe.FindSubmatch(raw); m == nil || strings.Trim(string(m[1]), `"'`) != "Bug" {
-			offender = rel(root, p)
-		}
-		return nil
-	})
-	if offender == "" {
-		return ""
-	}
-	return fmt.Sprintf("bugs/ is a feature group (%s), but v0.7 reserves bugs/ for the bug register — rename the group first (its directory, its listing in INDEX.md and the links to it), then re-run fdf migrate", filepath.ToSlash(offender))
-}
-
-var typeLineRe = regexp.MustCompile(`(?m)^type:\s*(\S+)`)
 
 // preflightV4 scans for content the v0.4 layout cannot represent and that
 // this migration cannot mechanically fix: dotted group-level filenames
@@ -560,300 +509,6 @@ func readPin(root string) string {
 		return string(m[1])
 	}
 	return ""
-}
-
-func rewriteCasingLinks(root, rootAbs string) {
-	filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".md") {
-			return nil
-		}
-		raw, err := os.ReadFile(p)
-		if err != nil {
-			return nil
-		}
-		s := linkRe.ReplaceAllStringFunc(string(raw), func(m string) string {
-			parts := linkRe.FindStringSubmatch(m)
-			target := parts[2]
-			// Leave external and intra-document targets untouched
-			// (mirrors bundle.resolveLink's guard).
-			if strings.Contains(target, "://") || strings.HasPrefix(target, "mailto:") ||
-				strings.HasPrefix(target, "tel:") || strings.HasPrefix(target, "#") {
-				return m
-			}
-			// Root-absolute targets keep their leading "/" and get only
-			// the relative remainder rewritten — never "//".
-			prefix, relTarget := "", target
-			if strings.HasPrefix(target, "/") {
-				prefix, relTarget = "/", strings.TrimPrefix(target, "/")
-			} else {
-				// Relative targets that resolve outside the bundle root
-				// point at a sibling (non-FDF) tree we don't own —
-				// leave them exactly as written.
-				pathPart := target
-				if i := strings.IndexAny(pathPart, "#?"); i >= 0 {
-					pathPart = pathPart[:i]
-				}
-				joined := filepath.Clean(filepath.Join(filepath.Dir(p), pathPart))
-				if relP, err := filepath.Rel(rootAbs, joined); err != nil || relP == ".." || strings.HasPrefix(relP, "../") {
-					return m
-				}
-			}
-			dir, base := filepath.Dir(relTarget), filepath.Base(relTarget)
-			frag := ""
-			if i := strings.IndexAny(base, "#?"); i >= 0 {
-				base, frag = base[:i], base[i:]
-			}
-			if base == "fdf-spec.md" {
-				return parts[1] + specURL + parts[3]
-			}
-			if to, ok := renames[base]; ok {
-				if dir == "." {
-					return parts[1] + prefix + to + frag + parts[3]
-				}
-				return parts[1] + prefix + dir + "/" + to + frag + parts[3]
-			}
-			return m
-		})
-		os.WriteFile(p, []byte(s), 0o644)
-		return nil
-	})
-}
-
-func stubMissingTests(root string, out io.Writer) {
-	filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".md") {
-			return nil
-		}
-		relPath := rel(root, p)
-		parts := strings.Split(filepath.ToSlash(relPath), "/")
-		if len(parts) != 2 || parts[0] == "releases" || filepath.Base(p) == "INDEX.md" || filepath.Base(p) == "LOG.md" {
-			return nil
-		}
-		// Skip stem trail files if somehow already present.
-		base := filepath.Base(p)
-		if strings.Contains(strings.TrimSuffix(base, ".md"), ".") {
-			return nil
-		}
-		raw, _ := os.ReadFile(p)
-		m := statusRe.FindSubmatch(raw)
-		if m == nil {
-			return nil
-		}
-		status := string(m[1])
-		if status != "planned" && status != "implementing" && status != "done" {
-			return nil
-		}
-		dir := strings.TrimSuffix(p, ".md")
-		// Prefer nested TEST.md (pre-lift); also skip if stem test already exists.
-		testPath := filepath.Join(dir, "TEST.md")
-		stemTest := filepath.Join(filepath.Dir(p), strings.TrimSuffix(base, ".md")+".test.md")
-		if exists(testPath) || exists(stemTest) {
-			return nil
-		}
-		ts := "2026-01-01T00:00:00Z"
-		if tm := timestampRe.FindSubmatch(raw); tm != nil {
-			ts = string(tm[1])
-		}
-		var cases []string
-		for _, sc := range scenarioRe.FindAllSubmatch(raw, -1) {
-			// One `## <scenario name>` heading per case: the form F8 matches.
-			cases = append(cases, fmt.Sprintf("## %s\n\nTODO: specify the concrete verification.\n", strings.TrimSpace(string(sc[1]))))
-		}
-		body := fmt.Sprintf("---\ntype: Test\ntitle: %s acceptance\ndescription: How this feature is proven.\ntimestamp: %s\n---\n\n# Test Cases\n\n%s",
-			strings.TrimSuffix(parts[1], ".md"), ts, strings.Join(cases, "\n"))
-		os.MkdirAll(dir, 0o755)
-		os.WriteFile(testPath, []byte(body), 0o644)
-		fmt.Fprintf(out, "stubbed %s/TEST.md (%d scenario case(s))\n", rel(root, dir), len(cases))
-		return nil
-	})
-}
-
-// collectTrailMoves finds group/slug/{SPEC,PLAN,TEST,LOG}.md → group/slug.<role>.md.
-func collectTrailMoves(root string) (map[string]string, error) {
-	moves := map[string]string{}
-	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil
-		}
-		relPath := filepath.ToSlash(rel(root, p))
-		parts := strings.Split(relPath, "/")
-		if len(parts) != 3 {
-			return nil
-		}
-		role, ok := trailBasenames[parts[2]]
-		if !ok {
-			return nil
-		}
-		// parts[0]=group, parts[1]=slug, parts[2]=TRAIL.md
-		destRel := parts[0] + "/" + parts[1] + "." + role + ".md"
-		destAbs := filepath.Join(root, filepath.FromSlash(destRel))
-		if exists(destAbs) {
-			return fmt.Errorf("cannot move %s: %s already exists", relPath, destRel)
-		}
-		moves[relPath] = destRel
-		return nil
-	})
-	return moves, err
-}
-
-func applyTrailMoves(root string, moves map[string]string, out io.Writer) error {
-	// Deterministic order not required; each source is unique.
-	for fromRel, toRel := range moves {
-		from := filepath.Join(root, filepath.FromSlash(fromRel))
-		to := filepath.Join(root, filepath.FromSlash(toRel))
-		tmp := from + ".migrating"
-		if err := os.Rename(from, tmp); err != nil {
-			return fmt.Errorf("moving %s: %w", fromRel, err)
-		}
-		if err := os.Rename(tmp, to); err != nil {
-			// Best-effort rollback of the temp name.
-			_ = os.Rename(tmp, from)
-			return fmt.Errorf("moving %s -> %s: %w", fromRel, toRel, err)
-		}
-		// Feature-dir LOG.md was reserved (no frontmatter required) under
-		// v0.2/v0.3; slug.log.md is type: Log and needs a frontmatter block.
-		if strings.HasSuffix(toRel, ".log.md") {
-			if err := ensureFeatureLogFrontmatter(to, toRel); err != nil {
-				return err
-			}
-		}
-		fmt.Fprintf(out, "moved %s -> %s\n", fromRel, toRel)
-	}
-	return nil
-}
-
-// ensureFeatureLogFrontmatter wraps a bare feature log (common pre-v0.4
-// form) with type: Log frontmatter so validation accepts the stem file.
-func ensureFeatureLogFrontmatter(path, toRel string) error {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("reading %s: %w", toRel, err)
-	}
-	text := strings.TrimPrefix(string(raw), "\uFEFF")
-	trimmed := strings.TrimSpace(text)
-	if strings.HasPrefix(trimmed, "---") {
-		// Already has a frontmatter fence; leave body to the author/validate.
-		return nil
-	}
-	// Derive a short title from the stem: group/slug.log.md → slug.
-	base := filepath.Base(toRel) // slug.log.md
-	stem := strings.TrimSuffix(base, ".log.md")
-	title := stem + " feature log"
-	body := fmt.Sprintf("---\ntype: Log\ntitle: %s\ndescription: Per-feature history.\ntimestamp: 2026-01-01T00:00:00Z\n---\n\n%s", title, text)
-	if !strings.HasSuffix(body, "\n") {
-		body += "\n"
-	}
-	return os.WriteFile(path, []byte(body), 0o644)
-}
-
-// rewriteLinksAfterMoves rewrites every in-bundle markdown link so that
-// destinations that were lifted keep resolving, and relative links from
-// moved files are recomputed from their new location.
-//
-// Algorithm: for a link in file currently at curRel, resolve the target as if
-// the source were still at its pre-move path (inverseMoves), map the resolved
-// path through moves, then emit a link from the current path to the final dest.
-func rewriteLinksAfterMoves(root, rootAbs string, moves map[string]string) {
-	inverse := map[string]string{} // newRel -> oldRel
-	for oldRel, newRel := range moves {
-		inverse[newRel] = oldRel
-	}
-
-	filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".md") {
-			return nil
-		}
-		curRel := filepath.ToSlash(rel(root, p))
-		raw, err := os.ReadFile(p)
-		if err != nil {
-			return nil
-		}
-		// Resolve relative links as if still at the pre-move source path.
-		srcForResolve := curRel
-		if old, ok := inverse[curRel]; ok {
-			srcForResolve = old
-		}
-		srcDirForResolve := filepath.ToSlash(filepath.Dir(filepath.FromSlash(srcForResolve)))
-		if srcDirForResolve == "." {
-			srcDirForResolve = ""
-		}
-
-		changed := false
-		s := linkRe.ReplaceAllStringFunc(string(raw), func(m string) string {
-			parts := linkRe.FindStringSubmatch(m)
-			target := parts[2]
-			if strings.Contains(target, "://") || strings.HasPrefix(target, "mailto:") ||
-				strings.HasPrefix(target, "tel:") || strings.HasPrefix(target, "#") {
-				return m
-			}
-
-			pathPart, frag := target, ""
-			if i := strings.IndexAny(pathPart, "#?"); i >= 0 {
-				pathPart, frag = pathPart[:i], pathPart[i:]
-			}
-			if pathPart == "" {
-				return m
-			}
-
-			absStyle := strings.HasPrefix(pathPart, "/")
-			var resolved string
-			if absStyle {
-				resolved = filepath.ToSlash(filepath.Clean(strings.TrimPrefix(pathPart, "/")))
-			} else {
-				// Resolve against pre-move source directory.
-				base := srcDirForResolve
-				if base == "" {
-					resolved = filepath.ToSlash(filepath.Clean(pathPart))
-				} else {
-					resolved = filepath.ToSlash(filepath.Clean(base + "/" + pathPart))
-				}
-				// Out-of-bundle relative targets: leave untouched.
-				if resolved == ".." || strings.HasPrefix(resolved, "../") {
-					return m
-				}
-				// Also guard via rootAbs for ".." segments that clean oddly.
-				joined := filepath.Clean(filepath.Join(rootAbs, filepath.FromSlash(resolved)))
-				if relP, err := filepath.Rel(rootAbs, joined); err != nil || relP == ".." || strings.HasPrefix(relP, "../") {
-					return m
-				}
-			}
-
-			final := resolved
-			if to, ok := moves[resolved]; ok {
-				final = to
-			}
-
-			// If nothing changed and the source file itself wasn't moved,
-			// keep the original spelling (preserves hand-written style).
-			if final == resolved && inverse[curRel] == "" {
-				return m
-			}
-
-			var newTarget string
-			if absStyle {
-				newTarget = "/" + final + frag
-			} else {
-				// Relative from the current file's directory to final.
-				curDir := filepath.Dir(p)
-				destAbs := filepath.Join(rootAbs, filepath.FromSlash(final))
-				relT, err := filepath.Rel(curDir, destAbs)
-				if err != nil {
-					newTarget = final + frag
-				} else {
-					newTarget = filepath.ToSlash(relT) + frag
-				}
-			}
-			if newTarget == target {
-				return m
-			}
-			changed = true
-			return parts[1] + newTarget + parts[3]
-		})
-		if changed {
-			os.WriteFile(p, []byte(s), 0o644)
-		}
-		return nil
-	})
 }
 
 func rel(root, p string) string {

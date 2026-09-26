@@ -12,6 +12,7 @@ import (
 	"time"
 
 	fdf "github.com/GiteshDalal/fdf"
+	"github.com/GiteshDalal/fdf/cli/internal/fdfroot"
 	"github.com/GiteshDalal/fdf/cli/internal/layout"
 	"github.com/GiteshDalal/fdf/cli/internal/specver"
 )
@@ -60,11 +61,11 @@ const domainTermsStub = "# Terms\n\n" +
 	"- code: `Venue` (model), `venues` (table)\n" +
 	"-->\n"
 
-// specDoc renders the embedded spec of a version as a bundle-root Reference
+// SpecDoc renders the embedded spec of a version as a bundle-root Reference
 // document. Agents and readers of the bundle need no external context to
 // learn the format: the pinned version's spec travels with the bundle at
 // /SPEC.md.
-func specDoc(version string) ([]byte, error) {
+func SpecDoc(version string) ([]byte, error) {
 	raw, err := fs.ReadFile(fdf.Assets, "spec/"+version+".md")
 	if err != nil {
 		return nil, err
@@ -77,17 +78,25 @@ func specDoc(version string) ([]byte, error) {
 // bundle.stubSentinel so validation can distinguish filled from unfilled.
 const stubSentinel = "<!-- fdf:stub -->"
 
-// EnsureSpec, RefreshSpec, and EnsureContextStubs let other commands (e.g.
-// migrate) place the bundle-root spec copy and Context stubs without
-// re-implementing them. EnsureSpec writes the current version's spec only if
-// absent (init); RefreshSpec overwrites it with the spec of the version a
-// bundle now pins (migrate), so a bumped pin never leaves a stale vendored
-// spec behind.
-func EnsureSpec(root string, out io.Writer) int { return writeSpec(root, currentVersion, false, out) }
-func RefreshSpec(root, version string, out io.Writer) int {
-	return writeSpec(root, version, true, out)
+// EnsureSpec writes the current version's spec to /SPEC.md when the bundle
+// has none (init). fdf migrate vendors the spec it pins with SpecDoc.
+func EnsureSpec(root string, out io.Writer) int {
+	specPath := filepath.Join(root, "SPEC.md")
+	if _, err := os.Stat(specPath); err == nil {
+		return 0
+	}
+	doc, err := SpecDoc(currentVersion)
+	if err != nil {
+		fmt.Fprintln(out, "error:", err)
+		return 1
+	}
+	if err := os.WriteFile(specPath, doc, 0o644); err != nil {
+		fmt.Fprintln(out, "error:", err)
+		return 1
+	}
+	fmt.Fprintf(out, "wrote SPEC.md (FDF v%s spec copy)\n", currentVersion)
+	return 0
 }
-func EnsureContextStubs(root string, out io.Writer) int { return writeContextStubs(root, out) }
 
 // registerIndexes are the INDEX.md fdf writes for each register but
 // releases/ (whose index `fdf release` keeps): what the register holds, and
@@ -103,6 +112,13 @@ var registerIndexes = map[string]struct{ body, what string }{
 		"the debt register"},
 	"bugs": {"# Bugs\n\nKnown defects — the software doing something wrong that someone could\nobserve — that have not been repaired yet. Each is repaired by a Fix or a\nChange that names it in `resolves`. Run `fdf bug` to read the register.\n\n* [Format reference](/SPEC.md) - how bugs are structured.\n",
 		"the bug register"},
+}
+
+// IndexText is the INDEX.md fdf writes for the register reg (features,
+// changes, practices, debts or bugs), and whether it writes one.
+func IndexText(reg string) (string, bool) {
+	ix, ok := registerIndexes[reg]
+	return ix.body, ok
 }
 
 // EnsureIndex creates the INDEX.md of the register reg (features, changes,
@@ -130,13 +146,6 @@ func EnsureIndex(root, reg string, out io.Writer) int {
 	fmt.Fprintf(out, "wrote %s/INDEX.md (%s)\n", reg, ix.what)
 	return 0
 }
-
-// EnsureChangesIndex, EnsurePracticesIndex, EnsureDebtsIndex and
-// EnsureBugsIndex are EnsureIndex for one register each.
-func EnsureChangesIndex(root string, out io.Writer) int   { return EnsureIndex(root, "changes", out) }
-func EnsurePracticesIndex(root string, out io.Writer) int { return EnsureIndex(root, "practices", out) }
-func EnsureDebtsIndex(root string, out io.Writer) int     { return EnsureIndex(root, "debts", out) }
-func EnsureBugsIndex(root string, out io.Writer) int      { return EnsureIndex(root, "bugs", out) }
 
 // ensureIndexes creates whichever of the registers' indexes `fdf init`
 // scaffolds are absent: that of every register layout knows but releases/,
@@ -194,13 +203,30 @@ func SpecText(version string) ([]byte, error) {
 // writeContextStubs places the Context stubs at the bundle root, each
 // only if absent. The fdf-init interview replaces the stub bodies later.
 func writeContextStubs(root string, out io.Writer) int {
-	now := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 	for _, c := range contextDocs {
 		path := filepath.Join(root, c.file)
 		if _, err := os.Stat(path); err == nil {
 			continue
 		}
-		body := fmt.Sprintf(`---
+		body, _ := ContextStub(c.file)
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			fmt.Fprintln(out, "error:", err)
+			return 1
+		}
+		fmt.Fprintf(out, "wrote %s (context stub — fill via the fdf-init skill)\n", c.file)
+	}
+	return 0
+}
+
+// ContextStub is the stub fdf writes for the Context document named file,
+// such as DOMAIN.md, and whether it is one. The fdf-init interview fills it.
+func ContextStub(file string) (string, bool) {
+	for _, c := range contextDocs {
+		if c.file != file {
+			continue
+		}
+		now := time.Now().UTC().Format("2006-01-02T15:04:05Z")
+		return fmt.Sprintf(`---
 type: Context
 title: %s
 description: %s
@@ -217,41 +243,9 @@ timestamp: %s
 > logging each change. Accurate context here is what lets an agent do real
 > engineering instead of guessing. Delete this banner once filled.
 
-%s`, c.title, "Project "+strings.ToLower(c.title)+" — current snapshot.", now, stubSentinel, c.title, "⚠️", c.purpose, c.headings)
-		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-			fmt.Fprintln(out, "error:", err)
-			return 1
-		}
-		fmt.Fprintf(out, "wrote %s (context stub — fill via the fdf-init skill)\n", c.file)
+%s`, c.title, "Project "+strings.ToLower(c.title)+" — current snapshot.", now, stubSentinel, c.title, "⚠️", c.purpose, c.headings), true
 	}
-	return 0
-}
-
-// writeSpec places the spec of version at /SPEC.md. With force=false it is a
-// no-op when a copy already exists (init); with force=true it overwrites
-// (migrate), reporting whether it wrote or refreshed.
-func writeSpec(root, version string, force bool, out io.Writer) int {
-	specPath := filepath.Join(root, "SPEC.md")
-	_, statErr := os.Stat(specPath)
-	existed := statErr == nil
-	if existed && !force {
-		return 0
-	}
-	doc, err := specDoc(version)
-	if err != nil {
-		fmt.Fprintln(out, "error:", err)
-		return 1
-	}
-	if err := os.WriteFile(specPath, doc, 0o644); err != nil {
-		fmt.Fprintln(out, "error:", err)
-		return 1
-	}
-	verb := "wrote"
-	if existed {
-		verb = "refreshed"
-	}
-	fmt.Fprintf(out, "%s %s (FDF v%s spec copy)\n", verb, filepath.Base(specPath), version)
-	return 0
+	return "", false
 }
 
 // contextDocNames lists the Context documents for user-facing messages, so a
@@ -376,6 +370,12 @@ func Init(root string, out io.Writer) int {
 		fmt.Fprintf(out, "\ndone: bundle at %s was already initialized and up to date (fdf_version %s)\n", root, Pin(root))
 		fmt.Fprintln(out, "  nothing was overwritten; only missing files above were added")
 		return 0
+	}
+	// No bundle here yet. A directory inside a pinned bundle is one of its
+	// registers or groups, not the place for a second bundle.
+	if bundle := fdfroot.BundleAbove(root); bundle != "" {
+		fmt.Fprintln(out, "error:", fdfroot.InsideBundle(root, bundle))
+		return 1
 	}
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		fmt.Fprintln(out, "error:", err)

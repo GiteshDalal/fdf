@@ -81,6 +81,45 @@ func gone(t *testing.T, root, rel string) {
 	}
 }
 
+// A mention of an ID is the ID where it ends: bare, as one of its documents,
+// or as its task directory. A path that goes on past it names something
+// else, code or a route's template. Where the IDs are 0.x ones, which name
+// no register (routes), a bare /<id> reads as a URL's path, even for a 0.6
+// group named bugs/; a 1.0 ID's /features/venues/opening-hours is the
+// document.
+func TestIDMentionsReadAnIDWhereItEnds(t *testing.T) {
+	const old, new = "venues/opening-hours", "features/venues/opening-hours"
+	for _, c := range []struct {
+		old, new, text, want string
+		routes               bool
+	}{
+		{old, new, "affects: venues/opening-hours\n", "affects: features/venues/opening-hours\n", true},
+		{old, new, "See venues/opening-hours.", "See features/venues/opening-hours.", true},
+		{old, new, "`venues/opening-hours.spec.md`, venues/opening-hours/01-build.md", "`features/venues/opening-hours.spec.md`, features/venues/opening-hours/01-build.md", true},
+		{old, new, "its spec, venues/opening-hours.spec; its code, venues/opening-hours.spec.ts", "its spec, features/venues/opening-hours.spec; its code, venues/opening-hours.spec.ts", true},
+		{old, new, "its tasks, in venues/opening-hours/.", "its tasks, in features/venues/opening-hours/.", true},
+		{old, new, "from the root, /venues/opening-hours.md", "from the root, /features/venues/opening-hours.md", true},
+		{old, new, "served as `GET /venues/opening-hours`", "served as `GET /venues/opening-hours`", true},
+		{old, new, "`GET /venues/opening-hours/ lists them`", "`GET /venues/opening-hours/ lists them`", true},
+		{old, new, "`PUT /venues/opening-hours/{id}`, `DELETE /venues/opening-hours/:id`", "`PUT /venues/opening-hours/{id}`, `DELETE /venues/opening-hours/:id`", true},
+		{old, new, "the route venues/opening-hours/{id}", "the route venues/opening-hours/{id}", true},
+		{old, new, "in venues/opening-hours/handler.go", "in venues/opening-hours/handler.go", true},
+		{old, new, "venues/opening-hours.go, venues/opening-hours-v2", "venues/opening-hours.go, venues/opening-hours-v2", true},
+		{old, new, "src/venues/opening-hours", "src/venues/opening-hours", true},
+		{"bugs/crash-report", "features/bugs/crash-report", "`GET /bugs/crash-report`, and bugs/crash-report", "`GET /bugs/crash-report`, and features/bugs/crash-report", true},
+		{"features/venues/opening-hours", "features/venues/hours", "see /features/venues/opening-hours, and features/venues/opening-hours.spec", "see /features/venues/hours, and features/venues/hours.spec", false},
+	} {
+		got := c.text
+		reps := IDMentions(c.text, map[string]string{c.old: c.new}, "", nil, c.routes)
+		for i := len(reps) - 1; i >= 0; i-- {
+			got = got[:reps[i].Start] + reps[i].Text + got[reps[i].End:]
+		}
+		if got != c.want {
+			t.Errorf("%q\n got %q\nwant %q", c.text, got, c.want)
+		}
+	}
+}
+
 func TestMoveRenamesAFeatureWithItsTrailAndRepairsEveryReference(t *testing.T) {
 	root := fixture(t, "valid-bugs-v10")
 	// A release listing the feature, and a sample link in a code fence that

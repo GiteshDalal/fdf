@@ -272,6 +272,23 @@ func TestHoldsMarkdown(t *testing.T) {
 	}
 }
 
+// CaseTwin names the reserved file a disk that ignores case reads a name as,
+// for the names no document takes, and nothing for any other.
+func TestCaseTwin(t *testing.T) {
+	for name, want := range map[string]string{
+		"index.md":  "no document is named index.md: a disk that ignores case reads it as the INDEX.md beside it — rename it",
+		"log.md":    "no document is named log.md: a disk that ignores case reads it as the LOG.md beside it — rename it",
+		"INDEX.md":  "",
+		"logs.md":   "",
+		"index":     "",
+		"refund.md": "",
+	} {
+		if got := CaseTwin(name); got != want {
+			t.Errorf("CaseTwin(%q) = %q; want %q", name, got, want)
+		}
+	}
+}
+
 func TestRegistersAndContextDocs(t *testing.T) {
 	for _, name := range []string{"features", "changes", "practices", "debts", "bugs", "releases"} {
 		if !IsRegister(name) {

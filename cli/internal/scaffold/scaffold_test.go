@@ -428,7 +428,9 @@ func TestScaffoldsPointA0xBundleAtMigrate(t *testing.T) {
 // A register's or a group's INDEX.md pins nothing, so a root pointed at one,
 // --root docs/fdf/features for docs/fdf, used to be sent to `fdf migrate`,
 // which built a second bundle inside the first. The commands, fdf init among
-// them, name the bundle instead, and write nothing.
+// them, name the bundle instead, and write nothing. So does a directory in
+// the bundle that holds no INDEX.md, or does not exist yet, where fdf init
+// used to build a second bundle.
 func TestScaffoldsSendARootInsideABundleToIt(t *testing.T) {
 	bundle := filepath.Join(t.TempDir(), "docs", "fdf")
 	var out bytes.Buffer
@@ -437,8 +439,16 @@ func TestScaffoldsSendARootInsideABundleToIt(t *testing.T) {
 	if code := New(bundle, "payments/refunds", &out); code != 0 {
 		t.Fatalf("fdf new: exit %d\n%s", code, out.String())
 	}
+	if err := os.MkdirAll(filepath.Join(bundle, "features", "payments", "diagrams"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	before := tree(t, bundle)
-	for _, root := range []string{filepath.Join(bundle, "features"), filepath.Join(bundle, "features", "payments")} {
+	for _, root := range []string{
+		filepath.Join(bundle, "features"),
+		filepath.Join(bundle, "features", "payments"),
+		filepath.Join(bundle, "features", "payments", "diagrams"),
+		filepath.Join(bundle, "features", "cards"),
+	} {
 		want := "error: " + root + " is inside the bundle at " + bundle + ", not a bundle of its own — pass --root " + bundle + ", or leave --root out\n"
 		for name, run := range map[string]func(root string, out *bytes.Buffer) int{
 			"init": func(root string, out *bytes.Buffer) int { return Init(root, out) },

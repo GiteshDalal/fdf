@@ -20,7 +20,7 @@ import (
 )
 
 var (
-	dateHeadRe  = regexp.MustCompile(`(?m)^##[ \t]+\d{4}-\d{2}-\d{2}[ \t]*$`)
+	dateHeadRe  = regexp.MustCompile(`(?m)^##[ \t]+\d{4}-\d{2}-\d{2}[ \t\r]*$`)
 	typeRe      = regexp.MustCompile(`(?m)^type:\s*"?([A-Za-z]+)"?\s*$`)
 	titleRe     = regexp.MustCompile(`(?m)^title:\s*(.+?)\s*$`)
 	headingRe   = regexp.MustCompile(`(?m)^#\s+(.+?)\s*$`)

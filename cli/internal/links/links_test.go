@@ -1,9 +1,13 @@
 package links
 
-import "testing"
+import (
+	"strings"
+	"testing"
+	"time"
+)
 
 func TestFindReturnsEveryTargetAndMarksCode(t *testing.T) {
-	text := "See [a](one.md) and ![img](pics/x.png \"title\").\n" +
+	text := "See [a](one.md) and ![img](pics/x.png \"title\").\n\n" +
 		"[ref]: ../two.md\n" +
 		"   [spaced]: three.md \"t\"\n" +
 		"[^1]: A footnote is not a link definition.\n" +
@@ -100,6 +104,11 @@ func TestRetargetFromAFileThatMovesDeeper(t *testing.T) {
 		{"a directory", "../payments/", "../../payments/"},
 		{"its own sibling, which moves with it", "refund-window.spec.md", ""},
 		{"its own task, which moves with it", "refund-window/01-shorten.md", ""},
+		{"its own sibling, written ./", "./refund-window.spec.md", ""},
+		{"a sibling left behind, written ./", "./other.md", "../other.md"},
+		// The bundle root does not move, so a link written from it still
+		// names the same file, wherever it points.
+		{"a document beside the bundle, from the bundle root", "/../okf/modules/auth.md", ""},
 		{"a URL", "https://example.com/a.md", ""},
 		{"an anchor", "#problem", ""},
 		{"a mail address", "mailto:team@example.com", ""},
@@ -125,6 +134,7 @@ func TestRetargetFromAFileThatStaysToOneThatMoves(t *testing.T) {
 		{"a file in the moved task directory", "../changes/refund-window/01-shorten.md", "../changes/payments/refund-window/01-shorten.md"},
 		{"nothing moved at either end", "../../okf/modules/auth.md", ""},
 		{"the moved document, in angle brackets", "<../changes/refund-window.md>", "<../changes/payments/refund-window.md>"},
+		{"the moved document, written ./", "./../changes/refund-window.md", "../changes/payments/refund-window.md"},
 	})
 }
 
@@ -153,6 +163,11 @@ func TestRetargetAcrossABundleThatMoves(t *testing.T) {
 		{"a register document, from the bundle root", "/changes/c.md", ""},
 		{"a register document", "../changes/c.md", "../../changes/c.md"},
 		{"a feature in the same group", "y.md", ""},
+		{"a feature in the same group, written ./", "./y.md", ""},
+		// A link to a file outside the bundle is written relative (spec 1.0,
+		// Cross-linking), so one written from the bundle root that the move
+		// must rewrite is written relative.
+		{"a document beside the bundle, from the bundle root", "/../okf/modules/auth.md", "../../../okf/modules/auth.md"},
 	})
 	index := Site{OldPath: "docs/features/INDEX.md", NewPath: "docs/fdf/INDEX.md", OldBase: "docs/features", NewBase: "docs/fdf"}
 	runRetarget(t, index, migrationMove, []retargetCase{
@@ -198,7 +213,7 @@ func checkFind(t *testing.T, text string, want []wantLink) {
 // text. A "](" that no "[" opens in its paragraph is not a link.
 func TestFindReadsEveryLinkForm(t *testing.T) {
 	checkFind(t, "[a](one.md \"T\") [b](two.md 'T') [c](three.md (T)) [d]( four.md )\n"+
-		"[e](<my notes.md>) ![f](<pics/a b.png> \"T\")\n"+
+		"[e](<my notes.md>) ![f](<pics/a b.png> \"T\")\n\n"+
 		"[g]: <five six.md> \"T\"\n\n"+
 		"Not links: a] (x) and b](seven.md).\n\n"+
 		"[![badge](badge.svg)](eight.md)\n\n"+
@@ -279,10 +294,102 @@ func TestCodeReturnsTheRangesFindReadsAsCode(t *testing.T) {
 	}
 }
 
+// A destination may hold parentheses that balance, and a backslash escapes
+// the next character; one whose parentheses do not balance is no link.
+func TestFindReadsBalancedParenthesesInADestination(t *testing.T) {
+	checkFind(t, "[a](five(1).md) [b](x\\)y.md) [c](open(.md) [d](<six(.md> \"T\")\n", []wantLink{
+		{target: "five(1).md"},
+		{target: "x\\)y.md"},
+		{target: "<six(.md>"},
+	})
+}
+
+// A fence marker indented four columns or more opens no fence: after a blank
+// line it is indented code, and inside a paragraph it is prose. So nothing
+// after it is swallowed as code when no fence closes.
+func TestFindAFenceIndentedFourColumnsOpensNoFence(t *testing.T) {
+	checkFind(t, "Intro.\n\n    ```\n    [a](indented.md)\n\n[b](after.md)\n\n"+
+		"A paragraph\n    ```\n[c](still-prose.md)\n", []wantLink{
+		{target: "indented.md", inCode: true},
+		{target: "after.md"},
+		{target: "still-prose.md"},
+	})
+}
+
+// A backtick fence's info string holds no backtick, as CommonMark reads it:
+// a line of prose that starts with a code span of three backticks, such as
+// "```go fmt``` formats …", opens no fence, so the links on it and after it
+// are prose. A tilde fence's info string may hold one.
+func TestFindABacktickInTheInfoStringOpensNoFence(t *testing.T) {
+	checkFind(t, "```go fmt``` formats [a](a.md).\n\n[b](b.md)\n\n"+
+		"~~~ `info`\n[c](c.md)\n~~~\n[d](d.md)\n", []wantLink{
+		{target: "a.md"},
+		{target: "b.md"},
+		{target: "c.md", inCode: true},
+		{target: "d.md"},
+	})
+}
+
+// A heading is a block of its own: a backtick in it pairs with nothing on the
+// next line, so it hides no link there.
+func TestFindAHeadingEndsItsBlock(t *testing.T) {
+	checkFind(t, "# A ` in a heading\n[a](a.md) and `code`\n", []wantLink{{target: "a.md"}})
+}
+
+// Text that only looks like a link is none: a reference definition that
+// would interrupt a paragraph, a bracket a backslash escapes, and a [ in a
+// code span, which opens no link text when the ] is outside it.
+func TestFindReadsNoLinkWhereCommonMarkReadsText(t *testing.T) {
+	checkFind(t, "A paragraph\n[x]: interrupts.md\n\n"+
+		"[y]: starts-a-block.md\n[z]: follows-a-definition.md\n\n"+
+		"\\[a](escaped.md) and `[` then ](after-span.md)\n\n"+
+		"[b `[` c](text-with-a-span.md)\n", []wantLink{
+		{target: "starts-a-block.md", def: true},
+		{target: "follows-a-definition.md", def: true},
+		{target: "text-with-a-span.md"},
+	})
+}
+
+// A line indented four columns right after a heading or a closing fence is
+// indented code, as it is after a blank line.
+func TestFindReadsIndentedCodeAfterAHeadingOrAFence(t *testing.T) {
+	checkFind(t, "# Heading\n    [a](after-heading.md)\n\n```\nx\n```\n    [b](after-fence.md)\n", []wantLink{
+		{target: "after-heading.md", inCode: true},
+		{target: "after-fence.md", inCode: true},
+	})
+}
+
 // A line read on its own, as fdf mv reads one listing line of an index, is
 // never code for its indentation alone.
 func TestFindReadsAnIndentedLineOnItsOwnAsProse(t *testing.T) {
 	checkFind(t, "    * [nested](nested.md) - a nested listing", []wantLink{{target: "nested.md"}})
+}
+
+// Blocks returns the code blocks alone: a fenced block and each line of an
+// indented one, but no code span.
+func TestBlocksReturnsTheCodeBlocksAlone(t *testing.T) {
+	text := "Prose with `a span`.\n\n```sh\nfdf new x\n```\n\n    indented\n"
+	var got []string
+	for _, b := range Blocks(text) {
+		got = append(got, text[b.Start:b.End])
+	}
+	if want := []string{"```sh\nfdf new x\n```\n", "    indented\n"}; strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("Blocks = %q, want %q", got, want)
+	}
+}
+
+// Find reads a text in one pass. A paragraph of 2,000 lines, each with a ]
+// that closes no link's text and a code span, reads in well under a second:
+// read by looking back from each ] over the paragraph, it took seconds.
+func TestFindReadsALongParagraphInOnePass(t *testing.T) {
+	text := strings.Repeat("a see](b.md) `c` and ](d) text\n", 2000)
+	start := time.Now()
+	if got := Find(text); len(got) != 0 {
+		t.Fatalf("no [ opens a link's text, so there is no link: %+v", got[0])
+	}
+	if d := time.Since(start); d > time.Second {
+		t.Errorf("Find took %v over a paragraph of 2,000 lines", d)
+	}
 }
 
 func TestResolveReadsATargetAsAPath(t *testing.T) {

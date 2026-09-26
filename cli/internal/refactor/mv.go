@@ -393,17 +393,44 @@ func isPathByte(c byte) bool {
 }
 
 // mentions finds every mention of a moved document's ID outside a link
-// target: in frontmatter edges (affects, depends-on, replaced-by, retires,
-// superseded-by, resolves), declaration headings, code spans and prose. An ID
-// is a whole token: not inside a longer path such as src/<id>/handler.go,
-// though "/<id>" at a boundary is a bundle-relative path and counts. The
-// suffixes it may carry — ".spec.md", "/01-task.md" — move with it.
+// target (IDMentions), and, for a renamed task, its name in its siblings'
+// depends-on.
 func (p *plan) mentions(text, rel string, targets map[int]bool) []span {
 	var out []span
-	ids := sortedKeys(p.ids)
-	sort.Slice(ids, func(i, j int) bool { return len(ids[i]) > len(ids[j]) }) // longest first
+	for _, r := range IDMentions(text, p.ids, p.prefix, targets, false) {
+		out = append(out, span{r.Start, r.End, r.Text})
+	}
+	// A renamed task is named by its siblings' `depends-on`.
+	if p.task[0] != "" && path.Dir(rel) == path.Dir(p.from) && path.Base(rel) != p.task[0]+".md" {
+		out = append(out, dependsOnRenames(text, p.task[0], p.task[1])...)
+	}
+	return out
+}
+
+// Replacement is text to put in place of the bytes text[Start:End].
+type Replacement struct {
+	Start, End int
+	Text       string
+}
+
+// IDMentions finds every mention in text of an ID ids renames (old -> new),
+// outside the byte offsets skip holds, such as link targets: in frontmatter
+// edges (affects, depends-on, replaced-by, retires, superseded-by,
+// resolves), declaration headings, code spans and prose. An ID is a whole
+// token: not inside a longer path such as src/<id>/handler.go, though
+// "/<id>" at a boundary is a bundle-relative path and counts, and so does
+// "<prefix><id>", the document's path in the project when prefix is the
+// bundle's ("docs/fdf/"). It counts only where it ends (idEnds), and the
+// suffixes it may carry — ".spec.md", "/01-task.md" — move with it. Longer
+// IDs are matched first. routes says the IDs are 0.x ones, which name no
+// register: a bare /<id> written from the bundle root then reads as a URL's
+// path, as in GET /venues/opening-hours, where a 1.0 ID's is the document.
+func IDMentions(text string, ids map[string]string, prefix string, skip map[int]bool, routes bool) []Replacement {
+	var out []Replacement
+	olds := sortedKeys(ids)
+	sort.Slice(olds, func(i, j int) bool { return len(olds[i]) > len(olds[j]) }) // longest first
 	taken := map[int]bool{}
-	for _, old := range ids {
+	for _, old := range olds {
 		for i := 0; ; {
 			j := strings.Index(text[i:], old)
 			if j < 0 {
@@ -411,41 +438,84 @@ func (p *plan) mentions(text, rel string, targets map[int]bool) []span {
 			}
 			s, e := i+j, i+j+len(old)
 			i = e
-			if targets[s] || taken[s] {
+			if skip[s] || taken[s] {
 				continue
 			}
 			before := byte(' ')
 			if s > 0 {
 				before = text[s-1]
 			}
+			route := false
 			switch {
-			case p.prefix != "" && s >= len(p.prefix) && text[s-len(p.prefix):s] == p.prefix &&
-				(s == len(p.prefix) || !isPathByte(text[s-len(p.prefix)-1])):
+			case prefix != "" && s >= len(prefix) && text[s-len(prefix):s] == prefix &&
+				(s == len(prefix) || !isPathByte(text[s-len(prefix)-1])):
 				// the document by its path in the project: docs/fdf/<id>
 			case before == '/':
 				if s > 1 && isPathByte(text[s-2]) {
 					continue
 				}
+				route = routes // written from the bundle root
 			case isPathByte(before):
 				continue
 			}
-			if e < len(text) {
-				after := text[e]
-				if after == '-' || after == '_' || after >= '0' && after <= '9' || after >= 'a' && after <= 'z' || after >= 'A' && after <= 'Z' {
-					continue
-				}
+			if !idEnds(text[e:], route) {
+				continue
 			}
 			for k := s; k < e; k++ {
 				taken[k] = true
 			}
-			out = append(out, span{s, e, p.ids[old]})
+			out = append(out, Replacement{s, e, ids[old]})
 		}
 	}
-	// A renamed task is named by its siblings' `depends-on`.
-	if p.task[0] != "" && path.Dir(rel) == path.Dir(p.from) && path.Base(rel) != p.task[0]+".md" {
-		out = append(out, dependsOnRenames(text, p.task[0], p.task[1])...)
-	}
 	return out
+}
+
+// docSuffixes are what an ID's documents add to it: a trail's role, with or
+// without .md, or .md alone.
+var docSuffixes = []string{".spec.md", ".plan.md", ".test.md", ".surface.md", ".log.md", ".md", ".spec", ".plan", ".test", ".surface", ".log"}
+
+var taskPathRe = regexp.MustCompile(`^/\d+-`)
+
+// idEnds reports whether a mention of an ID ends where rest, the text after
+// it, begins: the ID itself, before a character no path holds or a full
+// stop that ends a sentence; one of its documents (<id>.md, <id>.spec.md,
+// <id>.spec); or its task directory (<id>/01-build.md, or <id>/ where the
+// path ends). A path that goes on past it names something else: code, as
+// <id>/handler.go, <id>.go or <id>.spec.ts, or a route's template, as
+// <id>/{id} or <id>/:id. A mention that reads as a URL's path (route) counts
+// only as a document or a task.
+func idEnds(rest string, route bool) bool {
+	for _, s := range docSuffixes {
+		if strings.HasPrefix(rest, s) && pathEnds(rest[len(s):]) {
+			return true
+		}
+	}
+	switch {
+	case taskPathRe.MatchString(rest):
+		return true
+	case route:
+		return false
+	case strings.HasPrefix(rest, "/"):
+		return dirEnds(rest[1:]) // its task directory
+	}
+	return pathEnds(rest)
+}
+
+// dirEnds reports whether a mention of a directory, written with its slash,
+// ends where rest begins: at the end of the text, or before white space, a
+// closing quote or bracket, or a mark that ends a clause. A { or a : after
+// it makes a route's template.
+func dirEnds(rest string) bool {
+	return rest == "" || strings.IndexByte(" \t\r\n`'\")],;.", rest[0]) >= 0
+}
+
+// pathEnds reports whether a path ends where rest begins: before a character
+// no path holds, or a full stop that ends a sentence.
+func pathEnds(rest string) bool {
+	if strings.HasPrefix(rest, ".") {
+		rest = rest[1:]
+	}
+	return rest == "" || !isPathByte(rest[0])
 }
 
 var dependsOnRe = regexp.MustCompile(`(?m)^depends-on:.*$`)
