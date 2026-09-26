@@ -1,1 +1,19 @@
----\ntype: Feature\nstatus: adopted\ntitle: Done\ndescription: A filled map entry.\nresource: []\ntimestamp: 2026-09-23T00:00:00Z\n---\n\n# Feature\n\n```gherkin\nFeature: Done\n  As a Venue owner\n  I want it\n  So that it helps\n```\n\nQuotes the placeholder as an example: `TODO — like this`.\n
+---
+type: Feature
+status: adopted
+title: Done
+description: A filled map entry.
+resource: [src/venues]
+timestamp: 2026-09-23T00:00:00Z
+---
+
+# Feature
+
+```gherkin
+Feature: Done
+  As a Venue owner
+  I want it
+  So that it helps
+```
+
+Quotes the placeholder as an example: `TODO — like this`.
