@@ -48,27 +48,31 @@ func (p *plan) print(out io.Writer, from string, dry bool) {
 		row("outside", "nothing: the bundle is its own git repository")
 	default:
 		row("outside", fmt.Sprintf("%s in %s; %s in %s", count(p.outMentions, "mention"), count(p.outMentionFiles, "file"), count(p.outLinks, "link"), count(p.outLinkFiles, "file")))
-		if len(p.left) > 0 {
-			var byWhy []string
-			for _, why := range []string{"after a longer path", "in a URL", elsewhere, skippedFile} {
-				n := 0
-				for _, l := range p.left {
-					if l.why == why {
-						n++
-					}
-				}
-				if n > 0 {
-					byWhy = append(byWhy, count(n, "mention")+" "+why)
+	}
+	if len(p.left) > 0 {
+		var byWhy []string
+		for _, why := range []string{"after a longer path", "in a URL", elsewhere, skippedFile, brokenLink} {
+			n := 0
+			for _, l := range p.left {
+				if l.why == why {
+					n++
 				}
 			}
-			row("", "left as they are: "+strings.Join(byWhy, ", ")+" (listed below)")
+			switch {
+			case n == 0:
+			case why == brokenLink:
+				byWhy = append(byWhy, count(n, "symbolic link")+" the move breaks")
+			default:
+				byWhy = append(byWhy, count(n, "mention")+" "+why)
+			}
 		}
-		if p.managed > 0 {
-			row("", fmt.Sprintf("skipped: %s in what `fdf install` manages, which it rewrites", count(p.managed, "reference")))
-		}
-		if len(p.skipped) > 0 {
-			row("", fmt.Sprintf("skipped on request: %s that --skip names", count(len(p.skipped), "file")))
-		}
+		row("", "left as they are: "+strings.Join(byWhy, ", ")+" (listed below)")
+	}
+	if p.managed > 0 {
+		row("", fmt.Sprintf("skipped: %s in what `fdf install` manages, which it rewrites", count(p.managed, "reference")))
+	}
+	if len(p.skipped) > 0 {
+		row("", fmt.Sprintf("skipped on request: %s that --skip names", count(len(p.skipped), "file")))
 	}
 
 	fmt.Fprintln(out, "\nfiles:")
@@ -108,7 +112,11 @@ func (p *plan) print(out io.Writer, from string, dry bool) {
 	if len(p.left) > 0 {
 		fmt.Fprintln(out, "\nleft as they are:")
 		for _, l := range p.left {
-			fmt.Fprintf(out, "  %s:%d  %s  (%s)\n", l.file, l.line, l.path, l.why)
+			where := p.shown(l.file)
+			if l.line > 0 {
+				where = fmt.Sprintf("%s:%d", where, l.line)
+			}
+			fmt.Fprintf(out, "  %s  %s  (%s)\n", where, l.path, l.why)
 		}
 	}
 }

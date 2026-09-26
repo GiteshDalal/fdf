@@ -168,8 +168,10 @@ var helpTopics = []helpTopic{
 			"git-tracked text files: each Markdown link into the bundle, and each\n" +
 			"mention of its path. Each mention of the old path it leaves for a person\n" +
 			"to decide on — inside a URL, after a longer path, or in a link that leads\n" +
-			"elsewhere — is listed; those in logs, which keep their words, are counted,\n" +
-			"and so are those in what `fdf install` manages, which is left to it.\n" +
+			"elsewhere — is listed, and so is a symbolic link the move breaks that\n" +
+			"migrate cannot name again: an absolute one, or one outside the bundle.\n" +
+			"Those in logs, which keep their words, are counted, and so are those in\n" +
+			"what `fdf install` manages, which is left to it.\n" +
 			"--skip leaves the files a glob names outside the bundle as they are, such\n" +
 			"as applied SQL migrations whose checksums a tool verifies, and lists each\n" +
 			"mention of the old path in them; a glob reads from the project root, as\n" +
@@ -183,13 +185,13 @@ var helpTopics = []helpTopic{
 			"refuses what 1.0 has no place for, and what migrate cannot move safely — a\n" +
 			"stray Markdown file at the root, a document named index.md or log.md, a\n" +
 			"practice, debt or bug beside a directory of Markdown, a register that is a\n" +
-			"symbolic link, a v0.1 rename onto a file that is there — and leaves the\n" +
-			"bundle untouched, so a refused run is safe to retry after fixing what it\n" +
-			"names. A bundle already at 1.0 moves nothing: its spec copy, indexes and\n" +
-			"Context stubs are restored, never through a symbolic link. An unfilled\n" +
-			"Context stub is only a warning here; once the bundle has a feature, a\n" +
-			"plain `fdf validate` fails F9 until it is filled. Re-run `fdf install`\n" +
-			"afterwards.",
+			"symbolic link or whose place a file takes, a v0.1 rename onto a file that\n" +
+			"is there — and leaves the bundle untouched, so a refused run is safe to\n" +
+			"retry after fixing what it names. A bundle already at 1.0 moves nothing:\n" +
+			"its spec copy, indexes and Context stubs are restored, never through a\n" +
+			"symbolic link. An unfilled Context stub is only a warning here; once the\n" +
+			"bundle has a feature, a plain `fdf validate` fails F9 until it is filled.\n" +
+			"Re-run `fdf install` afterwards.",
 		flags: []flagDoc{
 			{"--dry-run", "print the plan, and change nothing"},
 			{"--to <dir>", "where the bundle goes (default docs/fdf beside a docs/features bundle, otherwise where it is)"},

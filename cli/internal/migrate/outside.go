@@ -41,10 +41,15 @@ const elsewhere = "in a link that leads elsewhere"
 // left as it is in a file --skip names.
 const skippedFile = "in a skipped file"
 
+// brokenLink is why a symbolic link is listed: the move breaks it, and
+// migrate names again only a relative target in the bundle. An absolute
+// one cannot follow the move, and one outside the bundle is the project's.
+const brokenLink = "a symbolic link the move breaks"
+
 // left is a mention left as it is, where it is.
 type left struct {
 	file string // the file, from the project root, once migrated
-	line int
+	line int    // 0 for a symbolic link
 	path string
 	why  string
 }
@@ -219,7 +224,8 @@ func (p *plan) skips() ([]string, error) {
 // skill. So is .gitmodules, which git mv keeps: it names a submodule, and a
 // submodule's name is git's, not its path. A file --skip names is left as
 // it is, and each link into the bundle and mention of its path in it is
-// listed.
+// listed. So is a symbolic link the move breaks, which only the project
+// can repoint.
 func (p *plan) outside() error {
 	out, err := git(p.project, "ls-files", "-z")
 	if err != nil {
@@ -231,7 +237,23 @@ func (p *plan) outside() error {
 			continue
 		}
 		full := filepath.Join(p.project, filepath.FromSlash(f))
-		if fi, err := os.Lstat(full); err != nil || !fi.Mode().IsRegular() {
+		fi, err := os.Lstat(full)
+		if err != nil {
+			continue
+		}
+		if fi.Mode()&os.ModeSymlink != 0 {
+			if to, err := os.Readlink(full); err == nil {
+				t := to
+				if !filepath.IsAbs(t) {
+					t = filepath.Join(filepath.Dir(full), t)
+				}
+				if p.breaks(t, mv) {
+					p.left = append(p.left, left{f, 0, to, brokenLink})
+				}
+			}
+			continue
+		}
+		if !fi.Mode().IsRegular() {
 			continue
 		}
 		text, err := readText(full)

@@ -62,8 +62,9 @@ type plan struct {
 
 	// symlinks are the bundle's symbolic links that name their target by a
 	// relative path, by path -> that target; relinks are those a move would
-	// break, by path once migrated -> the target they name then.
-	symlinks, relinks map[string]string
+	// break, by path once migrated -> the target they name then. absLinks
+	// are those that name it by an absolute path, which no move changes.
+	symlinks, relinks, absLinks map[string]string
 
 	// The older layouts' steps, which make a 0.x bundle 0.7-shaped.
 	moves   map[string]string // 0.1's case renames and 0.3's trail lift, by path before -> after
@@ -128,7 +129,7 @@ func newPlan(root, pin, project, dest string, skip []string) (p *plan, problems 
 	p = &plan{root: root, from: pin, project: project, texts0: map[string]string{}, moves: map[string]string{},
 		aliases: map[string]string{}, stubs: map[string]int{}, isGroup: map[string]bool{},
 		ids: map[string]string{}, texts: map[string]string{}, why: map[string][]string{},
-		symlinks: map[string]string{}, relinks: map[string]string{},
+		symlinks: map[string]string{}, relinks: map[string]string{}, absLinks: map[string]string{},
 		outTexts: map[string]string{}, outWhy: map[string][]string{},
 		skip: skip, skipped: map[string]bool{}}
 	p.base = project
@@ -154,16 +155,20 @@ func newPlan(root, pin, project, dest string, skip []string) (p *plan, problems 
 		rel := relSlash(root, q)
 		p.files = append(p.files, rel)
 		// A symlink moves as the link it is: migrate never writes through
-		// it into the file it names, and names again a relative target
-		// that the move would change (relink). It writes the root's
-		// INDEX.md, LOG.md and SPEC.md whatever they hold, so one of them
-		// that is a link is refused.
+		// it into the file it names, names again a relative target that the
+		// move would change, and lists an absolute one it breaks (relink).
+		// It writes the root's INDEX.md, LOG.md and SPEC.md whatever they
+		// hold, so one of them that is a link is refused.
 		if d.Type()&os.ModeSymlink != 0 {
 			to, _ := os.Readlink(q)
 			if rootWrites[rel] {
 				linked = append(linked, linkedFile(rel, to))
 			}
-			if to != "" && !filepath.IsAbs(to) {
+			switch {
+			case to == "":
+			case filepath.IsAbs(to):
+				p.absLinks[rel] = to
+			default:
 				p.symlinks[rel] = filepath.ToSlash(to)
 			}
 		}
@@ -301,8 +306,10 @@ func (p *plan) refusals() []string {
 			return nil
 		})
 	}
-	if fi, err := os.Lstat(filepath.Join(p.root, "features")); err == nil && !fi.IsDir() && fi.Mode()&os.ModeSymlink == 0 {
-		out = append(out, "features: not a directory, where the features/ register goes — move it out of the bundle root")
+	for _, reg := range layout.Registers {
+		if problem := registerFile(p.root, reg); problem != "" && reg != "releases" {
+			out = append(out, problem)
+		}
 	}
 	if !p.isGroup["features"] {
 		for _, g := range p.groups {
@@ -313,6 +320,17 @@ func (p *plan) refusals() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// registerFile says why the place of the register reg, at the bundle root
+// at root, is taken, or "" when it is not: a file is there, where migrate
+// would write the register's index. One that is a symbolic link is
+// linkedRegister's to name.
+func registerFile(root, reg string) string {
+	if fi, err := os.Lstat(filepath.Join(root, reg)); err == nil && !fi.IsDir() && fi.Mode()&os.ModeSymlink == 0 {
+		return fmt.Sprintf("%s: not a directory, where the %s/ register goes — move it out of the bundle root", reg, reg)
+	}
+	return ""
 }
 
 // linkedFile and linkedRegister say why migrate refuses a symbolic link it
@@ -556,7 +574,9 @@ func (p *plan) move() links.Move {
 
 // relink plans the symbolic links a move would break: a link that names its
 // target by a relative path names it again, from where the link is once
-// migrated, at the place that target is once migrated.
+// migrated, at the place that target is once migrated. One that names it by
+// an absolute path cannot follow it, and is listed with what is left
+// behind.
 func (p *plan) relink() {
 	mv := p.move()
 	for _, f := range sortedKeys(p.symlinks) {
@@ -567,6 +587,48 @@ func (p *plan) relink() {
 			p.relinks[p.to(f)] = nt
 		}
 	}
+	for _, f := range sortedKeys(p.absLinks) {
+		if !p.breaks(p.absLinks[f], mv) {
+			continue
+		}
+		// A link is listed from the project root, which is the bundle's own
+		// when the bundle is its repository.
+		where := path.Join(p.new, p.to(f))
+		if p.project == p.root {
+			where = p.to(f)
+		}
+		p.left = append(p.left, left{where, 0, p.absLinks[f], brokenLink})
+	}
+}
+
+// breaks reports whether the move changes where the file at the absolute
+// path target is, so that a symbolic link naming it no longer finds it. The
+// path is read from base as written, then as the disk resolves base, the
+// target's directory, or both, since a link and the root migrate is given
+// may each spell a path through a symbolic link (/var and /private/var on
+// macOS). The target's directory is there before the move, even when the
+// target is not.
+func (p *plan) breaks(target string, mv links.Move) bool {
+	target = filepath.Clean(target)
+	bases, targets := []string{p.base}, []string{target}
+	if real, err := filepath.EvalSymlinks(p.base); err == nil && real != p.base {
+		bases = append(bases, real)
+	}
+	if dir, err := filepath.EvalSymlinks(filepath.Dir(target)); err == nil {
+		if real := filepath.Join(dir, filepath.Base(target)); real != target {
+			targets = append(targets, real)
+		}
+	}
+	for _, t := range targets {
+		for _, b := range bases {
+			if r, err := filepath.Rel(b, t); err == nil && filepath.IsLocal(r) {
+				rel := filepath.ToSlash(r)
+				n, moved := mv.New(rel)
+				return moved && n != rel
+			}
+		}
+	}
+	return false
 }
 
 // isLog reports whether rel is a log, whose words record what things were

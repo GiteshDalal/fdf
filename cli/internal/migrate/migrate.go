@@ -298,12 +298,16 @@ func repair(o Options, root string, out io.Writer) int {
 	// Nothing is written through a symbolic link: a file it would restore
 	// that is one, such as a SPEC.md or a dangling Context document, or a
 	// register it would restore an index into, is refused first, as a
-	// migration refuses it.
+	// migration refuses it; and so is a register whose place a file takes.
 	var linked []string
 	for _, rel := range sortedKeys(restore) {
 		if reg := path.Dir(rel); reg != "." {
 			if to, err := os.Readlink(filepath.Join(root, reg)); err == nil {
 				linked = append(linked, linkedRegister(reg, to))
+				continue
+			}
+			if problem := registerFile(root, reg); problem != "" {
+				linked = append(linked, problem)
 				continue
 			}
 		}

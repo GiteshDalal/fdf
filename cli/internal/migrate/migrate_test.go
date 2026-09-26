@@ -1378,13 +1378,35 @@ func TestMigrateRefusesWhat10HasNoPlaceFor(t *testing.T) {
 	if after := tree(t, root); after != before {
 		t.Errorf("a refused migration changes nothing")
 	}
-	// A features that is no directory leaves the register no place.
-	root = buildV07Bundle(t)
-	write(t, root, "features", "notes\n")
+	// A file where a register goes leaves the register no place: a
+	// features, or a practices, whose index migrate writes.
+	for _, reg := range []string{"features", "practices"} {
+		root = buildV07Bundle(t)
+		write(t, root, reg, "notes\n")
+		before = tree(t, root)
+		out.Reset()
+		if code := Run(Options{Root: root}, &out); code != 1 || out.String() != "cannot migrate — fix these first (bundle left unchanged):\n"+
+			"  "+reg+": not a directory, where the "+reg+"/ register goes — move it out of the bundle root\n" {
+			t.Errorf("a %s that is no directory is refused: exit %d\n%s", reg, code, out.String())
+		}
+		if after := tree(t, root); after != before {
+			t.Errorf("a refused migration changes nothing")
+		}
+	}
+	// So in a bundle at 1.0 does one where an index it restores goes.
+	root = copyFixture(t, "valid-v10")
+	if err := os.RemoveAll(filepath.Join(root, "debts")); err != nil {
+		t.Fatal(err)
+	}
+	write(t, root, "debts", "notes\n")
+	before = tree(t, root)
 	out.Reset()
-	if code := Run(Options{Root: root}, &out); code != 1 || out.String() != "cannot migrate — fix these first (bundle left unchanged):\n"+
-		"  features: not a directory, where the features/ register goes — move it out of the bundle root\n" {
-		t.Errorf("a features that is no directory is refused: exit %d\n%s", code, out.String())
+	if code := Run(Options{Root: root}, &out); code != 1 || !strings.HasSuffix(out.String(), "cannot restore — fix these first (bundle left unchanged):\n"+
+		"  debts: not a directory, where the debts/ register goes — move it out of the bundle root\n") {
+		t.Errorf("a debts that is no directory is refused: exit %d\n%s", code, out.String())
+	}
+	if after := tree(t, root); after != before {
+		t.Errorf("a refused repair changes nothing")
 	}
 }
 
@@ -1981,6 +2003,124 @@ func TestMigrateRepointsARelativeSymlink(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "\n  relink  features/venues/assets → ../../../../assets\n") {
 		t.Errorf("the plan lists the link it repoints:\n%s", out.String())
+	}
+}
+
+// A symbolic link the move breaks, which migrate does not name again, is
+// listed with what is left behind: one in the bundle or outside it that
+// names its target by an absolute path, which cannot follow the move, and
+// one outside the bundle, which is the project's. One whose target stays
+// where it is is not. Outside a git repository, the bundle's own are
+// listed too.
+func TestMigrateListsASymbolicLinkTheMoveBreaks(t *testing.T) {
+	project := gitProject(t, "valid-bugs-v07")
+	write(t, project, "assets/logo.png", "PNG")
+	write(t, project, "docs/features/venues/diagram.png", "PNG")
+	for link, to := range map[string]string{
+		"docs/features/venues/current.png": filepath.Join(project, "docs", "features", "venues", "diagram.png"),
+		"docs/features/venues/logo.png":    filepath.Join(project, "assets", "logo.png"),
+		"assets/index":                     filepath.Join(project, "docs", "features", "INDEX.md"),
+		"assets/diagram.png":               "../docs/features/venues/diagram.png",
+		"assets/current.png":               "logo.png",
+	} {
+		if err := os.Symlink(to, filepath.Join(project, filepath.FromSlash(link))); err != nil {
+			t.Skip("symlinks unavailable:", err)
+		}
+	}
+	gitIn(t, project, "add", "-A")
+	gitIn(t, project, "commit", "-qm", "links")
+	var out bytes.Buffer
+	if code := Run(Options{Root: filepath.Join(project, "docs", "features"), Project: project, DryRun: true}, &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
+	}
+	for _, want := range []string{
+		"             left as they are: 3 symbolic links the move breaks (listed below)\n",
+		"  docs/fdf/features/venues/current.png  " + filepath.Join(project, "docs", "features", "venues", "diagram.png") + "  (a symbolic link the move breaks)\n",
+		"  assets/diagram.png  ../docs/features/venues/diagram.png  (a symbolic link the move breaks)\n",
+		"  assets/index  " + filepath.Join(project, "docs", "features", "INDEX.md") + "  (a symbolic link the move breaks)\n",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("the plan should say %q:\n%s", want, out.String())
+		}
+	}
+	for _, not := range []string{"venues/logo.png ", "assets/current.png"} {
+		if strings.Contains(out.String(), not) {
+			t.Errorf("a link whose target stays is not listed (%s):\n%s", not, out.String())
+		}
+	}
+
+	dir := t.TempDir()
+	root := filepath.Join(dir, "docs", "features")
+	copyFixtureTo(t, "valid-bugs-v07", root)
+	write(t, root, "venues/diagram.png", "PNG")
+	if err := os.Symlink(filepath.Join(root, "venues", "diagram.png"), filepath.Join(root, "venues", "current.png")); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if code := Run(Options{Root: root}, &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
+	}
+	for _, want := range []string{
+		"             left as they are: 1 symbolic link the move breaks (listed below)\n",
+		"  " + filepath.Join(dir, "docs", "fdf", "features", "venues", "current.png") + "  " + filepath.Join(root, "venues", "diagram.png") + "  (a symbolic link the move breaks)\n",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("outside git, the plan should say %q:\n%s", want, out.String())
+		}
+	}
+
+	// A bundle that is its own repository lists the link from its own root,
+	// which is the project's.
+	own := filepath.Join(t.TempDir(), "handbook")
+	copyFixtureTo(t, "valid-bugs-v07", own)
+	write(t, own, "venues/diagram.png", "PNG")
+	if err := os.Symlink(filepath.Join(own, "venues", "diagram.png"), filepath.Join(own, "venues", "current.png")); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, own, "init", "-q")
+	gitIn(t, own, "add", "-A")
+	gitIn(t, own, "commit", "-qm", "bundle")
+	out.Reset()
+	if code := Run(Options{Root: own, Project: own, DryRun: true}, &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
+	}
+	if want := "  features/venues/current.png  " + filepath.Join(own, "venues", "diagram.png") + "  (a symbolic link the move breaks)\n"; !strings.Contains(out.String(), want) {
+		t.Errorf("in a bundle that is its own repository, the plan should say %q:\n%s", want, out.String())
+	}
+}
+
+// A symbolic link may spell its target through another link, as macOS
+// spells /private/var as /var, and so may the root migrate is given: the
+// target is read as written, and then with its directory and the project
+// root as the disk resolves them, so the link is listed either way.
+func TestMigrateReadsALinksTargetHoweverItIsSpelled(t *testing.T) {
+	project := gitProject(t, "valid-bugs-v07")
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(project, alias); err != nil {
+		t.Skip("symlinks unavailable:", err)
+	}
+	write(t, project, "docs/features/venues/diagram.png", "PNG")
+	targets := [][2]string{
+		{"via-project.png", filepath.Join(project, "docs", "features", "venues", "diagram.png")},
+		{"via-alias.png", filepath.Join(alias, "docs", "features", "venues", "diagram.png")},
+	}
+	for _, l := range targets {
+		if err := os.Symlink(l[1], filepath.Join(project, "docs", "features", "venues", l[0])); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gitIn(t, project, "add", "-A")
+	gitIn(t, project, "commit", "-qm", "links")
+	for _, from := range []string{project, alias} {
+		var out bytes.Buffer
+		if code := Run(Options{Root: filepath.Join(from, "docs", "features"), Project: from, DryRun: true}, &out); code != 0 {
+			t.Fatalf("migrate from %s: exit %d\n%s", from, code, out.String())
+		}
+		for _, l := range targets {
+			if want := "  docs/fdf/features/venues/" + l[0] + "  " + l[1] + "  (a symbolic link the move breaks)\n"; !strings.Contains(out.String(), want) {
+				t.Errorf("migrated from %s, the plan should say %q:\n%s", from, want, out.String())
+			}
+		}
 	}
 }
 

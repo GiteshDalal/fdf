@@ -236,8 +236,10 @@ be corrected in `INDEX.md`, and a root inside a pinned bundle is sent to that bu
   (`links.Blocks`) but for a Gherkin `Scenario` line, and `resource` and `applies-to`
   paths; the link engine repairs every
   link, reading every path from the project root, and a symbolic link whose relative
-  target a move would change names it again (`relink`); `features/INDEX.md` takes the
-  groups' listings from the root `INDEX.md`,
+  target a move would change names it again (`relink`), while one the move breaks that
+  names its target by an absolute path, or one outside the bundle, is listed
+  (`breaks`, which reads a target as written and as the disk resolves it);
+  `features/INDEX.md` takes the groups' listings from the root `INDEX.md`,
   which then lists every register; the pin, `SPEC.md` and any missing Context stub
   follow, and the root `LOG.md` records what moved. `relocate.go` moves a bundle at
   `…/docs/features` to `…/docs/fdf` beside it (or to `--to`), a submodule with `git mv`.
@@ -263,7 +265,8 @@ be corrected in `INDEX.md`, and a root inside a pinned bundle is sent to that bu
   0.x one; a v0.1 rename (`caseRenames`) or a 0.3 lift (`liftTrails`) onto a file that
   is there; a stray root Markdown file, a document named `index.md` or `log.md`, a
   practice, debt or bug beside a directory of Markdown, a group whose place in
-  `features/` is taken or a `features` that is no directory, a directory of Markdown
+  `features/` is taken or a register's taken by a file (`registerFile`: a `features`,
+  a `practices`), a directory of Markdown
   that is a symbolic link, a register migrate writes into that is one, whatever it
   holds; a destination that is not empty, inside the bundle, outside the project or
   inside `.git`, or behind a file; a tree that is not clean; a place git would ignore;
