@@ -10,8 +10,9 @@ documents, the vendored `SPEC.md`, and the agent instruction files
 (`CLAUDE.md`, `AGENTS.md`) — against the code and against each other, and
 propose the edits that make them true again.
 
-New to FDF? Run `fdf spec` for the format rules and `fdf help` for the CLI.
-The fdf-help skill explains how the fdf skills fit together.
+New to FDF? The fdf-help skill explains how the fdf skills fit together and
+the mechanics they share. The format rules are in the bundle at
+`docs/fdf/SPEC.md`; `fdf help` documents every command.
 
 The project-document review that ends fdf-execute and fdf-change catches what
 one piece of work changed. It cannot catch the rest. A dependency upgrade, a
@@ -32,6 +33,26 @@ Most of the work is judgment — which copy is the original, whether the
 document or the code moved — so where you can choose the model, run it on the
 most capable one (in Claude, an Opus-class model).
 
+## Mechanics
+
+- A `timestamp:` you set is the output of `date -u +%Y-%m-%dT%H:%M:%SZ`, run
+  at the moment of the edit — never a time you estimate, round or reuse, and
+  never your local time with `Z` added. A restored document keeps its old
+  one; a malformed one already committed is repaired by fdf-validate's F1,
+  never set to now.
+- Log with single quotes — `fdf log '**Checkpoint**: …'` — because inside
+  double quotes the shell runs anything between backticks. An apostrophe would
+  end the quotes: write ’ instead.
+- IDs are full: `<debt-id>` is `debts/…`, `<practice-id>` is `practices/…`,
+  `<feature-id>` is `features/…`.
+- `fdf debt`, `fdf bug` and `fdf practice` scaffold a document full of `TODO`
+  text, and add a listing line to the `INDEX.md` beside it that ends
+  `- TODO.` — and one for each group it creates, in the parent `INDEX.md`.
+  Replace every one with real text; `fdf validate` warns until you do.
+- This skill proposes before it edits: apart from clearing the gate's
+  failures (step 1), nothing is changed until the report (step 5) has been
+  answered.
+
 ## When to run it
 
 - Before cutting a release.
@@ -51,9 +72,9 @@ it appears as a link to that home, not a copy.
 | Fact | Home |
 |---|---|
 | Languages, runtimes, frameworks, libraries, data-store engines — and their versions | `STACK.md` |
-| Architecture style, module map, where new code goes, key decisions, which practices exist | `ARCHITECTURE.md` |
+| Architecture style, module map, where new code goes, key decisions and hard constraints, which practices exist | `ARCHITECTURE.md` |
 | How one recurring mechanism is done — its rules | `practices/<slug>.md` |
-| Interface conventions per surface, and the wording a surface shows for a term | `SURFACES.md` |
+| The project's purpose and what is out of scope; interface conventions per surface, and the wording a surface shows for a term | `SURFACES.md` |
 | Build, test, package and deploy commands; CI; environments; targets; where services and data stores are hosted | `INFRA.md` |
 | Canonical names, the words banned in their place, how each appears in code | `DOMAIN.md` |
 | The FDF format rules | `SPEC.md` — vendored, never edited |
@@ -62,16 +83,16 @@ it appears as a link to that home, not a copy.
 
 ## Process
 
-1. **Gate.** Run `fdf validate`. A Context document that is still a stub is
-   fdf-init's job, and a bundle that pins a version before 1.0 is upgraded
-   first (fdf-help, *A bundle from before 1.0*); any other failure goes
-   through fdf-validate first — audit a bundle that validates. Its `warn:`
-   lines are findings too: carry them into the report — routed as
-   fdf-validate says when they carry a rule code, and simply listed when they
-   do not. (Banned words are swept with a lexicon fix, in every document that
-   uses them — delivered features and finished changes included — in
-   fdf-validate's triage order: `fdf lexicon`, qualify the other senses into
-   `except:`, code-span the mentions, then `fdf lexicon --term <Term> --fix`.)
+1. **Gate.** Run `fdf validate`:
+   - a `still an unfilled stub` line → stop: filling it is fdf-init's job;
+   - a `FAIL` about a pin before 1.0 → stop: the upgrade comes first
+     (fdf-help, *A bundle from before 1.0*);
+   - any other `FAIL` → clear it through fdf-validate, then run this step
+     again — audit a bundle that validates;
+   - exit 0 → go on. Every `warn:` line it printed is a finding: carry it into
+     the report, with the fix fdf-validate's *Warnings* gives. Banned-word
+     warnings (F12) are proposed as a lexicon sweep (*3. The documents against
+     each other*, *Vocabulary*), not swept now.
 2. **Set the baseline** — a date: that of the last checkpoint, from the root
    `LOG.md`, or, with none, the oldest `timestamp` of the Context documents
    (the widest window misses least). Both are read from the bundle itself, so
@@ -87,7 +108,9 @@ it appears as a link to that home, not a copy.
 
    Manifests, lockfiles, CI and deploy config, and new top-level directories
    in that list are where drift hides. Start there — but the checks below
-   still cover every claim, not only the changed files.
+   still cover every claim, not only the changed files. When the history
+   cannot show what changed (a single squashed commit, a shallow clone), say
+   so in the report and rely on those checks alone.
 3. **Run the four checks below, in order** — mechanical, Context documents
    against the code, documents against each other, instruction files. Each
    is a procedure: work through all of it.
@@ -127,15 +150,19 @@ it appears as a link to that home, not a copy.
    A section you did not check cannot be marked current, so this list is
    what shows the sweep was complete — and it is what the log entry's "found
    current" rests on.
-6. **Apply only what the user approves** — a document edit, a debt filed with
-   `fdf debt`, a practice scaffolded with `fdf practice`, an `fdf install` or
-   `fdf migrate`. A Context document you edit gets a new `timestamp` (now,
-   in UTC); a practice edit is logged in the practice's own log
-   (`fdf log practices/<slug> "**Amended**: …"`).
+6. **Apply only what the user approves** — a document edit, a lexicon sweep,
+   a debt or bug filed, a practice scaffolded with `fdf practice`, an
+   `fdf install` or `fdf migrate`. A Context document or practice you edit
+   gets a new `timestamp` (a lexicon sweep or a path repair leaves every
+   `timestamp` as it is); a practice edit is also logged in the practice's own
+   log (`fdf log <practice-id> '**Amended**: …'`). A debt or bug you file is
+   filled as fdf-debug's *Not repairing it now* (step 3) and fdf-validate's
+   F13 describe; a bug nobody reported gives, under `# Symptom`, the code
+   path, the input that reaches it and `Found by reading.`
    What the user declines stays as it is — do not propose it again in this
    checkpoint.
 7. **Log and gate.** Once the user has decided, one entry in the root
-   `LOG.md` (`fdf log "**Checkpoint**: …"`): what changed, and what was
+   `LOG.md` (`fdf log '**Checkpoint**: …'`): what changed, and what was
    checked and found current. The entry records decisions already made, so it needs no approval
    of its own. Log a clean checkpoint too — it is the next one's baseline.
 
@@ -172,13 +199,18 @@ it appears as a link to that home, not a copy.
   `<version> skills=<digest> primer=<digest> root=<bundle root>` (an fdf
   before v0.7 wrote `<version> root=<bundle root>`). A version older than
   `fdf version` prints, or a root that is not this bundle's, means an
-  install is due: propose `fdf install --project <harness>`, where the
-  harness is `claude-code`, `codex` or `opencode`. It refreshes the skills
-  and the managed primer together; with everything current it writes
-  nothing. The digests tell two builds of one version apart, and only
-  `fdf install` compares them, so it is also the check when the version and
-  root match. A user-level install (under the home directory) loads too:
-  report its version, never change it.
+  install is due: propose
+  `fdf install --project --root <this bundle's root> <harness>`, where the
+  harness is `claude-code`, `codex` or `opencode` and the root is written
+  relative to the project, as `.fdf-version` records it (`docs/fdf`) — always
+  with `--root`, since an install without it writes the default `docs/fdf`
+  into the skills.
+  It refreshes the skills and the managed primer together; with everything
+  current it writes nothing. The digests tell two builds of one version apart,
+  and only `fdf install` compares them, so list that proposal even when the
+  version and root match — but never run it before the user approves. A
+  user-level install (under the home directory) loads too: report its
+  version, never change it.
 - **The managed primer** — the `## Feature Document Format` section of each
   instruction file. `fdf install` writes it word for word and refreshes it
   only while it is exactly a text some fdf release shipped, or the text an
@@ -190,14 +222,15 @@ it appears as a link to that home, not a copy.
   compare the sections:
 
   ```bash
-  s=$(mktemp -d) && git -C "$s" init -q && (cd "$s" && fdf install --project <harness> >/dev/null) && cat "$s/CLAUDE.md"   # AGENTS.md for codex/opencode
+  s=$(mktemp -d) && git -C "$s" init -q && (cd "$s" && fdf install --project --root <this bundle's root> <harness> >/dev/null) && cat "$s/CLAUDE.md"   # AGENTS.md for codex/opencode
   ```
 
   The fix for an edited section: move the project's lines into the file's
   own sections — checked like any other line, so one that points at nothing
   is dropped with its own finding — then delete the managed section (the one
   hand step, since `fdf install` will not replace an edited section) and
-  propose `fdf install --project <harness>` to write the current one.
+  propose `fdf install --project --root <this bundle's root> <harness>` to
+  write the current one.
 
 ## 2. Context documents against the code
 
@@ -227,8 +260,10 @@ skipped the lifecycle, say so plainly.
 tree. A debt whose `# Gap` describes the software doing something observably
 wrong is a bug filed in the wrong register — common in bundles migrated from
 v0.6, which had no bug register. Propose re-filing it:
-`fdf mv debts/<id> bugs/<id>` changes its type and heading, and F14 then asks
-for the `# Expected` it never had to state. An open bug whose `resource` paths
+`fdf mv <debt-id> bugs/[<group>/…]<slug>` (for example
+`fdf mv debts/authz-legacy-handlers bugs/authz-legacy-handlers`) changes its
+type and heading; then write the `# Expected` it never had to state, before
+you validate — F14 requires it. An open bug whose `resource` paths
 are gone, or whose `# Violates` scenarios a Change has since removed, needs
 amending — it is a living document.
 
@@ -243,8 +278,10 @@ Every mismatch has two readings, and they take opposite fixes:
   holds, and newer code ignores it. That is not a document edit; never rewrite
   a rule to match the worst code in the tree. Check `fdf debt --open` first —
   the gap may already be filed. If not, propose a debt
-  (`fdf debt [<group>/…]<slug>`) naming the paths; and whatever part of the
-  difference a user can observe goes through fdf-help as well.
+  (`fdf debt --resource <paths> [<group>/…]<slug>`) naming the paths. If a
+  user could observe the difference — the software doing something wrong —
+  it is a defect, not a debt: propose a bug instead
+  (`fdf bug --affects <feature-id> --resource <paths> [<group>/…]<slug>`).
 
 When the evidence does not say which reading is true, ask. A `DOMAIN.md`
 term whose `code:` names nothing that exists, while the code uses a banned
@@ -279,16 +316,24 @@ is accurate today — it is the copy that goes stale next.
 - **Vocabulary** — every document in the bundle is internal language,
   episodic ones included, and so are the instruction files: they use
   `DOMAIN.md`'s canonical names. Inside the bundle F12 reads it all, and
-  `fdf lexicon` lists every occurrence with its place; triage and sweep it as
+  `fdf lexicon --all` lists every occurrence with its place; triage and sweep it as
   fdf-validate describes. A word used in another sense ("git branch", the
   `## Data stores` scaffold heading when "store" is banned) is a proposed
   `except:` phrase, not a finding against the document. The instruction files
   live outside the bundle, so check them by hand — build the pattern from
-  every `instead-of` word in `DOMAIN.md`:
+  every `instead-of` word in `DOMAIN.md`, and run it over every instruction
+  file §4 lists:
 
   ```bash
-  grep -rnwiE '(<word>|<word>|…)s?' CLAUDE.md AGENTS.md
+  git ls-files | grep -E '(^|/)(CLAUDE|AGENTS|GEMINI)\.md$|copilot-instructions\.md$' \
+    | xargs grep -HnwiE '(<word>|<word>|…)(e?s)?'
   ```
+
+  Propose sweeping the bundle's banned words as a lexicon fix, in every
+  document that uses them — delivered features and finished changes included
+  — in fdf-validate's order: `fdf lexicon --all`, qualify the other senses into
+  `except:`, code-span the mentions, then `fdf lexicon --term <Term> --fix`.
+  It runs in step 6, once approved.
 
   A hit that names the concept is a finding; quoted surface wording and the
   examples in the managed primer (fdf's text) are not. When the bundle's

@@ -17,8 +17,12 @@ import (
 type crossLink struct{ src, target string }
 
 // resourceRef is one path a document names in `resource` or `applies-to`,
-// for R1.
-type resourceRef struct{ rel, field, path string }
+// for R1. toBuild marks a task, Change or Fix not yet done, whose path may
+// name code the work has still to create.
+type resourceRef struct {
+	rel, field, path string
+	toBuild          bool
+}
 
 // doc is a document's frontmatter, read once.
 type doc struct {
@@ -68,9 +72,9 @@ func (c *collection) pair(id string) *pairInfo {
 }
 
 // resource records the paths a field names, for R1.
-func (c *collection) resource(rel, field string, v any) {
+func (c *collection) resource(rel, field string, v any, toBuild bool) {
 	for _, p := range asList(v) {
-		*c.resources = append(*c.resources, resourceRef{rel, field, p})
+		*c.resources = append(*c.resources, resourceRef{rel, field, p, toBuild})
 	}
 }
 
@@ -82,7 +86,7 @@ func (c *collection) read(rel string, raw []byte) string {
 	text := strings.TrimPrefix(string(raw), "\uFEFF")
 	c.texts[filepath.ToSlash(rel)] = string(raw) // F12 reads it again, from here
 	if rel != "SPEC.md" && (placeholderRe.MatchString(linkScanText(text)) || gherkinPlaceholderRe.MatchString(text)) {
-		c.warn("%s: still holds a scaffold's placeholder text (`TODO —`, `<role>`) — fill it in, or delete what does not apply", rel)
+		c.warn("%s: still holds a scaffold's placeholder text (`TODO —`, `- TODO.`, `<role>`) — fill it in, or delete what does not apply", rel)
 	}
 	for _, l := range links.Find(text) {
 		if !l.InCode {
@@ -180,7 +184,7 @@ func (c *collection) feature(rel, id string, d doc) {
 	// A feature's own `resource` is required on an adopted feature, which
 	// has no tasks to reach its code through.
 	f.resource = asList(d.data["resource"])
-	c.resource(rel, "resource", d.data["resource"])
+	c.resource(rel, "resource", d.data["resource"], false)
 	c.features[id] = f
 	c.featureDeps[id] = asList(d.data["depends-on"])
 	// An adopted feature may be a map entry: a Feature: block and no
@@ -225,7 +229,7 @@ func (c *collection) task(rel, id, name string, d doc) {
 	p.tasks[name] = d.status
 	p.deps[name] = asList(d.data["depends-on"])
 	p.depRels[name] = rel
-	c.resource(rel, "resource", d.data["resource"])
+	c.resource(rel, "resource", d.data["resource"], d.status != "done")
 }
 
 // change records a Change or Fix under changes/.
@@ -246,7 +250,7 @@ func (c *collection) change(rel, id string, d doc) {
 	if len(fenceRe.FindAllStringSubmatch(d.body, -1)) > 0 {
 		c.fail("%s: %s documents carry no Gherkin — behavior statements belong in the features they amend (F5)", rel, d.docType)
 	}
-	c.resource(rel, "resource", d.data["resource"])
+	c.resource(rel, "resource", d.data["resource"], d.status != "done")
 }
 
 // practice records a Practice under practices/.
@@ -263,7 +267,7 @@ func (c *collection) practice(rel, id string, d doc) {
 		rel: rel, id: id, status: d.status, body: d.body,
 		supersededBy: supersededBy, appliesTo: asList(d.data["applies-to"]),
 	}
-	c.resource(rel, "applies-to", d.data["applies-to"])
+	c.resource(rel, "applies-to", d.data["applies-to"], false)
 }
 
 // entry records a Debt under debts/ or a Bug under bugs/: the two registers
@@ -293,7 +297,7 @@ func (c *collection) entry(rel, register, id string, d doc) {
 			title: title, timestamp: timestamp, resource: asList(d.data["resource"]),
 		}
 	}
-	c.resource(rel, "resource", d.data["resource"])
+	c.resource(rel, "resource", d.data["resource"], false)
 }
 
 // registerLog records <slug>.log.md beside the practice, debt or bug id: the

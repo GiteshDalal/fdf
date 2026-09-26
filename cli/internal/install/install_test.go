@@ -51,8 +51,8 @@ func TestInstallClaudeCodePlacesSkillsPrimerAndUpgrades(t *testing.T) {
 	if !strings.Contains(string(claudeMd), "practices/") || !strings.Contains(string(claudeMd), "type: Practice") {
 		t.Fatalf("primer should teach practice documents:\n%s", claudeMd)
 	}
-	if !strings.Contains(string(claudeMd), "set its `timestamp` to\n  now, in UTC") || !strings.Contains(string(claudeMd), "leaves `timestamp` as it is") {
-		t.Fatalf("primer should say a changed document's timestamp is now, in UTC, and a maintenance edit's is kept:\n%s", claudeMd)
+	if !strings.Contains(string(claudeMd), "set its `timestamp` to\n  the output of `date -u +%Y-%m-%dT%H:%M:%SZ`, run at that moment") || !strings.Contains(string(claudeMd), "leaves `timestamp` as it is") {
+		t.Fatalf("primer should say a changed document's timestamp is read from the UTC clock at that moment, and a maintenance edit's is kept:\n%s", claudeMd)
 	}
 	if strings.Contains(string(claudeMd), "resolved in place") {
 		t.Fatalf("a bug is never *repaired* in place; one that needs no repair is resolved:\n%s", claudeMd)
@@ -510,6 +510,29 @@ func TestUpgradeRefreshesShippedV07Primer(t *testing.T) {
 	}
 	if got := string(mustRead(t, path)); got != "# Mine\n\n"+primer(defaultRoot) || strings.Contains(out.String(), "differs from the shipped primer") {
 		t.Fatalf("the 0.7 primer is replaced with 1.0's:\n%s\n%s", got, out.String())
+	}
+}
+
+// The primer 1.0.0 shipped, untouched, is fdf's own: an install of a later
+// build replaces it with the current one, and never reports it as edited.
+func TestUpgradeRefreshesShippedV10Primer(t *testing.T) {
+	if primerV10(defaultRoot) == primer(defaultRoot) {
+		t.Skip("the primer has not changed since 1.0.0")
+	}
+	home := t.TempDir()
+	path := filepath.Join(home, ".claude", "CLAUDE.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("# Mine\n\n"+primerV10(defaultRoot)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if code := Run("claude-code", home, "", false, &out); code != 0 {
+		t.Fatalf("install: %d\n%s", code, out.String())
+	}
+	if got := string(mustRead(t, path)); got != "# Mine\n\n"+primer(defaultRoot) || strings.Contains(out.String(), "differs from the shipped primer") {
+		t.Fatalf("the 1.0.0 primer is replaced with the current one:\n%s\n%s", got, out.String())
 	}
 }
 

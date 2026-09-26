@@ -52,8 +52,8 @@ const domainTermsStub = "# Terms\n\n" +
 	"         (\"data store\"), never the banned word alone\n" +
 	"       - code: how the term appears in the code (type, table, field)\n" +
 	"       - see: a link to the practice that explains it in depth\n" +
-	"     Once no document uses a banned word, add `strict: true` to this file's\n" +
-	"     frontmatter: every validation then treats one as an error.\n\n" +
+	"     Once no document uses a banned word, propose adding `strict: true` to\n" +
+	"     this file's frontmatter: every validation then treats one as an error.\n\n" +
 	"## Venue\n" +
 	"A physical location where a merchant sells.\n" +
 	"- instead-of: store, business, tenant\n" +
@@ -313,7 +313,7 @@ TODO — why it is this way, so a later change knows what it is trading away. Op
 		return code
 	}
 	fmt.Fprintf(out, "wrote %s.md (type: Practice, status: active)\n", id)
-	if code := ListEntry(root, "practices", strings.TrimPrefix(id, "practices/"), title, "practice", out); code != 0 {
+	if code := ListEntry(root, "practices", strings.TrimPrefix(id, "practices/"), title, "TODO", out); code != 0 {
 		return code
 	}
 	fmt.Fprintln(out, "next: fill `# Rules` and set `applies-to` to the paths this governs.")
@@ -479,7 +479,7 @@ Scenario: Replace me
 		return code
 	}
 	fmt.Fprintf(out, "\ndone: feature %s is a draft — one Feature: fence, one Scenario: fence, no trail siblings yet\n", id)
-	fmt.Fprintln(out, "next: write the Gherkin, then add "+slug+".spec.md to reach `specified` (the fdf-brainstorm skill drives this).")
+	fmt.Fprintln(out, "next: ask the user about the feature, one question at a time (fdf-brainstorm step 3); then replace the placeholders here and in its INDEX.md listing, write its Gherkin, and present the design to the user; only once they approve it, write "+slug+".spec.md and set status: specified (the fdf-brainstorm skill drives this).")
 	return 0
 }
 

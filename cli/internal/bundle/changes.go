@@ -513,7 +513,7 @@ func checkTimestamp(rel string, v any, errs, warns *[]string) {
 		if _, err := time.Parse(time.RFC3339, t); err == nil {
 			return
 		}
-		*errs = append(*errs, fmt.Sprintf("%s: `timestamp` %q is neither a date (2026-02-14) nor an RFC 3339 time with Z or an offset (2026-02-14T09:30:00Z) (F1)", rel, t))
+		*errs = append(*errs, fmt.Sprintf("%s: `timestamp` %q is neither a date (2026-02-14) nor an RFC 3339 time with Z or an offset (2026-02-14T09:30:00Z) — one already committed is never set to now: restore its earlier value from git history, or keep only its date (with no real date in it, the date of the commit that wrote it), never adding a zone nobody recorded; only one you wrote in this session takes the output of `date -u +%%Y-%%m-%%dT%%H:%%M:%%SZ` (F1)", rel, t))
 	case []string:
 		if len(t) == 0 {
 			*warns = append(*warns, fmt.Sprintf("%s: missing recommended `timestamp`", rel))
@@ -566,7 +566,11 @@ func checkRegressionLanded(changes map[string]*changeInfo, pairs map[string]*pai
 				continue
 			}
 			if tested := day(p.testTimestamp); tested != "" && tested < changed {
-				*warns = append(*warns, fmt.Sprintf("%s.test.md: `timestamp` %s predates %s (done %s), which declared scenarios of %s — the case it needed may be missing; update the test document and its timestamp", fid, tested, c.rel, changed, fid))
+				repair := "add, update or drop the case of each scenario it declared, then set the test document's timestamp"
+				if c.docType == "Fix" {
+					repair = "make the test each case names fail without the fix, then set the test document's timestamp"
+				}
+				*warns = append(*warns, fmt.Sprintf("%s.test.md: `timestamp` %s predates %s (done %s), which declared scenarios of %s — the case it needed may be missing: %s", fid, tested, c.rel, changed, fid, repair))
 			}
 		}
 	}

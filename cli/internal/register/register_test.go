@@ -362,14 +362,14 @@ func TestNewListsTheEntryAndCleanupUnlistsIt(t *testing.T) {
 		return string(raw)
 	}
 	group := read("debts/venues/INDEX.md")
-	if want := "# Venues\n\n* [Slow hours](/debts/venues/slow-hours.md) - debt.\n* [Stale cache](/debts/venues/stale-cache.md) - debt.\n"; group != want {
+	if want := "# Venues\n\n* [Slow hours](/debts/venues/slow-hours.md) - TODO.\n* [Stale cache](/debts/venues/stale-cache.md) - TODO.\n"; group != want {
 		t.Errorf("debts/venues/INDEX.md:\n%s\nwant:\n%s", group, want)
 	}
 	top := read("debts/INDEX.md")
-	if n := strings.Count(top, "](/debts/venues/INDEX.md) - debts in venues."); n != 1 {
+	if n := strings.Count(top, "](/debts/venues/INDEX.md) - TODO."); n != 1 {
 		t.Errorf("the group should be listed once in debts/INDEX.md, got %d:\n%s", n, top)
 	}
-	if !strings.Contains(top, "* [Loose config](/debts/loose-config.md) - debt.\n") {
+	if !strings.Contains(top, "* [Loose config](/debts/loose-config.md) - TODO.\n") {
 		t.Errorf("an ungrouped debt is listed in debts/INDEX.md:\n%s", top)
 	}
 
@@ -575,10 +575,10 @@ func TestNestedGroupsAreFiledAndClearedAtAnyDepth(t *testing.T) {
 		return string(raw)
 	}
 	for rel, want := range map[string]string{
-		"debts/INDEX.md":                           "* [Platform](/debts/platform/INDEX.md) - debts in platform.\n",
-		"debts/platform/INDEX.md":                  "# Platform\n\n* [Payments](/debts/platform/payments/INDEX.md) - debts in payments.\n",
-		"debts/platform/payments/INDEX.md":         "* [Refunds](/debts/platform/payments/refunds/INDEX.md) - debts in refunds.\n",
-		"debts/platform/payments/refunds/INDEX.md": "# Refunds\n\n* [Partial](/debts/platform/payments/refunds/partial.md) - debt.\n",
+		"debts/INDEX.md":                           "* [Platform](/debts/platform/INDEX.md) - TODO.\n",
+		"debts/platform/INDEX.md":                  "# Platform\n\n* [Payments](/debts/platform/payments/INDEX.md) - TODO.\n",
+		"debts/platform/payments/INDEX.md":         "* [Refunds](/debts/platform/payments/refunds/INDEX.md) - TODO.\n",
+		"debts/platform/payments/refunds/INDEX.md": "# Refunds\n\n* [Partial](/debts/platform/payments/refunds/partial.md) - TODO.\n",
 	} {
 		if !strings.Contains(read(rel), want) {
 			t.Errorf("%s should hold %q:\n%s", rel, want, read(rel))

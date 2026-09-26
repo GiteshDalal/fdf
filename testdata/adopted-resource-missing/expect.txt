@@ -1,2 +1,2 @@
 exit: 1
-contains: features/venues/card-payments.md: `resource` path does not exist in repo -> src/gone (R1)
+contains: features/venues/card-payments.md: `resource` path does not exist in repo -> src/gone — if the code moved, write where it lives now; if it was deleted, the fdf-validate skill's R1 says what this document needs (R1)
