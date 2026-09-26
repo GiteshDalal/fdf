@@ -65,7 +65,7 @@ every later piece of work find the capability it is about to touch.
    manages a catalog; customers browse it): each is described, and later
    changed, without the other.
 2. **Propose a group at a time**: the capability list for one area, each with
-   its proposed `<group>/<slug>`, a one-line purpose, and the paths it lives
+   its proposed `[<group>/…]<slug>`, a one-line purpose, and the paths it lives
    in. Groups follow `ARCHITECTURE.md`'s map or the product's own areas, and
    nest where an area is large (`platform/payouts/<slug>`). Wait for approval
    before scaffolding — the names become IDs every later document links to:

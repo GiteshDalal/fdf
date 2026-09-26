@@ -636,7 +636,7 @@ func TestSkillsAndPrimerTeachTheNamesOf10(t *testing.T) {
 	stale := []struct{ re, why string }{
 		{`\[<group>/\]<slug>`, "groups nest: [<group>/…]<slug>"},
 		{`(?:fdf log|fdf history|--affects) <group>/`, "a command names a feature by its full ID, features/…"},
-		{`(?:^|[^/])<group>/<slug>[./]`, "a feature's path starts with features/"},
+		{`(?:^|[^/])<group>/<slug>`, "a feature's path starts with features/, and a name nests: [<group>/…]<slug>"},
 	}
 	for _, name := range append([]string{"primer"}, skillNames...) {
 		text := primer(defaultRoot)
