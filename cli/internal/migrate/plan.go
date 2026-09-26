@@ -101,6 +101,12 @@ type plan struct {
 	outLinks, outLinkFiles, outMentions, outMentionFiles int
 	managed                                              int // mentions and links in what fdf install manages
 	left                                                 []left
+
+	// skip holds --skip's globs, and skipped the files outside the bundle
+	// they name, by path from the project root: the outside pass leaves
+	// them as they are, and lists what they say of the bundle.
+	skip    []string
+	skipped map[string]bool
 }
 
 // rootWrites are the files at the bundle root that migrate writes whatever
@@ -109,9 +115,10 @@ var rootWrites = map[string]bool{"INDEX.md": true, "LOG.md": true, "SPEC.md": tr
 
 // newPlan reads the bundle at root, pinned to pin, and works out its
 // migration to target, the bundle ending at dest, in the project at project
-// ("" outside a git repository). problems are the reasons it cannot be
+// ("" outside a git repository), leaving the files outside the bundle that
+// skip's globs name as they are. problems are the reasons it cannot be
 // migrated, found before anything is written.
-func newPlan(root, pin, project, dest string) (p *plan, problems []string, err error) {
+func newPlan(root, pin, project, dest string, skip []string) (p *plan, problems []string, err error) {
 	// A bundle that is a symbolic link is not where the link is, and the
 	// plan reads the files where they are: migrate works on the directory
 	// the link names.
@@ -122,7 +129,8 @@ func newPlan(root, pin, project, dest string) (p *plan, problems []string, err e
 		aliases: map[string]string{}, stubs: map[string]int{}, isGroup: map[string]bool{},
 		ids: map[string]string{}, texts: map[string]string{}, why: map[string][]string{},
 		symlinks: map[string]string{}, relinks: map[string]string{},
-		outTexts: map[string]string{}, outWhy: map[string][]string{}}
+		outTexts: map[string]string{}, outWhy: map[string][]string{},
+		skip: skip, skipped: map[string]bool{}}
 	p.base = project
 	if project == "" || project == root {
 		p.base = filepath.Dir(root)
@@ -206,11 +214,20 @@ func newPlan(root, pin, project, dest string) (p *plan, problems []string, err e
 	if err := p.indexes(); err != nil {
 		return nil, nil, err
 	}
-	// A bundle that is its own repository has no outside.
-	if project != "" && project != root {
+	// A bundle that is its own repository has no outside, nor one outside a
+	// git repository, which is not searched: --skip names nothing there.
+	switch {
+	case project != "" && project != root:
+		if problems, err := p.skips(); err != nil || len(problems) > 0 {
+			return nil, problems, err
+		}
 		if err := p.outside(); err != nil {
 			return nil, nil, err
 		}
+	case len(skip) > 0 && project == "":
+		return nil, []string{"--skip: the bundle is not in a git repository, so migrate reads no file outside it — run it without --skip"}, nil
+	case len(skip) > 0:
+		return nil, []string{"--skip: the bundle is its own git repository, so it has no outside — run it without --skip"}, nil
 	}
 	// Git must see every file where migrate puts it (relocate.go).
 	if problems, err := p.ignored(); err != nil || len(problems) > 0 {

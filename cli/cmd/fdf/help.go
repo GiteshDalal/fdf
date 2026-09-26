@@ -152,7 +152,7 @@ var helpTopics = []helpTopic{
 		name:    "migrate",
 		group:   "Set up",
 		summary: "Upgrade a 0.x bundle to spec 1.0 in one run",
-		usage:   "fdf migrate [--root <dir>] [--dry-run] [--to <dir>]",
+		usage:   "fdf migrate [--root <dir>] [--dry-run] [--to <dir>] [--skip <glob>]",
 		body: "Upgrade a bundle at any 0.x pin to spec 1.0, then validate it. It works\n" +
 			"out the whole migration and prints it before it writes anything; with\n" +
 			"--dry-run it stops there. Older layouts are made 0.7-shaped first (v0.1's\n" +
@@ -170,6 +170,10 @@ var helpTopics = []helpTopic{
 			"to decide on — inside a URL, after a longer path, or in a link that leads\n" +
 			"elsewhere — is listed; those in logs, which keep their words, are counted,\n" +
 			"and so are those in what `fdf install` manages, which is left to it.\n" +
+			"--skip leaves the files a glob names outside the bundle as they are, such\n" +
+			"as applied SQL migrations whose checksums a tool verifies, and lists each\n" +
+			"mention of the old path in them; a glob reads from the project root, as\n" +
+			"git reads one: * within a directory, ** across them.\n" +
 			"Migrate starts only from a clean tree, in the repository that tracks the\n" +
 			"bundle, refuses to put a file where git would ignore it, and marks the\n" +
 			"files it writes with `git add -N`, so that `git diff -M` shows each move.\n" +
@@ -189,9 +193,10 @@ var helpTopics = []helpTopic{
 		flags: []flagDoc{
 			{"--dry-run", "print the plan, and change nothing"},
 			{"--to <dir>", "where the bundle goes (default docs/fdf beside a docs/features bundle, otherwise where it is)"},
+			{"--skip <glob>", "leave the files the glob names outside the bundle as they are, listing what they say of it; repeatable"},
 			rootFlagDoc,
 		},
-		examples: []string{"fdf migrate --dry-run", "fdf migrate", "fdf migrate --root docs/features --to docs/fdf"},
+		examples: []string{"fdf migrate --dry-run", "fdf migrate", "fdf migrate --root docs/features --to docs/fdf", "fdf migrate --skip 'db/migrations/**'"},
 	},
 	{
 		name:    "new",

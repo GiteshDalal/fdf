@@ -4,17 +4,20 @@ package migrate
 // a mention of its path in a README, a config file or a code comment.
 // migrate rewrites both in the project's git-tracked text files, and the
 // mentions of the bundle's path inside the bundle, logs aside. A mention it
-// cannot be sure of is listed and left as it is. What fdf install manages is
-// left to fdf install, which replaces it whole: an edited copy would read as
-// a user's edit, and block the upgrade.
+// cannot be sure of is listed and left as it is, and so is each one in a
+// file --skip names. What fdf install manages is left to fdf install, which
+// replaces it whole: an edited copy would read as a user's edit, and block
+// the upgrade.
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/GiteshDalal/fdf/cli/internal/install"
@@ -33,6 +36,10 @@ type mention struct {
 // elsewhere is why a link whose target spells the bundle's path is left as
 // it is: it leads somewhere else, so the engine does not repair it.
 const elsewhere = "in a link that leads elsewhere"
+
+// skippedFile is why a link into the bundle, or a mention of its path, is
+// left as it is in a file --skip names.
+const skippedFile = "in a skipped file"
 
 // left is a mention left as it is, where it is.
 type left struct {
@@ -176,6 +183,33 @@ func (p *plan) installed(f string) bool {
 	return false
 }
 
+// skips reads which files --skip's globs name, each a pathspec from the
+// project root read as git reads one with :(glob) magic: * within a
+// directory, ** across them, and a directory for everything in it. Only a
+// file git tracks outside the bundle is one the outside pass reads, and so
+// skips; a glob that names none, most likely mistyped, would leave as they
+// are none of the files it was meant to, and is refused.
+func (p *plan) skips() ([]string, error) {
+	var problems []string
+	for _, g := range p.skip {
+		out, err := git(p.project, "ls-files", "-z", "--", ":(glob)"+g)
+		if err != nil {
+			return nil, err
+		}
+		n := 0
+		for _, f := range strings.Split(out, "\x00") {
+			if f != "" && f != p.old && !strings.HasPrefix(f, p.old+"/") {
+				p.skipped[f] = true
+				n++
+			}
+		}
+		if n == 0 {
+			problems = append(problems, fmt.Sprintf("--skip %s: names no file git tracks outside the bundle — a glob reads from the project root, %s", quote(g), p.project))
+		}
+	}
+	return problems, nil
+}
+
 // outside plans the rewrite of every reference to the bundle from the rest
 // of the project: in each file git tracks outside the bundle that holds
 // text, each Markdown link into the bundle, and each mention of its path.
@@ -183,7 +217,9 @@ func (p *plan) installed(f string) bool {
 // cannot be told from a code path. What fdf install manages is skipped and
 // counted: the primer section of an instruction file, and an installed
 // skill. So is .gitmodules, which git mv keeps: it names a submodule, and a
-// submodule's name is git's, not its path.
+// submodule's name is git's, not its path. A file --skip names is left as
+// it is, and each link into the bundle and mention of its path in it is
+// listed.
 func (p *plan) outside() error {
 	out, err := git(p.project, "ls-files", "-z")
 	if err != nil {
@@ -217,7 +253,9 @@ func (p *plan) outside() error {
 				}
 			}
 		}
+		skipped := p.skipped[f]
 		var reps []refactor.Replacement
+		var found []left // what is left as it is, in the order of the text
 		nLinks, nMentions := 0, 0
 		skip := map[int]bool{}
 		if strings.HasSuffix(f, ".md") || strings.HasSuffix(f, ".markdown") {
@@ -227,19 +265,25 @@ func (p *plan) outside() error {
 					continue
 				}
 				if nt, ok := links.Retarget(l.Target, links.Site{OldPath: f, NewPath: f}, mv); ok {
-					if managed[l.Start] {
+					switch {
+					case managed[l.Start]:
 						p.managed++
-						continue
+					case skipped:
+						found = append(found, left{f, lineOf(text, l.Start), l.Target, skippedFile})
+					default:
+						reps = append(reps, refactor.Replacement{Start: l.Start, End: l.End, Text: nt})
+						nLinks++
 					}
-					reps = append(reps, refactor.Replacement{Start: l.Start, End: l.End, Text: nt})
-					nLinks++
 				}
 			}
 			for _, l := range p.leadsElsewhere(text, links.Site{OldPath: f, NewPath: f}, mv) {
-				if managed[l.Start] {
+				switch {
+				case managed[l.Start]:
 					p.managed++
-				} else {
-					p.left = append(p.left, left{f, lineOf(text, l.Start), l.Target, elsewhere})
+				case skipped:
+					found = append(found, left{f, lineOf(text, l.Start), l.Target, skippedFile})
+				default:
+					found = append(found, left{f, lineOf(text, l.Start), l.Target, elsewhere})
 				}
 			}
 		}
@@ -247,13 +291,17 @@ func (p *plan) outside() error {
 			switch {
 			case managed[m.start]:
 				p.managed++
+			case skipped:
+				found = append(found, left{f, lineOf(text, m.start), m.path, skippedFile})
 			case m.why != "":
-				p.left = append(p.left, left{f, lineOf(text, m.start), m.path, m.why})
+				found = append(found, left{f, lineOf(text, m.start), m.path, m.why})
 			default:
 				reps = append(reps, refactor.Replacement{Start: m.start, End: m.end, Text: m.to})
 				nMentions++
 			}
 		}
+		sort.SliceStable(found, func(i, j int) bool { return found[i].line < found[j].line })
+		p.left = append(p.left, found...)
 		if len(reps) == 0 {
 			continue
 		}

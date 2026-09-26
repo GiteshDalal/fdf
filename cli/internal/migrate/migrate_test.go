@@ -598,7 +598,7 @@ func TestEveryRegisterAndContextDocumentHasItsText(t *testing.T) {
 func TestMigrateNeverWritesOverAFileItDidNotRead(t *testing.T) {
 	root := t.TempDir()
 	buildV03Bundle(t, root)
-	p, problems, err := newPlan(root, "0.3", "", root)
+	p, problems, err := newPlan(root, "0.3", "", root, nil)
 	if err != nil || len(problems) > 0 {
 		t.Fatalf("newPlan: %v %v", err, problems)
 	}
@@ -2115,6 +2115,114 @@ func TestMigrateRewritesReferencesOutsideTheBundle(t *testing.T) {
 	}
 	if diff := gitIn(t, project, "diff", "--name-only"); !strings.Contains(diff, "README.md\n") || !strings.Contains(diff, "Taskfile.yml\n") || strings.Contains(diff, ".claude/") {
 		t.Errorf("git diff shows what migrate rewrote outside the bundle, and nothing install manages:\n%s", diff)
+	}
+}
+
+// --skip leaves the files its globs name outside the bundle as they are, as
+// applied SQL migrations must stay, and lists each link into the bundle and
+// each mention of its path in them, in the order of the text. A glob reads
+// from the project root as git reads one, a directory naming everything in
+// it. A file migrate leaves as it is is no part of the clean-tree check.
+func TestMigrateLeavesWhatSkipNamesAsItIs(t *testing.T) {
+	project := gitProject(t, "valid-bugs-v07")
+	files := map[string]string{
+		"db/migrations/001_init.sql":    "-- The schema of docs/features/venues/opening-hours.md.\nCREATE TABLE hours (id int);\n",
+		"db/migrations/v2/002_more.sql": "-- See docs/features.\n",
+		"docs/old/notes.md":             "# Notes\n\nSee [hours](../features/venues/opening-hours.md), in docs/features/venues.\n",
+		"README.md":                     "# Project\n\nThe bundle is in docs/features.\n",
+	}
+	for rel, content := range files {
+		write(t, project, rel, content)
+	}
+	gitIn(t, project, "add", "-A")
+	gitIn(t, project, "commit", "-qm", "references")
+	files["db/migrations/001_init.sql"] += "-- not committed\n"
+	write(t, project, "db/migrations/001_init.sql", files["db/migrations/001_init.sql"])
+	var out bytes.Buffer
+	if code := Run(Options{Root: filepath.Join(project, "docs", "features"), Project: project, Skip: []string{"db/migrations", "docs/old/*.md"}}, &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
+	}
+	for rel, want := range files {
+		if rel == "README.md" {
+			want = "# Project\n\nThe bundle is in docs/fdf.\n"
+		}
+		if got := string(mustRead(t, filepath.Join(project, rel))); got != want {
+			t.Errorf("%s:\n%s\nwant:\n%s", rel, got, want)
+		}
+	}
+	for _, want := range []string{
+		"  outside    1 mention in 1 file; 0 links in 0 files\n",
+		"             left as they are: 4 mentions in a skipped file (listed below)\n",
+		"             skipped on request: 3 files that --skip names\n",
+		"\nleft as they are:\n" +
+			"  db/migrations/001_init.sql:1  docs/features/venues/opening-hours.md  (in a skipped file)\n" +
+			"  db/migrations/v2/002_more.sql:1  docs/features  (in a skipped file)\n" +
+			"  docs/old/notes.md:3  ../features/venues/opening-hours.md  (in a skipped file)\n" +
+			"  docs/old/notes.md:3  docs/features/venues  (in a skipped file)\n",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("the plan should say %q:\n%s", want, out.String())
+		}
+	}
+}
+
+// A --skip glob that names no file git tracks outside the bundle is refused,
+// since a mistyped one would leave as they are none of the files it was
+// meant to; and so is --skip where migrate reads nothing outside the bundle:
+// outside a git repository, and for a bundle that is its own. Nothing is
+// written.
+func TestMigrateRefusesASkipThatNamesNothing(t *testing.T) {
+	project := gitProject(t, "valid-bugs-v07")
+	write(t, project, "db/migrations/001_init.sql", "-- docs/features\n")
+	gitIn(t, project, "add", "-A")
+	gitIn(t, project, "commit", "-qm", "sql")
+	before := worktree(t, project)
+	var out bytes.Buffer
+	root := filepath.Join(project, "docs", "features")
+	if code := Run(Options{Root: root, Project: project, Skip: []string{"db/migration/**", "db/migrations/**", "docs/features/**"}}, &out); code != 1 {
+		t.Fatalf("migrate exit %d, want 1\n%s", code, out.String())
+	}
+	for _, want := range []string{
+		"  --skip 'db/migration/**': names no file git tracks outside the bundle — a glob reads from the project root, " + project + "\n",
+		"  --skip 'docs/features/**': names no file git tracks outside the bundle — a glob reads from the project root, " + project + "\n",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("migrate should refuse with %q:\n%s", want, out.String())
+		}
+	}
+	if strings.Contains(out.String(), "'db/migrations/**'") {
+		t.Errorf("a glob that names a file is no problem:\n%s", out.String())
+	}
+	if worktree(t, project) != before {
+		t.Error("a refused migration writes nothing")
+	}
+
+	plain := filepath.Join(t.TempDir(), "docs", "features")
+	copyFixtureTo(t, "valid-bugs-v07", plain)
+	own := filepath.Join(t.TempDir(), "handbook")
+	copyFixtureTo(t, "valid-bugs-v07", own)
+	gitIn(t, own, "init", "-q")
+	gitIn(t, own, "add", "-A")
+	gitIn(t, own, "commit", "-qm", "bundle")
+	for _, tc := range []struct{ root, project, want string }{
+		{plain, "", "  --skip: the bundle is not in a git repository, so migrate reads no file outside it — run it without --skip\n"},
+		{own, own, "  --skip: the bundle is its own git repository, so it has no outside — run it without --skip\n"},
+	} {
+		out.Reset()
+		if code := Run(Options{Root: tc.root, Project: tc.project, Skip: []string{"db/**"}}, &out); code != 1 || !strings.Contains(out.String(), tc.want) {
+			t.Errorf("migrate should refuse with %q: exit %d\n%s", tc.want, code, out.String())
+		}
+	}
+	// A bundle at target moves nothing, and migrate reads nothing outside it.
+	at := filepath.Join(t.TempDir(), "docs", "fdf")
+	copyFixtureTo(t, "valid-v10", at)
+	before = tree(t, at)
+	out.Reset()
+	if code := Run(Options{Root: at, Skip: []string{"db/**"}}, &out); code != 1 || out.String() != "cannot migrate: the bundle already pins fdf_version "+target+", and migrate reads no file outside a bundle at "+target+" — run it without --skip; the bundle was left as it is.\n" {
+		t.Errorf("migrate should refuse --skip on a bundle at %s: exit %d\n%s", target, code, out.String())
+	}
+	if tree(t, at) != before {
+		t.Error("a refused migration writes nothing")
 	}
 }
 

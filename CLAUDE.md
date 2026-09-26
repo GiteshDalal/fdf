@@ -254,19 +254,22 @@ be corrected in `INDEX.md`, and a root inside a pinned bundle is sent to that bu
   those entries. `outside.go`
   rewrites the project's git-tracked text files — links into the bundle, and mentions
   of its path where a path begins — listing each mention of the old path it leaves for a
-  person to decide on (in a URL, after a longer path, or in a link that leads
-  elsewhere), counting those in logs, and skipping `.gitmodules` and what
-  `fdf install` manages, which it counts; a bundle that is its own repository has no
-  outside. Refused before anything is written: a root inside a pinned bundle, or one
-  that is a symbolic link, or whose `INDEX.md`, `LOG.md` or `SPEC.md` is one; a pin that
-  is not a version, a newer one or an unknown 0.x one; a v0.1 rename (`caseRenames`) or
-  a 0.3 lift (`liftTrails`) onto a file that is there; a stray root Markdown file, a
-  document named `index.md` or `log.md`, a practice, debt or bug beside a directory of
-  Markdown, a group whose place in `features/` is taken or a `features` that is no
-  directory, a directory of Markdown that is a symbolic link, a register migrate writes
-  into that is one, whatever it holds; a destination that is not empty, inside the
-  bundle, outside the project or inside `.git`, or behind a file; a tree that is not
-  clean; and a place git would ignore. A bundle at 1.0 moves nothing: its spec copy,
+  person to decide on (in a URL, after a longer path, in a link that leads elsewhere,
+  or in a file a `--skip` glob names, which it leaves as it is), counting those in logs,
+  and skipping `.gitmodules` and what `fdf install` manages, which it counts; a bundle
+  that is its own repository has no outside. Refused before anything is written: a
+  root inside a pinned bundle, or one that is a symbolic link, or whose `INDEX.md`,
+  `LOG.md` or `SPEC.md` is one; a pin that is not a version, a newer one or an unknown
+  0.x one; a v0.1 rename (`caseRenames`) or a 0.3 lift (`liftTrails`) onto a file that
+  is there; a stray root Markdown file, a document named `index.md` or `log.md`, a
+  practice, debt or bug beside a directory of Markdown, a group whose place in
+  `features/` is taken or a `features` that is no directory, a directory of Markdown
+  that is a symbolic link, a register migrate writes into that is one, whatever it
+  holds; a destination that is not empty, inside the bundle, outside the project or
+  inside `.git`, or behind a file; a tree that is not clean; a place git would ignore;
+  and a `--skip` glob that names no file git tracks outside the bundle, or any where
+  migrate reads nothing outside it: outside git, in a bundle that is its own
+  repository, or at 1.0. A bundle at 1.0 moves nothing: its spec copy,
   indexes and Context stubs are restored, and one it would write through a symbolic
   link, the file's or its register's, is refused first. Validation runs with
   `FreshStubsAdvisory`, and a bundle from before 0.7 hears 0.7's F12, F8, surface and

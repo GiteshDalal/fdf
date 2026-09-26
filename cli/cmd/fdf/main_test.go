@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -346,5 +347,37 @@ func TestValidateBundleThatIsItsOwnRepository(t *testing.T) {
 	}
 	if strings.Contains(out.String(), ".obsidian") || strings.Contains(out.String(), ".git") {
 		t.Errorf("hidden directories are not bundle directories:\n%s", out.String())
+	}
+}
+
+// --skip may be given more than once, and each glob reaches migrate: of two,
+// the one that names no file is refused, and the other is not.
+func TestMigrateTakesSkipMoreThanOnce(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	project := t.TempDir()
+	for rel, content := range map[string]string{
+		"docs/features/INDEX.md": "---\nfdf_version: \"0.7\"\n---\n\n# Bundle\n",
+		"schema.sql":             "-- docs/features\n",
+	} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(project, rel)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(project, rel), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, args := range [][]string{{"init", "-q"}, {"add", "-A"}, {"commit", "-qm", "bundle"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = project
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	code, out, _ := fdfRun("migrate", "--root", filepath.Join(project, "docs", "features"), "--skip", "schema.sql", "--skip", "nope/**", "--dry-run")
+	if code != 1 || !strings.Contains(out, "  --skip 'nope/**': names no file git tracks outside the bundle") || strings.Contains(out, "--skip schema.sql") {
+		t.Errorf("fdf migrate --skip schema.sql --skip 'nope/**': exit %d\n%s", code, out)
 	}
 }

@@ -50,7 +50,7 @@ func (p *plan) print(out io.Writer, from string, dry bool) {
 		row("outside", fmt.Sprintf("%s in %s; %s in %s", count(p.outMentions, "mention"), count(p.outMentionFiles, "file"), count(p.outLinks, "link"), count(p.outLinkFiles, "file")))
 		if len(p.left) > 0 {
 			var byWhy []string
-			for _, why := range []string{"after a longer path", "in a URL", elsewhere} {
+			for _, why := range []string{"after a longer path", "in a URL", elsewhere, skippedFile} {
 				n := 0
 				for _, l := range p.left {
 					if l.why == why {
@@ -65,6 +65,9 @@ func (p *plan) print(out io.Writer, from string, dry bool) {
 		}
 		if p.managed > 0 {
 			row("", fmt.Sprintf("skipped: %s in what `fdf install` manages, which it rewrites", count(p.managed, "reference")))
+		}
+		if len(p.skipped) > 0 {
+			row("", fmt.Sprintf("skipped on request: %s that --skip names", count(len(p.skipped), "file")))
 		}
 	}
 

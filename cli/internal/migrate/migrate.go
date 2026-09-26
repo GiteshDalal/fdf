@@ -101,6 +101,10 @@ type Options struct {
 	DryRun  bool   // print the plan and change nothing
 	To      string // where the bundle goes, absolute; "" for the default
 	EnvRoot string // the bundle root FDF_ROOT_DIR names, absolute; "" when it is not set
+	// Skip holds globs, read from the project root as git reads a pathspec
+	// with :(glob) magic, naming files outside the bundle that the outside
+	// pass leaves as they are, listing what they say of the bundle.
+	Skip []string
 }
 
 // Run upgrades the bundle at o.Root to target: it works out the whole
@@ -137,6 +141,9 @@ func Run(o Options, out io.Writer) int {
 	case pin == target && o.To != "" && onDisk(filepath.Clean(o.To)) != rootAbs:
 		fmt.Fprintf(out, "cannot migrate: the bundle already pins fdf_version %s, and migrate moves nothing in a bundle at %s — move it with git mv, then point --root or FDF_ROOT_DIR at it; the bundle was left as it is.\n", target, target)
 		return 1
+	case pin == target && len(o.Skip) > 0:
+		fmt.Fprintf(out, "cannot migrate: the bundle already pins fdf_version %s, and migrate reads no file outside a bundle at %s — run it without --skip; the bundle was left as it is.\n", target, target)
+		return 1
 	case pin == target:
 		return repair(o, rootAbs, out)
 	case v.Major == 0 && !known0x[pin]:
@@ -157,7 +164,7 @@ func Run(o Options, out io.Writer) int {
 		fmt.Fprintf(out, "cannot migrate: %s; the bundle was left as it is.\n", problem)
 		return 1
 	}
-	p, problems, err := newPlan(rootAbs, pin, project, dest)
+	p, problems, err := newPlan(rootAbs, pin, project, dest, o.Skip)
 	if err != nil {
 		fmt.Fprintf(out, "error: %v\n", err)
 		return 1
