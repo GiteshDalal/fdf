@@ -304,7 +304,8 @@ func primer(root string) string {
 Projects on this machine may document software features with FDF (Feature
 Document Format): the directory ` + "`" + root + "/`" + ` in a project is an FDF
 **bundle**. Its root holds the Context documents below, ` + "`INDEX.md`" + `,
-` + "`LOG.md`" + `, ` + "`SPEC.md`" + ` and six registers — ` + "`features/`" + `,
+` + "`LOG.md`" + `, ` + "`SPEC.md`" + `, an optional ` + "`README.md`" + ` and six
+registers — ` + "`features/`" + `,
 ` + "`changes/`" + `, ` + "`practices/`" + `, ` + "`debts/`" + `, ` + "`bugs/`" + ` and
 ` + "`releases/`" + ` — and nothing else. Every feature is a Markdown + Gherkin
 document under ` + "`features/`" + `, filed flat or in groups nested to any depth,
@@ -321,8 +322,10 @@ consistency and must exit 0 after any bundle edit. The full format rules ship in
 ` + "`" + root + "/SPEC.md`" + ` and are also printed by ` + "`fdf spec`" + ` — read
 either when you need exact frontmatter fields, casing, or validation
 semantics. ` + "`fdf help`" + ` documents every command with examples. fdf 1.x
-works on spec 1.x bundles: one from before 1.0 is upgraded with
-` + "`fdf migrate`" + `, then ` + "`fdf install`" + `.
+works on spec 1.x bundles. Upgrading one from before 1.0, with
+` + "`fdf migrate`" + ` and then ` + "`fdf install`" + `, is the user's decision: it
+moves the bundle's documents and rewrites references to them across the
+project.
 
 Five bundle-root **Context documents** — ` + "`" + root + "/STACK.md`" + `,
 ` + "`ARCHITECTURE.md`" + `, ` + "`SURFACES.md`" + `, ` + "`INFRA.md`" + `,

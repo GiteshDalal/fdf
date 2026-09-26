@@ -98,7 +98,7 @@ func TestInitIdempotentAndMigrateHint(t *testing.T) {
 	}{
 		{"'" + currentVersion + "'", "up to date (fdf_version " + currentVersion + ")", 0},
 		{currentVersion, "up to date (fdf_version " + currentVersion + ")", 0},
-		{`"0.1"`, "pins fdf_version 0.1; fdf's commands work on spec 1.0 bundles — run `fdf migrate` to upgrade it first", 1},
+		{`"0.1"`, "pins fdf_version 0.1; fdf's commands work on spec 1.0 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan", 1},
 		{`"1.3"`, "pins fdf_version 1.3, newer than any spec this fdf knows (1.0) — upgrade fdf", 1},
 	} {
 		os.WriteFile(idx, bytes.Replace(raw, []byte(`"`+currentVersion+`"`), []byte(tc.pin), 1), 0o644)
@@ -394,14 +394,17 @@ func TestWriteNewNeverOverwrites(t *testing.T) {
 }
 
 // The commands write spec 1.x, so they refuse any other bundle before they
-// write anything, and name the fix: `fdf migrate` for a 0.x pin, the pin or
-// `fdf migrate` for none, a newer fdf for a newer pin, the pin itself when it
-// is not a version, and the frontmatter when no `---` line closes it.
+// write anything, and name the fix: `fdf migrate`, the user's decision, for a
+// 0.x pin, the pin or `fdf migrate` for none, a newer fdf for a newer pin, the
+// pin itself when it is not a version or a 0.x version FDF never had, and
+// the frontmatter when no `---` line closes it.
 func TestScaffoldsPointA0xBundleAtMigrate(t *testing.T) {
 	for _, tc := range []struct{ pin, says string }{
-		{"0.7", "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0 bundles — run `fdf migrate` to upgrade it first\n"},
-		{"0.5", "error: this bundle pins fdf_version 0.5; fdf's commands work on spec 1.0 bundles — run `fdf migrate` to upgrade it first\n"},
-		{"", "error: this bundle's INDEX.md pins no fdf_version; fdf's commands work on spec 1.0 bundles — pin the version it was written for, as fdf_version: \"" + currentVersion + "\", or upgrade a bundle from before 1.0 with `fdf migrate` first\n"},
+		{"0.7", "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n"},
+		{"0.5", "error: this bundle pins fdf_version 0.5; fdf's commands work on spec 1.0 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n"},
+		{"", "error: this bundle's INDEX.md pins no fdf_version; fdf's commands work on spec 1.0 bundles — pin the version it was written for, as fdf_version: \"" + currentVersion + "\"; upgrading a bundle from before 1.0 is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n"},
+		// A 0.x pin FDF never had is a mistake, and migrate refuses it too.
+		{"0.8", "error: this bundle pins fdf_version 0.8, which is no 0.x version this fdf knows (0.1 to 0.7) — correct the pin in INDEX.md\n"},
 		{"1.3", "error: this bundle pins fdf_version 1.3, newer than any spec this fdf knows (1.0) — upgrade fdf\n"},
 		// A pin that is almost 1.0 is no 0.x version to migrate.
 		{"1.0.0", "error: this bundle pins fdf_version 1.0.0, which is not a MAJOR.MINOR version such as " + currentVersion + " — correct the pin in INDEX.md\n"},

@@ -59,6 +59,14 @@ func (v Version) Less(o Version) bool {
 // AtLeast reports whether v is o or a later version.
 func (v Version) AtLeast(o Version) bool { return !v.Less(o) }
 
+// Known0x reports whether s is one of the versions FDF had before 1.0, 0.1 to
+// 0.7: the pins fdf migrate upgrades from. Any other 0.x pin is a mistake, to
+// be corrected, not a bundle to migrate.
+func Known0x(s string) bool {
+	v, ok := Parse(s)
+	return ok && v.Major == 0 && v.Minor >= 1 && v.Minor <= 7
+}
+
 // Sort orders version strings oldest first. A string that is not a version
 // sorts after every version, and such strings keep their lexical order.
 func Sort(vs []string) {

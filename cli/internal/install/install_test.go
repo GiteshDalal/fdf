@@ -33,7 +33,7 @@ func TestInstallClaudeCodePlacesSkillsPrimerAndUpgrades(t *testing.T) {
 	if !strings.Contains(string(claudeMd), "docs/fdf/SPEC.md") {
 		t.Fatalf("primer should point at the bundle spec copy:\n%s", claudeMd)
 	}
-	if !strings.Contains(string(claudeMd), "`features/payments/instant-refunds`") || !strings.Contains(string(claudeMd), "`fdf migrate`, then `fdf install`") {
+	if !strings.Contains(string(claudeMd), "`features/payments/instant-refunds`") || !strings.Contains(string(claudeMd), "`fdf migrate` and then `fdf install`, is the user's decision") {
 		t.Fatalf("primer should teach 1.0's IDs and the upgrade from 0.x:\n%s", claudeMd)
 	}
 	if !strings.Contains(string(claudeMd), "SURFACES.md") {

@@ -107,13 +107,15 @@ func pinProblem(pin string) string {
 	v, ok := specver.Parse(pin)
 	switch {
 	case pin == "":
-		return fmt.Sprintf("INDEX.md: pins no fdf_version — the version of the spec a bundle follows is pinned in its frontmatter, as fdf_version: \"%s\"; a bundle from before 1.0 is upgraded with `fdf migrate` (F1)", newestSupported())
+		return fmt.Sprintf("INDEX.md: pins no fdf_version — the version of the spec a bundle follows is pinned in its frontmatter, as fdf_version: \"%s\"; %s (F1)", newestSupported(), fdfroot.Upgrading("a bundle from before 1.0", ""))
 	case !ok:
 		return fmt.Sprintf("INDEX.md: fdf_version %q is not a MAJOR.MINOR version such as %q — correct the pin (F1)", pin, newestSupported())
+	case v.Major == 0 && !specver.Known0x(pin):
+		return fmt.Sprintf("INDEX.md: fdf_version %q is no 0.x version this fdf knows (0.1 to 0.7) — correct the pin (F1)", pin)
 	}
 	for s := range supportedVersions {
 		if w, _ := specver.Parse(s); !w.Less(v) {
-			return fmt.Sprintf("INDEX.md: fdf_version %q is not a supported version (%s) — run `fdf migrate` (F1)", pin, supportedList())
+			return fmt.Sprintf("INDEX.md: fdf_version %q is not a supported version (%s) — %s (F1)", pin, supportedList(), fdfroot.Upgrading("the bundle", ""))
 		}
 	}
 	return fmt.Sprintf("INDEX.md: fdf_version %q is newer than any version this fdf validates (%s) — upgrade fdf (F1)", pin, supportedList())

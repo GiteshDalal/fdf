@@ -69,6 +69,20 @@ func InsideBundle(root, bundle string) error {
 	return fmt.Errorf("%s is inside the bundle at %s, not a bundle of its own — pass --root %s, or leave --root out", root, bundle, bundle)
 }
 
+// Upgrading is how a message that meets a bundle from before 1.0 names the
+// upgrade of what: the user's decision, which fdf migrate's dry run informs,
+// with --root when root is not "". The upgrade moves the bundle's documents
+// and rewrites references to them across the project, and an agent reads
+// these messages: fdf 0.7's skills told it to run fdf migrate whenever a pin
+// was not supported.
+func Upgrading(what, root string) string {
+	dryRun := "`fdf migrate --dry-run`"
+	if root != "" {
+		dryRun = "`fdf migrate --root " + root + " --dry-run`"
+	}
+	return "upgrading " + what + " is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: " + dryRun + " shows the plan"
+}
+
 // CheckBundle returns NoBundle unless root holds a bundle: an INDEX.md at its
 // top.
 func CheckBundle(root string) error {

@@ -76,9 +76,10 @@ holds no `INDEX.md`, which sends a root that holds Markdown nonetheless to `fdf 
 not `fdf init` (`fdfroot.Unindexed`: a v0.1 bundle's `index.md` as it is, any other once
 it has an `INDEX.md`). Every command but `validate`, `migrate` and `serve` works on spec 1.x
 bundles only: `scaffold.RequireSupported` stops it on a bundle that pins 0.x, which it
-points at `fdf migrate`, or no version, which is to be pinned, or migrated; a pin that is
-not a `MAJOR.MINOR` version is to be corrected in `INDEX.md`, and a root inside a pinned
-bundle is sent to that bundle.
+points at `fdf migrate`, the user's decision (`fdfroot.Upgrading`), or no version, which
+is to be pinned, or migrated; a pin that is not a `MAJOR.MINOR` version, or a 0.x version
+FDF never had (`specver.Known0x`), is to be corrected in `INDEX.md`, and a root inside a
+pinned bundle is sent to that bundle.
 
 - **`cli/internal/fdfroot`** — root resolution, used by every command. Bundle root precedence:
   `--root` flag > `FDF_ROOT_DIR` env > the default: the first of `docs/fdf` and
@@ -91,6 +92,10 @@ bundle is sent to that bundle.
   directory above a root whose `INDEX.md` pins a version: a root whose own `INDEX.md` pins
   nothing below one, such as `--root docs/fdf/features`, is a register or group of that
   bundle, which the commands' gate and `fdf migrate` refuse in `InsideBundle`'s words.
+  The pin errors of the validator and the commands name the upgrade of a bundle from
+  before 1.0 as the user's decision, with its dry run (`Upgrading`): `fdf migrate` moves
+  the bundle's documents and rewrites references to them across the project, and fdf
+  0.7's skills told an agent to run it whenever a pin was not supported.
   `Pin` (and `PinOf`, for a bundle's root) is the one reader of a pin — the
   `fdf_version` key of the root `INDEX.md`'s frontmatter, read line by line, so a line
   of it that does not parse hides no pin, and one written in the body is none — which
@@ -110,7 +115,9 @@ bundle is sent to that bundle.
   `fdf_version`, a `spec/<version>.md` name), and versions compare by number, so 1.0
   follows 0.7 and 1.10 follows 1.2. The validator's pin check (`pinProblem` in `bundle`),
   the pins the commands support (`scaffold.Supported`) and `scaffold.SpecVersions` go
-  through it.
+  through it. `Known0x` names the versions FDF had before 1.0, 0.1 to 0.7: the pins
+  `fdf migrate` upgrades from, while the validator, the commands and migrate send any
+  other 0.x pin to be corrected.
 
 - **`cli/internal/links`** — the one link-repair engine. `Find` returns a Markdown text's
   link targets as CommonMark reads them (inline links and images, with any title, a
@@ -157,9 +164,10 @@ bundle is sent to that bundle.
     *before* the walk (`fdfroot.PinOf`): it decides whether the bundle is checked at all,
     and a line of the root `INDEX.md`'s frontmatter that does not parse is F1, as in any
     document. The validator checks spec **1.0** (`supportedVersions`); a
-    missing pin, one that is not a `MAJOR.MINOR` version, an older one (a 0.x bundle, for
-    `fdf migrate`) or a newer one (for a newer fdf) is an F1 error that names the fix
-    (`pinProblem`), and the bundle is checked no further.
+    missing pin, one that is not a `MAJOR.MINOR` version or is a 0.x version FDF never
+    had, an older one (a 0.x bundle, for `fdf migrate`, the user's decision) or a newer
+    one (for a newer fdf) is an F1 error that names the fix (`pinProblem`), and the
+    bundle is checked no further.
   - **`walk.go`**'s `walk` asks `layout` for each file's position, and reports a path with
     no position once, as F3 with `layout`'s `Problem`. Each document is recorded through
     **`collect.go`**'s `collection`: `document` for the checks every document takes, then

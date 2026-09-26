@@ -1,0 +1,5 @@
+exit: 1
+contains: FAIL: INDEX.md: fdf_version "0.8" is no 0.x version this fdf knows (0.1 to 0.7) — correct the pin (F1)
+contains: Bundle not validated
+not-contains: fdf migrate
+not-contains: (F3)

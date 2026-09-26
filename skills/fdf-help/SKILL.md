@@ -168,7 +168,7 @@ repair a defect depends on what the defect turns out to be.
 
 | Bundle state | Skill |
 |---|---|
-| The bundle pins a version before 1.0 — `fdf validate` fails F1 and says to run `fdf migrate` | Upgrade it first: *A bundle from before 1.0*, below |
+| The bundle pins a version before 1.0 — `fdf validate` fails F1, pointing at `fdf migrate` | Propose the upgrade first: *A bundle from before 1.0*, below |
 | Context docs missing or still `<!-- fdf:stub -->` | fdf-init (fill them first) |
 | No feature file for this capability | fdf-brainstorm |
 | `draft` | fdf-brainstorm (finish the spec) |

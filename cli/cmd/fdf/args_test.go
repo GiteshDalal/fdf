@@ -235,7 +235,7 @@ func TestCommandsPointA0xBundleAtMigrate(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("FDF_ROOT_DIR", root)
-	want := "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0 bundles — run `fdf migrate` to upgrade it first\n"
+	want := "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n"
 	for _, args := range [][]string{
 		{"new", "payments/x"}, {"adopt", "--resource", "main.go", "payments/x"}, {"adopt"}, {"practice", "x"},
 		{"debt"}, {"debt", "x"}, {"bug", "--cleanup"}, {"change", "--affects", "features/p/q", "x"},

@@ -34,13 +34,14 @@ func Supported() []string {
 }
 
 // RequireSupported reports whether the commands can work on the bundle at
-// root, and when they cannot, says why and what to run: a bundle that pins a
-// 0.x version is upgraded with `fdf migrate` first, one that pins none is
-// pinned, or upgraded, and one that pins a version newer than this fdf knows
-// needs a newer fdf. A pin that is not a version is corrected in INDEX.md,
-// and so is frontmatter that never closes (fdfroot.Unclosed). A root whose
-// INDEX.md pins nothing inside a pinned bundle is a register or a group of
-// that bundle, which is the root to pass.
+// root, and when they cannot, says why and what to do: a bundle that pins a
+// 0.x version FDF had is upgraded with `fdf migrate` first, the user's
+// decision (fdfroot.Upgrading), one that pins none is pinned, or upgraded,
+// and one that pins a version newer than this fdf knows needs a newer fdf. A
+// pin that is not a version, or is a 0.x version FDF never had, is corrected
+// in INDEX.md, and so is frontmatter that never closes (fdfroot.Unclosed). A
+// root whose INDEX.md pins nothing inside a pinned bundle is a register or a
+// group of that bundle, which is the root to pass.
 func RequireSupported(root string, out io.Writer) bool {
 	pin := Pin(root)
 	supported := Supported()
@@ -61,13 +62,15 @@ func RequireSupported(root string, out io.Writer) bool {
 	case fdfroot.Unclosed(root):
 		fmt.Fprintln(out, "error: this bundle's INDEX.md frontmatter has no closing `---` line, so it pins no fdf_version — end the block with one")
 	case pin == "":
-		fmt.Fprintf(out, "error: this bundle's INDEX.md pins no fdf_version; fdf's commands work on spec %s bundles — pin the version it was written for, as fdf_version: \"%s\", or upgrade a bundle from before 1.0 with `fdf migrate` first\n", list, currentVersion)
+		fmt.Fprintf(out, "error: this bundle's INDEX.md pins no fdf_version; fdf's commands work on spec %s bundles — pin the version it was written for, as fdf_version: \"%s\"; %s\n", list, currentVersion, fdfroot.Upgrading("a bundle from before 1.0", ""))
 	case !ok:
 		fmt.Fprintf(out, "error: this bundle pins fdf_version %s, which is not a MAJOR.MINOR version such as %s — correct the pin in INDEX.md\n", pin, currentVersion)
 	case newest.Less(v):
 		fmt.Fprintf(out, "error: this bundle pins fdf_version %s, newer than any spec this fdf knows (%s) — upgrade fdf\n", pin, list)
+	case v.Major == 0 && !specver.Known0x(pin):
+		fmt.Fprintf(out, "error: this bundle pins fdf_version %s, which is no 0.x version this fdf knows (0.1 to 0.7) — correct the pin in INDEX.md\n", pin)
 	default:
-		fmt.Fprintf(out, "error: this bundle pins fdf_version %s; fdf's commands work on spec %s bundles — run `fdf migrate` to upgrade it first\n", pin, list)
+		fmt.Fprintf(out, "error: this bundle pins fdf_version %s; fdf's commands work on spec %s bundles — %s\n", pin, list, fdfroot.Upgrading("the bundle", ""))
 	}
 	return false
 }

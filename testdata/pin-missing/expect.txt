@@ -1,5 +1,6 @@
 exit: 1
 contains: FAIL: INDEX.md: pins no fdf_version
+contains: upgrading a bundle from before 1.0 is the user's decision
 contains: (F1)
 contains: Bundle not validated
 not-contains: (F3)

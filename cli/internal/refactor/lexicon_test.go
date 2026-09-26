@@ -230,7 +230,7 @@ func TestLexiconPointsA0xBundleAtMigrate(t *testing.T) {
 	pinTo(t, root, "0.7")
 	var out bytes.Buffer
 	if code := Lexicon(root, LexiconOptions{}, &out); code != 1 ||
-		out.String() != "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0 bundles — run `fdf migrate` to upgrade it first\n" {
+		out.String() != "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n" {
 		t.Fatalf("exit %d\n%s", code, out.String())
 	}
 }

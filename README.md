@@ -261,7 +261,12 @@ the **project** root.
 
 fdf 1.x works on spec 1.x bundles only. A bundle that pins 0.x fails
 `fdf validate` (F1), and every command that works on a bundle refuses it,
-pointing at `fdf migrate`, which upgrades any 0.x bundle to 1.0 in one run:
+pointing at `fdf migrate`, which upgrades any 0.x bundle to 1.0 in one run.
+Upgrade fdf and the bundle together: until `fdf install` runs again, an agent
+works from 0.7's skills, which tell it to run `fdf migrate` whenever a pin is
+not supported, and 1.0's `fdf migrate` moves the bundle and rewrites
+references to it across the project. A project you are not upgrading yet
+stays on 0.7.x (*Not ready yet?*, below). To upgrade:
 
 1. **Commit everything.** Migrate starts only from a clean tree, and git is
    its undo: should it stop partway, it prints the commands that put

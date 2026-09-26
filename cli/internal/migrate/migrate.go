@@ -53,9 +53,6 @@ import (
 // target is the pin migrate writes: 1.0.
 const target = "1.0"
 
-// known0x are the pins migrate upgrades from: every 0.x version FDF had.
-var known0x = map[string]bool{"0.1": true, "0.2": true, "0.3": true, "0.4": true, "0.5": true, "0.6": true, "0.7": true}
-
 // Version is the CLI version, set by the command wrapper. A migrate that
 // finds the pin already current is indistinguishable from a migrate that has
 // nothing to do — unless the message names the binary doing the looking. An
@@ -151,7 +148,7 @@ func Run(o Options, out io.Writer) int {
 		return 1
 	case pin == target:
 		return repair(o, rootAbs, out)
-	case v.Major == 0 && !known0x[pin]:
+	case v.Major == 0 && !specver.Known0x(pin):
 		fmt.Fprintf(out, "cannot migrate: the bundle pins fdf_version %s, which is no 0.x version %s knows (0.1 to 0.7) — correct the pin in INDEX.md; the bundle was left as it is.\n", pin, binaryName())
 		return 1
 	case v.Major != 0:

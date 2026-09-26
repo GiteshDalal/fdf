@@ -547,7 +547,7 @@ func TestRegistersPointA0xBundleAtMigrate(t *testing.T) {
 			"cleanup": func(out *bytes.Buffer) int { return tc.k.Cleanup(root, false, false, out) },
 		} {
 			var out bytes.Buffer
-			want := "error: this bundle pins fdf_version " + tc.pin + "; fdf's commands work on spec 1.0 bundles — run `fdf migrate` to upgrade it first\n"
+			want := "error: this bundle pins fdf_version " + tc.pin + "; fdf's commands work on spec 1.0 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n"
 			if code := run(&out); code != 1 || out.String() != want {
 				t.Errorf("%s %s on a %s bundle: exit %d\n got: %q\nwant: %q", tc.k.noun, name, tc.pin, code, out.String(), want)
 			}
