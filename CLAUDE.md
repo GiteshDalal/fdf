@@ -11,15 +11,17 @@ this repo. FDF bundles live under `testdata/` as conformance fixtures; the real 
 tool manages exist in *other* projects.
 
 FDF (Feature Document Format) is "documentation-as-a-directory": each software feature is a
-Markdown + Gherkin document whose design spec, plan, acceptance tests, and optional surface/log
-trail live as **stem-qualified siblings** (`slug.spec.md`, `slug.plan.md`, `slug.test.md`,
-optional `slug.surface.md` / `slug.log.md`); tasks live only under a `slug/` directory. Five
-bundle-root Context docs (`STACK.md`, `ARCHITECTURE.md`, `SURFACES.md`, `INFRA.md`,
-`DOMAIN.md`) hold project context. Post-delivery work lives under `changes/` as a `Change` (alters what a
-delivered feature does) or a `Fix` (the code drifted from what the document already says).
-Known gaps are `Debt` under `debts/`; known defects not repaired yet are `Bug` under
-`bugs/` (v0.7). A capability that predates the bundle is an `adopted` feature (v0.7): no
-build trail, its code named in `resource`.
+Markdown + Gherkin document under `features/` whose design spec, plan, acceptance tests, and
+optional surface/log trail live as **stem-qualified siblings** (`slug.spec.md`,
+`slug.plan.md`, `slug.test.md`, optional `slug.surface.md` / `slug.log.md`); tasks live only
+under a `slug/` directory. Five bundle-root Context docs (`STACK.md`, `ARCHITECTURE.md`,
+`SURFACES.md`, `INFRA.md`, `DOMAIN.md`) hold project context. Post-delivery work lives under
+`changes/` as a `Change` (alters what a delivered feature does) or a `Fix` (the code drifted
+from what the document already says). Recurring mechanisms are `Practice` under
+`practices/`, known gaps are `Debt` under `debts/`, and known defects not repaired yet are
+`Bug` under `bugs/`. A capability that predates the bundle is an `adopted` feature: no build
+trail, its code named in `resource`. The bundle root is closed: its own files, the Context
+docs and six registers (those five directories and `releases/`), and nothing else.
 This repo ships:
 
 1. A Go CLI (`cli/cmd/fdf`) that scaffolds and **validates** those bundles.
@@ -106,9 +108,9 @@ bundle is sent to that bundle.
 
 - **`cli/internal/specver`** — spec versions: `Parse` reads `MAJOR.MINOR` (a bundle's
   `fdf_version`, a `spec/<version>.md` name), and versions compare by number, so 1.0
-  follows 0.7 and 1.10 follows 1.2. Every version gate (`pinAtLeast` in `bundle`), the
-  pins the commands support (`scaffold.Supported`) and `scaffold.SpecVersions` go through
-  it.
+  follows 0.7 and 1.10 follows 1.2. The validator's pin check (`pinProblem` in `bundle`),
+  the pins the commands support (`scaffold.Supported`) and `scaffold.SpecVersions` go
+  through it.
 
 - **`cli/internal/links`** — the one link-repair engine. `Find` returns a Markdown text's
   link targets as CommonMark reads them (inline links and images, with any title, a
@@ -128,8 +130,8 @@ bundle is sent to that bundle.
   link written from the bundle root changes only when its target moves, or the bundle
   does; one whose target then leaves the bundle is written relative, as spec 1.0's
   *Cross-linking* writes a link out of the bundle.
-  `fdf mv` and `fdf migrate` use it, and so does the validator under a 1.0 pin
-  (`sectionTargets` also skips a heading line that starts in `Code`).
+  `fdf mv`, `fdf migrate` and the validator use it (`sectionTargets` also skips a
+  heading line that starts in `Code`).
 
 - **`cli/internal/layout`** — the one source of 1.0 positions: the closed root (its own
   files, the five Context documents and the six `Registers`), groups nested to any depth in

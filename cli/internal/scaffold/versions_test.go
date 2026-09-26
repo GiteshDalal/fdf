@@ -1,8 +1,12 @@
 package scaffold
 
 import (
+	"io/fs"
+	"os"
+	"strings"
 	"testing"
 
+	fdf "github.com/GiteshDalal/fdf"
 	"github.com/GiteshDalal/fdf/cli/internal/specver"
 )
 
@@ -40,4 +44,25 @@ func TestSupportedHoldsTheCurrentVersion(t *testing.T) {
 		}
 	}
 	t.Fatalf("Supported() = %v; want it to hold the current version, %s", Supported(), CurrentVersion())
+}
+
+// The two indexes of the specs, the repository's SPEC.md and spec/README.md,
+// name the version fdf init pins as the current one, so that a version bump
+// cannot leave them pointing at the one before.
+func TestTheSpecIndexesNameTheCurrentVersion(t *testing.T) {
+	v := CurrentVersion()
+	top, err := os.ReadFile("../../../SPEC.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "| **" + v + "** | [spec/" + v + ".md](spec/" + v + ".md) | **Current** |"; !strings.Contains(string(top), want) {
+		t.Errorf("SPEC.md does not list %s as current: want the row %q", v, want)
+	}
+	list, err := fs.ReadFile(fdf.Assets, "spec/README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "- [`" + v + ".md`](" + v + ".md) — current."; !strings.Contains(string(list), want) {
+		t.Errorf("spec/README.md does not list %s as current: want the entry %q", v, want)
+	}
 }
