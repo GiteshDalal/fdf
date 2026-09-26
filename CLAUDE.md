@@ -137,72 +137,59 @@ be corrected in `INDEX.md`, and a root inside a pinned bundle is sent to that bu
 - **`cli/internal/bundle`** (`validate.go`) — the heart of the tool. `Validate()` is the
   enforcement engine for the spec. Rules are coded **F1–F14** (format conformance) and **R1**
   (repo integrity); every error message ends with its rule code, e.g. `(F4)`. Highlights:
-  - `readPin()` reads `fdf_version` from the root `INDEX.md` *before* the directory walk,
-    because version-gated rules (Context docs, stem trail layout) must be known for every
-    file and `WalkDir` visits lexically (`ARCHITECTURE.md` sorts before `INDEX.md`).
-  - Validates spec **v0.2 – v0.7** and **v1.0** (`supportedVersions`); a pin outside that
-    set is an F1 error pointing at `fdf migrate`, or at a newer fdf when it is newer than
-    every supported version (`unsupportedPin`). Gates are `pinAtLeast(pin, specver.Version)`:
-    `specStem` the stem-trail layout (v0.4 onward); `specV5` `changes/`, the `Change`/`Fix`
-    types, `retired`, feature `depends-on`, and F10; `specV6` `practices/`, the `Practice`
-    and `Debt` types, `DOMAIN.md`, F11, F12 and F13; `specV7` `bugs/` and F14, `resolves`,
-    the `adopted` status and feature `resource`, F12's full reach, and F1's check of a
-    `timestamp`'s form (a date, or an RFC 3339 time with `Z` or an offset). Every gate means
-    "this version **and later**", so a 1.0 pin passes them all: 1.0 keeps the rules 0.7
-    has. v0.2/v0.3 keep the nested paired-directory layout.
-  - **`v1`** (a 1.0 pin) swaps the walk. `validate.go`'s `visitV0` reads a position from
-    the path's segments, as 0.x lays a bundle out; **`walk.go`**'s `walkV1` asks `layout`,
-    and reports a path with no position once, as F3 with `layout`'s `Problem`. Both record
-    each document through **`collect.go`**'s `collection`: `document` for the checks every
-    document takes, then `feature`, `trail`, `task`, `change`, `practice`, `entry` (a debt
-    or bug), `registerLog`, `release` or `root`. Under `v1` the validator also reads links
-    through `links.Find` and `links.Resolve` (`resolveLink`, `sectionLinks`, and the
-    broken-link check, which then reads reference definitions too), F10 and F14 suggest the
-    full ID of a feature named the 0.7 way (`featureHint`), and F12 reads group names
-    through `layout` (`groupName`: at every depth, never a register's own name, nor a
-    directory that holds no Markdown).
+  - A directory with no `INDEX.md` is no bundle (`fdfroot.NoBundle`). `readPin()` reads
+    `fdf_version` from the root `INDEX.md` *before* the walk: the pin decides whether the
+    bundle is checked at all. The validator checks spec **1.0** (`supportedVersions`); a
+    missing pin, one that is not a `MAJOR.MINOR` version, an older one (a 0.x bundle, for
+    `fdf migrate`) or a newer one (for a newer fdf) is an F1 error that names the fix
+    (`pinProblem`), and the bundle is checked no further.
+  - **`walk.go`**'s `walk` asks `layout` for each file's position, and reports a path with
+    no position once, as F3 with `layout`'s `Problem`. Each document is recorded through
+    **`collect.go`**'s `collection`: `document` for the checks every document takes, then
+    `feature`, `trail`, `task`, `change`, `practice`, `entry` (a debt or bug),
+    `registerLog`, `release` or `root`. Links are read through `links.Find` and
+    `links.Resolve` (`resolveLink`, `sectionTargets`, and the broken-link check, which
+    reads reference definitions too), F10 and F14 suggest the full ID of a feature named
+    the 0.7 way (`featureHint`), and F12 reads group names through `layout` (`groupName`:
+    at every depth, never a register's own name, nor a directory that holds no Markdown).
   - **`practices.go`** holds F11 (practice body shape, `superseded-by` graph) and the
     `sectionText` helper that `domain.go`, `debts.go` and `bugs.go` also use.
     **`bugs.go`** holds F14 and the `resolves` half of F10: `# Symptom`/`# Expected`
     required, `# Violates` parsed with the regression-case grammar and checked verbatim
     while open, forbidden on `accepted`, and a resolved bug still citing it must be named
     by a done Fix/Change's `resolves`. A cleared bug's ID is read back from
-    `bugs/LOG.md` (`* **bugs/<id>** — …`). **`testcases.go`** is v0.7's F8: a case is a
+    `bugs/LOG.md` (`* **bugs/<id>** — …`). **`testcases.go`** is F8: a case is a
     `## <scenario name>` heading under `# Test Cases`, matched exactly (`TestCases`, also
     used by `fdf adopt`'s map); a case naming no scenario warns. It also holds the surface
     check: `surface: none` or a `slug.surface.md` from `specified` on (adopted: from the
-    first scenario), a warning otherwise. Debts and bugs share one position branch in
-    `validate.go`. **`adopted.go`** is F4/F8 for `adopted` features: no spec, plan or
-    task directory, `resource` required, no `version`, `slug.test.md` from the first
-    scenario (F5 lets a map entry have none).
+    first scenario), a warning otherwise. **`adopted.go`** is F4/F8 for `adopted`
+    features: no spec, plan or task directory, `resource` required, no `version`,
+    `slug.test.md` from the first scenario (F5 lets a map entry have none).
     **`debts.go`** holds F13: `# Gap` required, no Gherkin, `# Rationale` on
-    `accepted`, `# Resolution` on `resolved`. Debt and practice positions are
-    near-identical (`<slug>.md` plus an optional `<slug>.log.md`, one level of
-    groups, never a task directory) and share `logTrailRoleRe`. **`domain.go`** holds F12: parsing
-    `DOMAIN.md`'s `# Terms` grammar (`readLexicon`: consistency, `except:` and `strict`
-    checks) and the **v0.6** scan — a warning unless `Options.StrictDomain` (the
-    `--strict-domain` flag) promotes it to an error. **`lexicon.go`** is the **v0.7**
-    scanner, exported for `fdf lexicon` and `fdf migrate`: `LoadLexicon`, `ScanBundle`,
-    `ScanDocument`, `DomainScanned`. It masks quoting text byte for byte (so every
-    `Occurrence` keeps file:line:col), scans names, matches through a `phraseSet`
-    (candidate words looked up by leading token rather than one large alternation over
-    every byte), and prints one line per document, capped at `domainReportCap`.
-    `strict: true` in DOMAIN.md also promotes. Validate hands the scanner the texts it
-    already read. The scan covers every feature's Gherkin and the declared
-    scenario names (`add:`/`modify:`/`remove:`/regression cases) of every Change and Fix, at
-    any status — the 0.6 erratum lets a *lexicon fix* (banned word → term) edit any document,
-    frozen ones included, so every finding is clearable. It never scans a `## <feature-id>`
-    heading or a verification: they quote an ID, a path or surface wording as it stands.
-  - **`changes.go`** holds the v0.5 logic: parsing a change's declared effects
-    (`# Scenario changes` with `add:`/`modify:`/`remove:`, or `# Regression cases`), F10,
-    change F4, and the release↔change half of F7. On v0.6, a name one Change both removes
-    and adds is *replaced* (`removals`): a lexicon fix can turn a finished rename into that. A directory under `changes/` is a task
-    directory when a sibling `<name>.md` exists and a group otherwise.
+    `accepted`, `# Resolution` on `resolved`. **`domain.go`** holds F12's lexicon:
+    parsing `DOMAIN.md`'s `# Terms` grammar (`readLexicon`: consistency, `except:` and
+    `strict` checks). **`lexicon.go`** is F12's scan (`checkDomain`), exported for
+    `fdf lexicon` and `fdf migrate`: `LoadLexicon`, `ScanBundle`, `ScanDocument`,
+    `DomainScanned`. It reads every document but `SPEC.md`, `DOMAIN.md`, `slug.test.md`
+    and `slug.surface.md`, frozen ones included, since a *lexicon fix* (banned word →
+    term) may edit any document, and every group, slug and task name. It masks quoting
+    text byte for byte (so every `Occurrence` keeps file:line:col) — never a
+    `## <feature-id>` heading or a verification, which quote an ID, a path or surface
+    wording as it stands — matches through a `phraseSet` (candidate words looked up by
+    leading token rather than one large alternation over every byte), and prints one
+    line per document, capped at `domainReportCap`: a warning unless
+    `Options.StrictDomain` (the `--strict-domain` flag) or `strict: true` in DOMAIN.md
+    promotes it to an error. Validate hands the scanner the texts it already read.
+  - **`changes.go`** holds the post-delivery logic: parsing a change's declared effects
+    (`# Scenario changes` with `add:`/`modify:`/`remove:`, or `# Regression cases`, an
+    entry read across its wrapped lines by `LogicalLines`), F10, change F4, and the
+    release↔change half of F7. A name one Change both removes and adds is *replaced*
+    (`removals`): a lexicon fix can turn a finished rename into that.
   - Feature statuses `draft → specified → planned → implementing → done` drive the F4/F8
     status↔artifact invariants (e.g. `planned` requires `slug.test.md` with a case per
-    Gherkin scenario; `done` requires all tasks done). v0.5 adds terminal `retired`, which
-    is exempt from F8 and must be named by exactly one `done` Change carrying a
-    `# Rationale`. `Options.FreshStubsAdvisory`
+    Gherkin scenario; `done` requires all tasks done), and `adopted` documents a
+    capability that predates the bundle. Terminal `retired` is exempt from F8 and must be
+    named by exactly one `done` Change carrying a `# Rationale`. `Options.FreshStubsAdvisory`
     downgrades F9 (unfilled Context stub) from error to warning — only `fdf migrate` sets it.
 
 - **`cli/internal/scaffold`** (`init`, `new`, `practice`, and `Adopt`, which scaffolds an
@@ -315,55 +302,45 @@ be corrected in `INDEX.md`, and a root inside a pinned bundle is sent to that bu
   register's or group's `LOG.md`, or the root `LOG.md` for the bundle as a whole. Where
   `layout` places no log, in a directory with no position or no Markdown, it writes none.
 
-### Layout the validator expects (v0.7)
+### Layout the validator expects
 
 ```
-docs/features/
+docs/fdf/
+├── INDEX.md                  # pins fdf_version: "1.0"; lists the Context docs and registers
+├── LOG.md, SPEC.md           # and README.md, optional and ignored
 ├── STACK.md, ARCHITECTURE.md, SURFACES.md, INFRA.md, DOMAIN.md   # type: Context
-└── group/
-    ├── slug.md                    # Feature
-    ├── slug.spec.md / .plan.md / .test.md
-    ├── slug.surface.md / .log.md  # optional
-    └── slug/                      # tasks only: NN-….md
-changes/                          # post-delivery, flat or one level of groups
-├── INDEX.md
-├── slug.md                       # type: Change | Fix
-├── slug.spec.md / .plan.md / .log.md
-└── slug/                         # tasks only
-practices/                        # v0.6: flat or one level of groups
-├── INDEX.md
-├── slug.md                       # type: Practice (status: active | superseded)
-└── slug.log.md                   # the ONLY legal sibling; no tasks, no spec/plan/test
-debts/                            # v0.6: same shape as practices/
-├── INDEX.md
-├── LOG.md                        # where `fdf debt --cleanup` retires resolved debts
-├── slug.md                       # type: Debt (status: open | accepted | resolved)
-└── slug.log.md                   # the ONLY legal sibling
-bugs/                             # v0.7: same shape as debts/
-├── INDEX.md
-├── LOG.md                        # `fdf bug --cleanup`; F10 reads cleared IDs here
-├── slug.md                       # type: Bug (open | accepted | resolved)
-└── slug.log.md
+├── features/                 # flat or in groups, nested to any depth
+│   ├── INDEX.md
+│   ├── onboarding.md         # a flat feature: ID features/onboarding
+│   ├── onboarding/           # its task directory: NN-<slug>.md tasks only
+│   └── payments/             # a group, with its INDEX.md
+│       ├── instant-refunds.md                      # Feature
+│       ├── instant-refunds.spec.md / .plan.md / .test.md
+│       ├── instant-refunds.surface.md / .log.md    # optional
+│       └── instant-refunds/                        # tasks only
+├── changes/                  # Change | Fix: slug.md, .spec.md, .plan.md, .log.md, slug/ tasks
+├── practices/                # Practice: slug.md and slug.log.md, nothing else
+├── debts/                    # Debt: the same; LOG.md is where --cleanup retires them
+├── bugs/                     # Bug: the same; F10 reads cleared IDs in LOG.md
+└── releases/                 # flat: releases/<version>.md
 ```
 
-Trail roles are only `spec`, `plan`, `test`, `surface`, `log` under a group — only
-`spec`, `plan`, `log` under `changes/`, since `test` and `surface` are living documents
-owned by the affected feature — and only `log` under `practices/` and `debts/`, since both
-are living references with no episodic trail at all — and bugs/ follows debts/. An `adopted`
-feature (v0.7) owns only `slug.test.md`/`slug.surface.md`/`slug.log.md`, never a spec, plan
-or task directory. Task dirs must not contain nested SPEC/PLAN/TEST or LOG.md.
-
-Under a **1.0** pin (`spec/1.0.md`) the same documents live in six registers at the root:
-feature groups move under `features/`, where a feature may also be filed flat; groups
-nest to any depth in every register but `releases/`; a directory that holds Markdown
-beside a practice, debt or bug is an error; and the root holds no other Markdown.
-`layout` is the one place those rules are written, and the commands write this layout.
+Every register but `releases/` takes documents flat or in groups nested to any depth. A
+directory beside a Feature, Change or Fix of its name is its task directory (`NN-slug.md`
+tasks only, and no directory); beside a Practice, Debt or Bug it is an F3 error; any other
+directory that holds Markdown is a group. The root is closed: no other Markdown file, and
+no other directory that holds Markdown. Trail roles are `spec`, `plan`, `test`, `surface`
+and `log` beside a feature — only `spec`, `plan` and `log` beside a Change or Fix, since
+`test` and `surface` are living documents owned by the affected feature — and only `log`
+beside a practice, debt or bug. An `adopted` feature owns only `slug.test.md`,
+`slug.surface.md` and `slug.log.md`, never a spec, plan or task directory. `layout` is the
+one place these rules are written, and the validator and every command read them there.
 
 ### The conformance contract
 
 `testdata/*/` fixtures are the **executable spec**. Each fixture is a directory with a
 `bundle/` (or a `repo/` wrapper for R1 tests, whose bundle is where fdf finds one by
-default: `repo/docs/fdf`, or `repo/docs/features` before 1.0) plus an `expect.txt` of `exit:`,
+default: `repo/docs/fdf`) plus an `expect.txt` of `exit:`,
 `contains:` and `not-contains:` assertions; a `flags: --strict-domain` line runs the fixture as
 `fdf validate --strict-domain` would. `TestConformanceFixtures` (`conformance_test.go`) runs
 `Validate` over every fixture and checks the output. **When you change validation behavior, add or update a
@@ -375,9 +352,9 @@ describe the case they lock in (e.g. `done-with-open-task`, `depends-on-cycle`,
 
 `spec/<version>.md` files are normative. `spec/README.md` and the top-level `SPEC.md` index
 them; the current version is **1.0**: `fdf init` pins it, and every command reads and
-writes it. `fdf migrate` upgrades any 0.x bundle to 1.0 (`target` in `migrate.go`); the
-validator still checks 0.2–0.7 pins, and the indexes leave 1.0 out, until Plan 5 of the
-1.0 roadmap. `currentVersion` is defined in
+writes it. `fdf migrate` upgrades any 0.x bundle to 1.0 (`target` in `migrate.go`), and
+the validator checks 1.0 alone: a 0.x bundle fails F1, which sends it to `fdf migrate`.
+`currentVersion` is defined in
 `cli/internal/scaffold/scaffold.go`. A bundle vendors a copy of its pinned spec at its own
 root (`docs/fdf/SPEC.md`), so bundles are self-describing. Bumping the spec means: add
 `spec/<new>.md`, extend `supportedVersions` in `validate.go`, add a `migrate` path, update

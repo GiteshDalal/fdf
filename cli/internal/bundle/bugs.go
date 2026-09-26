@@ -84,16 +84,16 @@ type bugInfo struct {
 // of the name.
 func violations(body string) map[string][]string {
 	out := map[string][]string{}
-	for fid, d := range parseDecls(body, violatesHeading, false, true) {
+	for fid, d := range parseDecls(body, violatesHeading, false) {
 		out[fid] = append(append([]string{}, d.regressions...), d.missingVerification...)
 	}
 	return out
 }
 
 // checkBugIntegrity enforces F14. resolvedBy maps a bug ID to the done Fix and
-// Change documents whose `resolves` names it. v1 suggests the full ID of a
+// Change documents whose `resolves` names it. It suggests the full ID of a
 // feature named the 0.7 way (featureHint).
-func checkBugIntegrity(bugs map[string]*bugInfo, trails map[string]string, features map[string]*featureInfo, resolvedBy map[string][]string, v1 bool, errs, warns *[]string) {
+func checkBugIntegrity(bugs map[string]*bugInfo, trails map[string]string, features map[string]*featureInfo, resolvedBy map[string][]string, errs, warns *[]string) {
 	ids := make([]string, 0, len(trails))
 	for id := range trails {
 		ids = append(ids, id)
@@ -126,14 +126,14 @@ func checkBugIntegrity(bugs map[string]*bugInfo, trails map[string]string, featu
 		for _, fid := range b.affects {
 			affected[fid] = true
 			if features[fid] == nil {
-				*errs = append(*errs, fmt.Sprintf("%s: `affects` names unknown feature %q%s (F14)", b.rel, fid, featureHint(fid, features, v1)))
+				*errs = append(*errs, fmt.Sprintf("%s: `affects` names unknown feature %q%s (F14)", b.rel, fid, featureHint(fid, features)))
 			}
 		}
 
-		for _, e := range strayDeclEntries(b.body, violatesHeading, true) {
+		for _, e := range strayDeclEntries(b.body, violatesHeading) {
 			*errs = append(*errs, fmt.Sprintf("%s: `# Violates` entry %q sits under no `## <feature-id>` heading (F14)", b.rel, e))
 		}
-		for fid, d := range parseDecls(b.body, violatesHeading, false, true) {
+		for fid, d := range parseDecls(b.body, violatesHeading, false) {
 			if d.headings > 1 {
 				*errs = append(*errs, fmt.Sprintf("%s: `# Violates` has %d `## %s` headings — one per feature (F14)", b.rel, d.headings, fid))
 			}
@@ -150,7 +150,7 @@ func checkBugIntegrity(bugs map[string]*bugInfo, trails map[string]string, featu
 		sort.Strings(vfids)
 		for _, fid := range vfids {
 			if !affected[fid] {
-				*errs = append(*errs, fmt.Sprintf("%s: `# Violates` names `## %s`, which is not listed in `affects`%s (F14)", b.rel, fid, featureHint(fid, features, v1)))
+				*errs = append(*errs, fmt.Sprintf("%s: `# Violates` names `## %s`, which is not listed in `affects`%s (F14)", b.rel, fid, featureHint(fid, features)))
 			}
 		}
 

@@ -12,11 +12,12 @@ import (
 	"github.com/GiteshDalal/fdf/cli/internal/scaffold"
 )
 
-// writeMinimalBundle creates the valid-minimal bundle files under dir.
+// writeMinimalBundle creates the smallest conformant bundle under dir: a
+// root INDEX.md that pins the current version, and its log.
 func writeMinimalBundle(t *testing.T, dir string) {
 	t.Helper()
 	files := map[string]string{
-		"INDEX.md": "---\nfdf_version: \"0.2\"\n---\n\n# B\n\n* [spec](https://github.com/GiteshDalal/fdf/blob/main/SPEC.md) - pin.\n",
+		"INDEX.md": "---\nfdf_version: \"" + scaffold.CurrentVersion() + "\"\n---\n\n# B\n\n* [spec](https://github.com/GiteshDalal/fdf/blob/main/SPEC.md) - pin.\n",
 		"LOG.md":   "# Bundle Update Log\n\n## 2026-07-06\n* **Initialization**: created.\n",
 	}
 	for rel, content := range files {

@@ -1,0 +1,4 @@
+exit: 1
+contains: FAIL: INDEX.md: fdf_version "0.7" is not a supported version (1.0) — run `fdf migrate` (F1)
+contains: Bundle not validated
+not-contains: (F3)

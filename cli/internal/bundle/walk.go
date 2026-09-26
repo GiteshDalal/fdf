@@ -1,11 +1,9 @@
 package bundle
 
-// The walk under a 1.0 pin. Every position comes from the layout package, so
-// the validator and the commands agree on where each document goes: the
-// closed root, features/ with its flat features and nested groups, groups
-// nested in every register but releases/, and the directory beside a
-// document. What each document records is what it records under 0.7, whose
-// rules 1.0 keeps.
+// The validation walk. Every position comes from the layout package, so the
+// validator and the commands agree on where each document goes: the closed
+// root, features/ with its flat features and nested groups, groups nested
+// in every register but releases/, and the directory beside a document.
 
 import (
 	"os"
@@ -16,8 +14,8 @@ import (
 	"github.com/GiteshDalal/fdf/cli/internal/layout"
 )
 
-// walkV1 visits every Markdown file of the bundle at rootAbs, which pins 1.0.
-func (c *collection) walkV1(rootAbs string) {
+// walk visits every Markdown file of the bundle at rootAbs.
+func (c *collection) walk(rootAbs string) {
 	b := layout.New(os.DirFS(rootAbs))
 	strays := map[string]bool{} // a path with no position, reported once
 	filepath.WalkDir(rootAbs, func(p string, e os.DirEntry, err error) error {
@@ -71,14 +69,14 @@ func (c *collection) walkV1(rootAbs string) {
 		case layout.Task:
 			c.task(rel, pos.ID, path.Base(rel), d)
 		case layout.Document:
-			c.documentV1(rel, pos, d)
+			c.filed(rel, pos, d)
 		}
 		return nil
 	})
 }
 
-// documentV1 records a register's document by its register.
-func (c *collection) documentV1(rel string, pos layout.Position, d doc) {
+// filed records a register's document by its register.
+func (c *collection) filed(rel string, pos layout.Position, d doc) {
 	// A task whose task directory has no document beside it reads as a
 	// document in a group; say what is missing instead.
 	if d.docType == "Task" && (pos.Register == "features" || pos.Register == "changes") && taskFileRe.MatchString(path.Base(rel)) {

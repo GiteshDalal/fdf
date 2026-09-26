@@ -408,6 +408,8 @@ var helpTopics = []helpTopic{
 		summary: "Check the bundle against its pinned spec (F1-F14, R1)",
 		usage:   "fdf validate [--root <dir>] [--repo-root <dir>] [--strict-domain]",
 		body: "Check the bundle against the spec version pinned in its root INDEX.md.\n" +
+			"A bundle that pins none, or one this fdf does not validate, fails F1 and\n" +
+			"is checked no further: `fdf migrate` upgrades a bundle from before 1.0.\n" +
 			"Every error names its rule: F1-F14 for the format, R1 for paths that must\n" +
 			"exist in the project. Warnings never fail the run: soft checks, and F12's\n" +
 			"banned words unless strict domain mode is on (`strict: true` in DOMAIN.md,\n" +

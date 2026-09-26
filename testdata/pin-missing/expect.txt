@@ -1,0 +1,5 @@
+exit: 1
+contains: FAIL: INDEX.md: pins no fdf_version
+contains: (F1)
+contains: Bundle not validated
+not-contains: (F3)

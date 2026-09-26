@@ -21,7 +21,7 @@ func toSlash(p string) string { return filepath.ToSlash(p) }
 type changeInfo struct {
 	rel, id, docType, status, version, body string
 	affects, retires                        []string
-	resolves                                []string // v0.7: bug IDs this work repairs
+	resolves                                []string // bug IDs this work repairs
 	timestamp                               string
 }
 
@@ -63,13 +63,12 @@ func hasHeading(body, heading string) bool {
 // parseDecls slices `# <heading>` out of a body and returns one entry per
 // `## <feature-id>` subheading under it. verbs selects the Change grammar
 // (`- add:/modify:/remove: <scenario>`) over the Fix grammar
-// (`- <scenario> — <verification>`). v7 reads an entry across its wrapped
-// lines and counts a verification that is still a `TODO` as missing; earlier
-// pins read one line per entry, as they always have.
-func parseDecls(body, heading string, verbs, v7 bool) map[string]*changeDecl {
+// (`- <scenario> — <verification>`). It reads an entry across its wrapped
+// lines, and counts a verification that is still a `TODO` as missing.
+func parseDecls(body, heading string, verbs bool) map[string]*changeDecl {
 	out := map[string]*changeDecl{}
 	inSection, current := false, ""
-	for _, line := range declLines(body, v7) {
+	for _, line := range LogicalLines(body) {
 		if m := headingRe.FindStringSubmatch(line); m != nil {
 			inSection = strings.EqualFold(strings.TrimSpace(m[1]), heading)
 			current = ""
@@ -115,7 +114,7 @@ func parseDecls(body, heading string, verbs, v7 bool) map[string]*changeDecl {
 			if loc := verbatimSepRe.FindStringIndex(entry); loc != nil {
 				name := strings.TrimSpace(entry[:loc[0]])
 				verification := strings.TrimSpace(entry[loc[1]:])
-				if verification == "" || v7 && strings.HasPrefix(verification, "TODO") {
+				if verification == "" || strings.HasPrefix(verification, "TODO") {
 					d.missingVerification = append(d.missingVerification, name)
 				} else {
 					d.regressions = append(d.regressions, name)
@@ -130,10 +129,10 @@ func parseDecls(body, heading string, verbs, v7 bool) map[string]*changeDecl {
 
 // strayDeclEntries returns the list items under `# <heading>` that come before
 // its first `## <feature-id>` heading: entries that belong to no feature.
-func strayDeclEntries(body, heading string, v7 bool) []string {
+func strayDeclEntries(body, heading string) []string {
 	var out []string
 	inSection, seenSub := false, false
-	for _, line := range declLines(body, v7) {
+	for _, line := range LogicalLines(body) {
 		if m := headingRe.FindStringSubmatch(line); m != nil {
 			inSection = strings.EqualFold(strings.TrimSpace(m[1]), heading)
 			seenSub = false
@@ -155,15 +154,6 @@ func strayDeclEntries(body, heading string, v7 bool) []string {
 
 // anyHeadingRe is a Markdown heading of any level.
 var anyHeadingRe = regexp.MustCompile(`^#{1,6}\s`)
-
-// declLines is the lines parseDecls reads: entries joined across their
-// wrapped lines from v0.7, one physical line each before.
-func declLines(body string, v7 bool) []string {
-	if v7 {
-		return LogicalLines(body)
-	}
-	return strings.Split(body, "\n")
-}
 
 // LogicalLines splits a body into lines, joining each list item's
 // continuation lines onto it: a line indented under an item that is not
@@ -205,14 +195,11 @@ func scenarioNames(body string) map[string]bool {
 	return out
 }
 
-// removals returns the names a declaration takes out of its feature. With
-// replaces set (v0.6), a name the same declaration also adds is replaced, not
-// removed: a lexicon fix turns a finished rename's `remove: Store owner X` and
-// `add: Venue owner X` into one name, and the record must stay valid.
-func removals(d *changeDecl, replaces bool) []string {
-	if !replaces {
-		return d.removes
-	}
+// removals returns the names a declaration takes out of its feature. A name
+// the same declaration also adds is replaced, not removed: a lexicon fix
+// turns a finished rename's `remove: Store owner X` and `add: Venue owner X`
+// into one name, and the record must stay valid.
+func removals(d *changeDecl) []string {
 	added := map[string]bool{}
 	for _, n := range d.adds {
 		added[n] = true
@@ -226,24 +213,23 @@ func removals(d *changeDecl, replaces bool) []string {
 	return out
 }
 
-// featureHint is what F10 and F14 add under a 1.0 pin when an ID that names
-// no feature is a feature's ID written the 0.7 way, without the features/
-// every 1.0 feature ID starts with.
-func featureHint(id string, features map[string]*featureInfo, v1 bool) string {
-	if v1 && features["features/"+id] != nil {
+// featureHint is what F10 and F14 add when an ID that names no feature is a
+// feature's ID written the 0.7 way, without the features/ every 1.0 feature
+// ID starts with.
+func featureHint(id string, features map[string]*featureInfo) string {
+	if features["features/"+id] != nil {
 		return " — did you mean features/" + id + "?"
 	}
 	return ""
 }
 
-// checkChangeIntegrity is F10. It runs for bundles pinning v0.5 and later;
-// replaces is v0.6's reading of a name both removed and added (see removals).
-// v7 adds the v0.7 rules: a declaration holds only well-formed entries,
-// `retires` declares its features from the start and names only features in
+// checkChangeIntegrity is F10: a declaration holds only well-formed entries,
+// a name both removed and added is replaced (see removals), `retires`
+// declares its features from the start and names only features in
 // `affects`, `replaced-by` names a feature that exists, and a name another
 // done Change adds back is no longer held against the Change that removed it.
-// v1 suggests the full ID of a feature named the 0.7 way (featureHint).
-func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*featureInfo, pairs map[string]*pairInfo, replaces, v7, v1 bool, errs *[]string) {
+// It suggests the full ID of a feature named the 0.7 way (featureHint).
+func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*featureInfo, pairs map[string]*pairInfo, errs *[]string) {
 	ids := make([]string, 0, len(changes))
 	for id := range changes {
 		ids = append(ids, id)
@@ -256,11 +242,10 @@ func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*f
 	// document is a frozen record: a Fix that proved scenario X, or an older
 	// Change that added it, was telling the truth when it was written, and a
 	// later Change removing X must not force those documents to be rewritten.
-	// Without this, F10 would contradict the very rule it enforces.
-	superseded := map[string]bool{}
-	// v0.7 orders that history by `timestamp`: a record is excused only by a
-	// later done Change — an adder by a later removal, a remover by a later
-	// add-back — so a new document can never hide behind an older one.
+	// Without this, F10 would contradict the very rule it enforces. That
+	// history is ordered by `timestamp`: a record is excused only by a later
+	// done Change — an adder by a later removal, a remover by a later add-back
+	// — so a new document can never hide behind an older one.
 	removedBy := map[string][]stamped{}
 	addedBy := map[string][]stamped{}
 	for _, id := range ids {
@@ -268,9 +253,8 @@ func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*f
 		if c.status != "done" || c.docType != "Change" {
 			continue
 		}
-		for fid, d := range parseDecls(c.body, scenarioChangesHeading, true, v7) {
-			for _, nm := range removals(d, replaces) {
-				superseded[fid+"\x00"+nm] = true
+		for fid, d := range parseDecls(c.body, scenarioChangesHeading, true) {
+			for _, nm := range removals(d) {
 				removedBy[fid+"\x00"+nm] = append(removedBy[fid+"\x00"+nm], stamped{id, c.timestamp})
 			}
 			for _, nm := range d.adds {
@@ -279,11 +263,8 @@ func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*f
 		}
 	}
 	// gone reports whether a document is excused for a name it expects to
-	// exist: before v0.7 any done removal excuses it; from v0.7 only a later one.
+	// exist: a later done Change removed it.
 	gone := func(fid, name string, c *changeInfo) bool {
-		if !v7 {
-			return superseded[fid+"\x00"+name]
-		}
 		return laterIn(removedBy[fid+"\x00"+name], c)
 	}
 
@@ -303,11 +284,11 @@ func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*f
 			affected[fid] = true
 			f := features[fid]
 			if f == nil {
-				*errs = append(*errs, fmt.Sprintf("%s: `affects` names unknown feature %q%s (F10)", c.rel, fid, featureHint(fid, features, v1)))
+				*errs = append(*errs, fmt.Sprintf("%s: `affects` names unknown feature %q%s (F10)", c.rel, fid, featureHint(fid, features)))
 				continue
 			}
-			// Delivered: done, retired, or (v0.7) adopted — a capability that
-			// existed before its document. `adopted` fails F2 on older pins.
+			// Delivered: done, retired, or adopted — a capability that
+			// existed before its document.
 			if f.status != "done" && f.status != "retired" && f.status != "adopted" {
 				*errs = append(*errs, fmt.Sprintf("%s: `affects` names %s with status '%s' — a feature that is not delivered is edited directly, not change-requested (F10)", c.rel, fid, f.status))
 			}
@@ -323,21 +304,19 @@ func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*f
 			continue
 		}
 
-		decls := parseDecls(c.body, wantHeading, !isFix, v7)
-		if v7 {
-			for _, e := range strayDeclEntries(c.body, wantHeading, v7) {
-				*errs = append(*errs, fmt.Sprintf("%s: `# %s` entry %q sits under no `## <feature-id>` heading (F10)", c.rel, wantHeading, e))
+		decls := parseDecls(c.body, wantHeading, !isFix)
+		for _, e := range strayDeclEntries(c.body, wantHeading) {
+			*errs = append(*errs, fmt.Sprintf("%s: `# %s` entry %q sits under no `## <feature-id>` heading (F10)", c.rel, wantHeading, e))
+		}
+		for _, fid := range sortedDeclKeys(decls) {
+			if n := decls[fid].headings; n > 1 {
+				*errs = append(*errs, fmt.Sprintf("%s: `# %s` has %d `## %s` headings — one per affected feature (F10)", c.rel, wantHeading, n, fid))
 			}
-			for _, fid := range sortedDeclKeys(decls) {
-				if n := decls[fid].headings; n > 1 {
-					*errs = append(*errs, fmt.Sprintf("%s: `# %s` has %d `## %s` headings — one per affected feature (F10)", c.rel, wantHeading, n, fid))
-				}
-				for _, e := range decls[fid].malformed {
-					if isFix {
-						*errs = append(*errs, fmt.Sprintf("%s: `## %s` entry %q is not `- <scenario> — <verification>` (F10)", c.rel, fid, e))
-					} else {
-						*errs = append(*errs, fmt.Sprintf("%s: `## %s` entry %q is not `- add: <scenario>`, `- modify: <scenario>` or `- remove: <scenario>` (F10)", c.rel, fid, e))
-					}
+			for _, e := range decls[fid].malformed {
+				if isFix {
+					*errs = append(*errs, fmt.Sprintf("%s: `## %s` entry %q is not `- <scenario> — <verification>` (F10)", c.rel, fid, e))
+				} else {
+					*errs = append(*errs, fmt.Sprintf("%s: `## %s` entry %q is not `- add: <scenario>`, `- modify: <scenario>` or `- remove: <scenario>` (F10)", c.rel, fid, e))
 				}
 			}
 		}
@@ -353,30 +332,28 @@ func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*f
 		sort.Strings(declFids)
 		for _, fid := range declFids {
 			if !affected[fid] {
-				*errs = append(*errs, fmt.Sprintf("%s: `# %s` declares `## %s`, which is not listed in `affects`%s (F10)", c.rel, wantHeading, fid, featureHint(fid, features, v1)))
+				*errs = append(*errs, fmt.Sprintf("%s: `# %s` declares `## %s`, which is not listed in `affects`%s (F10)", c.rel, wantHeading, fid, featureHint(fid, features)))
 			}
 		}
 
 		for _, fid := range c.retires {
 			f := features[fid]
 			if f == nil {
-				*errs = append(*errs, fmt.Sprintf("%s: `retires` names unknown feature %q%s (F10)", c.rel, fid, featureHint(fid, features, v1)))
+				*errs = append(*errs, fmt.Sprintf("%s: `retires` names unknown feature %q%s (F10)", c.rel, fid, featureHint(fid, features)))
 				continue
 			}
 			switch {
-			case !v7 && f.status != "retired":
-				*errs = append(*errs, fmt.Sprintf("%s: `retires` names %s whose status is '%s', expected 'retired' (F10)", c.rel, fid, f.status))
-			case v7 && c.status == "done" && f.status != "retired":
+			case c.status == "done" && f.status != "retired":
 				*errs = append(*errs, fmt.Sprintf("%s: done, and `retires` names %s whose status is '%s' — retire it in the same edit (F10)", c.rel, fid, f.status))
-			case v7 && c.status != "done" && f.status != "done" && f.status != "adopted":
+			case c.status != "done" && f.status != "done" && f.status != "adopted":
 				*errs = append(*errs, fmt.Sprintf("%s: `retires` names %s whose status is '%s' — until this Change is done, the feature it retires is still delivered ('done' or 'adopted') (F10)", c.rel, fid, f.status))
 			}
-			if v7 && !affected[fid] {
+			if !affected[fid] {
 				*errs = append(*errs, fmt.Sprintf("%s: `retires` names %s, which is not in `affects` (F10)", c.rel, fid))
 			}
 			if !hasHeading(c.body, "Rationale") {
 				*errs = append(*errs, fmt.Sprintf("%s: retires %s but has no `# Rationale` — a retirement records why (F10)", c.rel, fid))
-			} else if body, _ := sectionText(c.body, "Rationale"); v7 && strings.TrimSpace(body) == "" {
+			} else if body, _ := sectionText(c.body, "Rationale"); strings.TrimSpace(body) == "" {
 				*errs = append(*errs, fmt.Sprintf("%s: retires %s but its `# Rationale` is empty — a retirement records why (F10)", c.rel, fid))
 			}
 			if c.status == "done" {
@@ -400,8 +377,8 @@ func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*f
 					*errs = append(*errs, fmt.Sprintf("%s: done, but %s has no scenario %q (F10)", c.rel, fid, n))
 				}
 			}
-			for _, n := range removals(d, replaces) {
-				if names[n] && !(v7 && laterIn(addedBy[fid+"\x00"+n], c)) {
+			for _, n := range removals(d) {
+				if names[n] && !laterIn(addedBy[fid+"\x00"+n], c) {
 					*errs = append(*errs, fmt.Sprintf("%s: done, but %s still has scenario %q (F10)", c.rel, fid, n))
 				}
 			}
@@ -421,7 +398,7 @@ func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*f
 					if gone(fid, n, c) || reported[n] {
 						continue
 					}
-					if (v7 && cases[n] == 0) || (!v7 && !strings.Contains(p.testBody, n)) {
+					if cases[n] == 0 {
 						reported[n] = true
 						*errs = append(*errs, fmt.Sprintf("%s: done, but %s.test.md has no case for %q (F10)", c.rel, fid, n))
 					}
@@ -430,14 +407,11 @@ func checkChangeIntegrity(changes map[string]*changeInfo, features map[string]*f
 		}
 	}
 
-	// `replaced-by` names the feature that replaces a retired one (v0.7 checks
-	// it; earlier pins only described it).
-	if v7 {
-		for _, fid := range sortedFeatureIDs(features) {
-			for _, r := range features[fid].replacedBy {
-				if features[r] == nil {
-					*errs = append(*errs, fmt.Sprintf("%s: `replaced-by` names unknown feature %q%s (F10)", features[fid].rel, r, featureHint(r, features, v1)))
-				}
+	// `replaced-by` names the feature that replaces a retired one.
+	for _, fid := range sortedFeatureIDs(features) {
+		for _, r := range features[fid].replacedBy {
+			if features[r] == nil {
+				*errs = append(*errs, fmt.Sprintf("%s: `replaced-by` names unknown feature %q%s (F10)", features[fid].rel, r, featureHint(r, features)))
 			}
 		}
 	}
@@ -521,7 +495,7 @@ func stamp(v any) string {
 	}
 }
 
-// checkTimestamp is F1's timestamp rule (v0.7): a `timestamp` is a date or an
+// checkTimestamp is F1's timestamp rule: a `timestamp` is a date or an
 // RFC 3339 time with `Z` or an offset, since F10 orders documents by it. An
 // empty value is a missing one, which is only a warning.
 func checkTimestamp(rel string, v any, errs, warns *[]string) {
@@ -581,7 +555,7 @@ func checkRegressionLanded(changes map[string]*changeInfo, pairs map[string]*pai
 		if c.docType == "Fix" {
 			heading = regressionCasesHeading
 		}
-		decls := parseDecls(c.body, heading, c.docType == "Change", true) // v0.7 only
+		decls := parseDecls(c.body, heading, c.docType == "Change")
 		for _, fid := range sortedDeclKeys(decls) {
 			d := decls[fid]
 			if len(d.adds)+len(d.modifies)+len(d.removes)+len(d.regressions) == 0 {
@@ -699,7 +673,7 @@ func checkChangeLifecycle(changes map[string]*changeInfo, pairs map[string]*pair
 
 // checkReleaseChanges is the F7 half covering a release's `# Changes` list:
 // the same bidirectional check features get, for Change and Fix documents.
-func checkReleaseChanges(rootAbs string, releases map[string]*releaseInfo, changes map[string]*changeInfo, v1 bool, errs *[]string) {
+func checkReleaseChanges(rootAbs string, releases map[string]*releaseInfo, changes map[string]*changeInfo, errs *[]string) {
 	versions := make([]string, 0, len(releases))
 	for v := range releases {
 		versions = append(versions, v)
@@ -707,8 +681,8 @@ func checkReleaseChanges(rootAbs string, releases map[string]*releaseInfo, chang
 	sort.Strings(versions)
 	for _, version := range versions {
 		r := releases[version]
-		for _, t := range sectionLinks(r.body, "Changes", v1) {
-			resolved := resolveLink(rootAbs, r.rel, t, v1)
+		for _, t := range sectionTargets(r.body, "Changes") {
+			resolved := resolveLink(rootAbs, r.rel, t)
 			if resolved == "" {
 				continue
 			}
@@ -746,8 +720,8 @@ func checkReleaseChanges(rootAbs string, releases map[string]*releaseInfo, chang
 			continue
 		}
 		found := false
-		for _, t := range sectionLinks(r.body, "Changes", v1) {
-			if resolved := resolveLink(rootAbs, r.rel, t, v1); resolved != "" &&
+		for _, t := range sectionTargets(r.body, "Changes") {
+			if resolved := resolveLink(rootAbs, r.rel, t); resolved != "" &&
 				strings.TrimSuffix(toSlash(relTo(rootAbs, resolved)), ".md") == id {
 				found = true
 			}
