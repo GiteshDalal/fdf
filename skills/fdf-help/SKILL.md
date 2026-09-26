@@ -284,8 +284,8 @@ user's decision: propose it, say what it does, and wait. Then:
    bytes, such as an applied SQL migration a tool checksums, is left as it is
    with `--skip '<glob>'`. A refusal names what to fix first; nothing has been
    written.
-3. **`fdf migrate`.** It validates the result and exits with the validator's
-   code. A bundle from before 0.7 may fail rules added since its version —
+3. **`fdf migrate`**, with the dry run's `--skip` flags. It validates the
+   result and exits with the validator's code. A bundle from before 0.7 may fail rules added since its version —
    a test case is a `## <scenario name>` heading, a `timestamp` carries its
    zone: clear them through fdf-validate.
 4. **`fdf install`** again for each agent the project uses (`--project` where

@@ -205,8 +205,8 @@ fdf bug --affects features/payments/instant-refunds refund-split-capture  # file
 fdf mv features/payments/store-hours features/venues/opening-hours  # move/rename with its trail; every reference repaired
 fdf lexicon                  # every banned domain word, with file:line:col
 fdf lexicon --term Venue --fix --dry-run  # …sweep one term, reviewing the diff first
-fdf log features/payments/instant-refunds "**Specified**: design approved"  # into the feature's own log, created on first use
-fdf log "**Checkpoint**: Context documents current"  # the root LOG.md: bundle-wide events only
+fdf log features/payments/instant-refunds "**Specified**: design approved."  # into the feature's own log, created on first use
+fdf log "**Checkpoint**: Context documents current."  # the root LOG.md: bundle-wide events only
 fdf spec                     # print the format spec (-v 0.7 for an older one)
 fdf help                     # every command with examples (fdf <command> --help for one)
 fdf serve                    # browse the bundle (bun x mdts)
@@ -281,8 +281,8 @@ stays on 0.7.x (*Not ready yet?*, below). To upgrade:
    and lists each mention it leaves for you to decide on. `--skip <glob>`
    leaves the files it names as they are, such as applied SQL migrations
    whose checksums a tool verifies.
-3. **`fdf migrate`**, which validates the result and exits with the
-   validator's code.
+3. **`fdf migrate`**, with the dry run's `--skip` flags, which validates the
+   result and exits with the validator's code.
 4. **Re-run `fdf install`** for each harness you use, so the skills and the
    primer teach 1.0. A primer an earlier fdf wrote that nobody edited is
    replaced, even one written for `docs/features/`.
