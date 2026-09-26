@@ -98,7 +98,7 @@ func TestInitIdempotentAndMigrateHint(t *testing.T) {
 	}{
 		{"'" + currentVersion + "'", "up to date (fdf_version " + currentVersion + ")", 0},
 		{currentVersion, "up to date (fdf_version " + currentVersion + ")", 0},
-		{`"0.1"`, "pins fdf_version 0.1; fdf's commands work on spec 1.0 bundles — run `fdf migrate` to upgrade it first", 1},
+		{`"0.1"`, "pins fdf_version 0.1; fdf's commands work on spec 1.0 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan", 1},
 		{`"1.3"`, "pins fdf_version 1.3, newer than any spec this fdf knows (1.0) — upgrade fdf", 1},
 	} {
 		os.WriteFile(idx, bytes.Replace(raw, []byte(`"`+currentVersion+`"`), []byte(tc.pin), 1), 0o644)
@@ -394,13 +394,17 @@ func TestWriteNewNeverOverwrites(t *testing.T) {
 }
 
 // The commands write spec 1.x, so they refuse any other bundle before they
-// write anything, and name the fix: `fdf migrate` for a 0.x pin or none, a
-// newer fdf for a newer pin, and the pin itself when it is not a version.
+// write anything, and name the fix: `fdf migrate`, the user's decision, for a
+// 0.x pin, the pin or `fdf migrate` for none, a newer fdf for a newer pin, the
+// pin itself when it is not a version or a 0.x version FDF never had, and
+// the frontmatter when no `---` line closes it.
 func TestScaffoldsPointA0xBundleAtMigrate(t *testing.T) {
 	for _, tc := range []struct{ pin, says string }{
-		{"0.7", "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0 bundles — run `fdf migrate` to upgrade it first\n"},
-		{"0.5", "error: this bundle pins fdf_version 0.5; fdf's commands work on spec 1.0 bundles — run `fdf migrate` to upgrade it first\n"},
-		{"", "error: this bundle's INDEX.md pins no fdf_version; fdf's commands work on spec 1.0 bundles — run `fdf migrate` to upgrade it first\n"},
+		{"0.7", "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n"},
+		{"0.5", "error: this bundle pins fdf_version 0.5; fdf's commands work on spec 1.0 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n"},
+		{"", "error: this bundle's INDEX.md pins no fdf_version; fdf's commands work on spec 1.0 bundles — pin the version it was written for, as fdf_version: \"" + currentVersion + "\"; upgrading a bundle from before 1.0 is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n"},
+		// A 0.x pin FDF never had is a mistake, and migrate refuses it too.
+		{"0.8", "error: this bundle pins fdf_version 0.8, which is no 0.x version this fdf knows (0.1 to 0.7) — correct the pin in INDEX.md\n"},
 		{"1.3", "error: this bundle pins fdf_version 1.3, newer than any spec this fdf knows (1.0) — upgrade fdf\n"},
 		// A pin that is almost 1.0 is no 0.x version to migrate.
 		{"1.0.0", "error: this bundle pins fdf_version 1.0.0, which is not a MAJOR.MINOR version such as " + currentVersion + " — correct the pin in INDEX.md\n"},
@@ -422,6 +426,15 @@ func TestScaffoldsPointA0xBundleAtMigrate(t *testing.T) {
 				t.Errorf("fdf %s on pin %q writes nothing, but the bundle holds %d entries", name, tc.pin, len(entries))
 			}
 		}
+	}
+	// Its pin line may be there, so a missing pin would not say why.
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "INDEX.md"), []byte("---\nfdf_version: \""+currentVersion+"\"\n\n# Bundle\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if code := New(root, "payments/refunds", &out); code != 1 || out.String() != "error: this bundle's INDEX.md frontmatter has no closing `---` line, so it pins no fdf_version — end the block with one\n" {
+		t.Errorf("fdf new on frontmatter that never closes: exit %d\n%s", code, out.String())
 	}
 }
 
@@ -484,19 +497,93 @@ func tree(t *testing.T, root string) string {
 	return b.String()
 }
 
-func TestPinReadsTheFrontmatterAsTheValidatorDoes(t *testing.T) {
-	for index, want := range map[string]string{
-		"---\nfdf_version: \"0.6\"\n---\n# B\n":             "0.6",
-		"---\nfdf_version: 0.5\n---\n":                      "0.5",
-		"\uFEFF---\r\nfdf_version: '0.7'\r\n---\r\n# B\r\n": "0.7",
-		"# B\n\nfdf_version: \"0.6\"\n":                     "", // not frontmatter
-		"---\nfdf_version: \"0.6\"\n# B\n":                  "", // unterminated
-	} {
-		root := t.TempDir()
-		os.WriteFile(filepath.Join(root, "INDEX.md"), []byte(index), 0o644)
-		if got := Pin(root); got != want {
-			t.Errorf("Pin(%q) = %q, want %q", index, got, want)
+// fdf init starts a bundle only where there is none. A directory that holds
+// Markdown but no INDEX.md, such as a bundle from before 1.0 that never had
+// one, keeps every file, its LOG.md among them, and is sent to fdf migrate.
+// A README.md, which the root may hold, is no reason to refuse, nor is what
+// is hidden.
+func TestInitRefusesADirectoryThatHoldsMarkdown(t *testing.T) {
+	root := t.TempDir()
+	log := "# Log\n\n## 2026-01-01\n* Kept.\n"
+	for rel, text := range map[string]string{"LOG.md": log, "wdise/example.md": "# Example\n"} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, rel)), 0o755); err != nil {
+			t.Fatal(err)
 		}
+		if err := os.WriteFile(filepath.Join(root, rel), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := tree(t, root)
+	var out bytes.Buffer
+	if code := Init(root, &out); code != 1 || !strings.Contains(out.String(), "but no INDEX.md") || !strings.Contains(out.String(), "is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --root "+root+" --dry-run` shows the plan; move anything else out first\n") {
+		t.Errorf("init refuses and names fdf migrate: exit %d\n%s", code, out.String())
+	}
+	if tree(t, root) != before {
+		t.Error("a refused init writes nothing")
+	}
+	for _, rel := range []string{"README.md", ".notes/draft.md"} {
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, rel)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, rel), []byte("# Docs\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		out.Reset()
+		if code := Init(dir, &out); code != 0 {
+			t.Errorf("init beside %s: exit %d\n%s", rel, code, out.String())
+		}
+	}
+}
+
+// fdf migrate moves a bundle from before 1.0 at docs/features to docs/fdf,
+// so init starts none there while docs/features beside it holds an
+// INDEX.md that pins nothing, as such a bundle's may. A documentation
+// site's docs/features, with no INDEX.md spelled so, stops nothing.
+func TestInitRefusesDocsFdfBesideAnUnpinnedBundle(t *testing.T) {
+	docs := filepath.Join(t.TempDir(), "docs")
+	root, old := filepath.Join(docs, "fdf"), filepath.Join(docs, "features")
+	if err := os.MkdirAll(filepath.Join(old, "wdise"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for rel, text := range map[string]string{"INDEX.md": "# Features\n", "wdise/example.md": "# Example\n"} {
+		if err := os.WriteFile(filepath.Join(old, rel), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var out bytes.Buffer
+	want := "error: " + old + " beside " + root + " holds an INDEX.md that pins no version, as a bundle's from before 1.0 may, and fdf init starts no bundle where fdf migrate would move that one — upgrading it is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --root " + old + " --dry-run` shows the plan; if that is no bundle, rename its INDEX.md, and run fdf init again\n"
+	if code := Init(root, &out); code != 1 || out.String() != want {
+		t.Errorf("init beside an unpinned docs/features: exit %d\n got: %q\nwant: %q", code, out.String(), want)
+	}
+	if _, err := os.Stat(root); !os.IsNotExist(err) {
+		t.Errorf("a refused init writes nothing: %v", err)
+	}
+	if err := os.Remove(filepath.Join(old, "INDEX.md")); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if code := Init(root, &out); code != 0 {
+		t.Errorf("init beside a docs/features with no INDEX.md: exit %d\n%s", code, out.String())
+	}
+}
+
+// A bundle's spec copy is the spec its pin names, which a later minor makes
+// older than the current one: EnsureSpec writes the version it is given,
+// and init gives it the pin, and writes nothing over a copy that is there.
+func TestEnsureSpecWritesTheVersionItIsGiven(t *testing.T) {
+	root := t.TempDir()
+	var out bytes.Buffer
+	if code := EnsureSpec(root, "0.7", &out); code != 0 {
+		t.Fatalf("EnsureSpec: exit %d\n%s", code, out.String())
+	}
+	spec, err := os.ReadFile(filepath.Join(root, "SPEC.md"))
+	if err != nil || !strings.Contains(string(spec), "The FDF v0.7 specification this bundle conforms to.") || !strings.Contains(out.String(), "wrote SPEC.md (FDF v0.7 spec copy)") {
+		t.Errorf("SPEC.md is the 0.7 spec: %v\n%s", err, out.String())
+	}
+	out.Reset()
+	if code := EnsureSpec(root, CurrentVersion(), &out); code != 0 || out.String() != "" {
+		t.Errorf("a copy that is there is kept: exit %d\n%s", code, out.String())
 	}
 }
 

@@ -1,4 +1,0 @@
-exit: 0
-contains: bugs/hours-off-by-one.md: open bug has no `resource`
-not-contains: (F14)
-not-contains: (F10)

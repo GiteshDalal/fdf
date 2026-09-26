@@ -1,0 +1,2 @@
+exit: 1
+contains: changes/drop-hours.md: done, and `retires` names features/venues/opening-hours whose status is 'done' — retire it in the same edit (F10)

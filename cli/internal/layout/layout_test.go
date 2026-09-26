@@ -93,8 +93,8 @@ func TestFileStray(t *testing.T) {
 	}{
 		{"notes.md", "notes.md", "the bundle root holds only INDEX.md, LOG.md, SPEC.md, README.md"},
 		{"drafts/idea.md", "drafts/", "a feature group belongs under features/"},
-		{"features/onboarding/INDEX.md", "features/onboarding/INDEX.md", "task directories may contain only NN-slug.md tasks"},
-		{"features/onboarding/sub/02-x.md", "features/onboarding/sub/", "task directories may contain only NN-slug.md tasks, and no directory"},
+		{"features/onboarding/INDEX.md", "features/onboarding/INDEX.md", "task directories may contain only NN-slug.md tasks — features/onboarding/ is the task directory of features/onboarding.md"},
+		{"features/onboarding/sub/02-x.md", "features/onboarding/sub/", "task directories may contain only NN-slug.md tasks, and no directory — features/onboarding/ is the task directory of features/onboarding.md"},
 		{"features/platform/payments/instant-refunds.notes.md", "features/platform/payments/instant-refunds.notes.md", `unknown trail role "notes" — allowed roles are spec, plan, test, surface, log`},
 		{"features/platform/payments/Refunds.md", "features/platform/payments/Refunds.md", "filenames are lowercase"},
 		{"features/Payments/x.md", "features/Payments/", "directory names must be lowercase [a-z0-9-]"},
@@ -180,7 +180,7 @@ func TestPlace(t *testing.T) {
 		{"features/Payments/x", `"Payments" in features/Payments/x is not a name`},
 		{"features/onboarding", "features/onboarding.md already exists"},
 		{"features/onboarding/welcome", "features/onboarding/ is the task directory of features/onboarding and holds only its NN-slug.md tasks (F3)"},
-		{"features/onboarding/sub/x", "features/onboarding/sub/: task directories may contain only NN-slug.md tasks, and no directory (F3)"},
+		{"features/onboarding/sub/x", "features/onboarding/sub/: task directories may contain only NN-slug.md tasks, and no directory — features/onboarding/ is the task directory of features/onboarding.md (F3)"},
 		{"features/platform", "features/platform/ is a group, and a feature named platform would make it its task directory (F3)"},
 		{"changes/refund-window/x", "changes/refund-window/ is the task directory of changes/refund-window"},
 		{"practices/payments", "practices/payments/ is a group, and a practice named payments cannot sit beside it: a practice owns no directory (F3)"},
@@ -193,6 +193,33 @@ func TestPlace(t *testing.T) {
 	} {
 		if got := b.Place(tc.id); !strings.Contains(got, tc.problem) {
 			t.Errorf("Place(%q) = %q; want it to say %q", tc.id, got, tc.problem)
+		}
+	}
+}
+
+// A group may take a name no document may, index or log, whatever sits
+// beside it; a document of its name beside it is refused, as the group
+// would be that document's task directory, or sit beside a practice, debt
+// or bug, which owns no directory.
+func TestPlaceGroup(t *testing.T) {
+	b := New(fstest.MapFS{
+		"features/INDEX.md":      {},
+		"features/onboarding.md": {},
+		"practices/auth.md":      {},
+		"debts/LOG.md":           {},
+	})
+	for _, id := range []string{"features/index", "features/log", "debts/log", "features/platform/index"} {
+		if problem := b.PlaceGroup(id); problem != "" {
+			t.Errorf("PlaceGroup(%q) = %q; want no problem", id, problem)
+		}
+	}
+	for _, tc := range []struct{ id, problem string }{
+		{"features/onboarding", "features/onboarding.md is there, and features/onboarding/ beside it would be its task directory (F3); choose another name"},
+		{"practices/auth", "practices/auth.md is there, and a practice owns no directory (F3); choose another name"},
+		{"features/Platform", `"Platform" in features/Platform is not a name`},
+	} {
+		if got := b.PlaceGroup(tc.id); got != tc.problem && !strings.Contains(got, tc.problem) {
+			t.Errorf("PlaceGroup(%q) = %q; want it to say %q", tc.id, got, tc.problem)
 		}
 	}
 }

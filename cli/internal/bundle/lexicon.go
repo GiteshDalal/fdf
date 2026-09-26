@@ -1,7 +1,7 @@
 package bundle
 
-// The v0.7 lexicon scan. F12 reads every document the bundle writes in its
-// own words — all but SPEC.md, DOMAIN.md, slug.test.md and slug.surface.md,
+// The lexicon scan. F12 reads every document the bundle writes in its own
+// words — all but SPEC.md, DOMAIN.md, slug.test.md and slug.surface.md,
 // which quote someone else's vocabulary — and every group, slug and task
 // name. Inside a scanned document, text that quotes rather than chooses is
 // masked first: code spans and non-Gherkin code blocks, link targets, URLs,
@@ -21,7 +21,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/GiteshDalal/fdf/cli/internal/layout"
-	"github.com/GiteshDalal/fdf/cli/internal/specver"
 )
 
 var (
@@ -38,11 +37,7 @@ var (
 	taskNameRe    = regexp.MustCompile(`^\d{2}-(.+)\.md$`)
 )
 
-// registerDirs are the reserved bundle-root directories: their own names are
-// fixed by the format, and only the groups inside them are chosen.
-var registerDirs = map[string]bool{"changes": true, "practices": true, "debts": true, "bugs": true, "releases": true}
-
-// phrasePattern is the v0.7 matcher for a term, banned word or exception
+// phrasePattern is the matcher for a term, banned word or exception
 // phrase: its words in order, with any run of spaces or hyphens between them —
 // prose wraps a phrase across lines, and a name joins its words with hyphens —
 // and a regular plural on the last one.
@@ -190,7 +185,7 @@ func byLengthThenAlpha(s []string) {
 	})
 }
 
-// prepare compiles the v0.7 scanner: one pass for the masks, one for the
+// prepare compiles the scanner: one pass for the masks, one for the
 // banned words. A mask protects a canonical term or an `except:` phrase that
 // contains a banned word — "Line Item" over a banned "item" — and nothing
 // else: masking a term that contains no banned word would only hide it from a
@@ -248,7 +243,7 @@ func (l *Lexicon) scan(text string) []hit {
 	return hits
 }
 
-// DomainScanned reports whether F12 reads a document's text (v0.7): every
+// DomainScanned reports whether F12 reads a document's text: every
 // document except the four that quote another vocabulary — the vendored
 // SPEC.md, DOMAIN.md itself, and the slug.test.md and slug.surface.md that
 // quote what a surface shows. README.md at the root is not an FDF document.
@@ -476,26 +471,10 @@ func (l *Lexicon) scanName(rel, name string) []Occurrence {
 	return out
 }
 
-// dirName returns the name a directory's author chose: a feature group, or a
-// group inside changes/, practices/, debts/ or bugs/. The register directories
-// themselves and task directories (whose name is their document's) have none.
-func dirName(rootAbs, rel string) (string, bool) {
-	parts := strings.Split(rel, "/")
-	switch {
-	case len(parts) == 1 && !registerDirs[parts[0]]:
-		return parts[0], true
-	case len(parts) == 2 && (parts[0] == "practices" || parts[0] == "debts" || parts[0] == "bugs"):
-		return parts[1], true
-	case len(parts) == 2 && parts[0] == "changes" && !exists(filepath.Join(rootAbs, "changes", parts[1]+".md")):
-		return parts[1], true
-	}
-	return "", false
-}
-
-// groupName is dirName under a 1.0 pin: the name of a group, at any depth in
-// any register. A register's own name, features/ included, is the format's,
-// a task directory is named by its document, and a directory with no
-// position, or one that holds no Markdown, has no name to scan.
+// groupName returns the name a directory's author chose: a group's, at any
+// depth in any register. A register's own name, features/ included, is the
+// format's, a task directory is named by its document, and a directory with
+// no position, or one that holds no Markdown, has no name to scan.
 func groupName(b *layout.Bundle, rel string) (string, bool) {
 	if b.Dir(rel).Kind != layout.Group || !b.HoldsMarkdown(rel) {
 		return "", false
@@ -522,25 +501,22 @@ func docName(rel string) (string, bool) {
 	return stem, true
 }
 
-// ScanBundle returns every banned word F12 sees in the bundle (v0.7 and
-// later), in path order: a path's name first, then its text.
+// ScanBundle returns every banned word F12 sees in the bundle, in path
+// order: a path's name first, then its text.
 func ScanBundle(root string, l *Lexicon) []Occurrence {
 	rootAbs, err := filepath.Abs(root)
 	if err != nil {
 		return nil
 	}
-	return scanBundle(rootAbs, l, nil, pinAtLeast(readPin(rootAbs), specver.Version{Major: 1, Minor: 0}))
+	return scanBundle(rootAbs, l, nil)
 }
 
 // scanBundle is ScanBundle with the documents' texts already read, when the
 // caller has them: validation reads every file once, and reading each again
-// here would double the cost of the gate that runs after every edit. v1 reads
-// the names of a 1.0 bundle's groups through layout.
-func scanBundle(rootAbs string, l *Lexicon, texts map[string]string, v1 bool) []Occurrence {
-	var b *layout.Bundle
-	if v1 {
-		b = layout.New(os.DirFS(rootAbs))
-	}
+// here would double the cost of the gate that runs after every edit. It reads
+// the names of the bundle's groups through layout.
+func scanBundle(rootAbs string, l *Lexicon, texts map[string]string) []Occurrence {
+	b := layout.New(os.DirFS(rootAbs))
 	var out []Occurrence
 	filepath.WalkDir(rootAbs, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -555,11 +531,7 @@ func scanBundle(rootAbs string, l *Lexicon, texts map[string]string, v1 bool) []
 			if strings.HasPrefix(d.Name(), ".") {
 				return filepath.SkipDir
 			}
-			name, ok := dirName(rootAbs, rel)
-			if v1 {
-				name, ok = groupName(b, rel)
-			}
-			if ok {
+			if name, ok := groupName(b, rel); ok {
 				out = append(out, l.scanName(rel+"/", name)...)
 			}
 			return nil
@@ -586,27 +558,26 @@ func scanBundle(rootAbs string, l *Lexicon, texts map[string]string, v1 bool) []
 	return out
 }
 
-// LoadLexicon reads DOMAIN.md under v0.7 rules, for tools that scan a bundle
-// outside validation (`fdf lexicon`). problems are F12's findings about the
-// lexicon itself; lex is nil when there is nothing to scan with.
+// LoadLexicon reads DOMAIN.md, for tools that scan a bundle outside
+// validation (`fdf lexicon`). problems are F12's findings about the lexicon
+// itself; lex is nil when there is nothing to scan with.
 func LoadLexicon(root string) (*Lexicon, []string) {
 	rootAbs, err := filepath.Abs(root)
 	if err != nil {
 		return nil, nil
 	}
 	var errs, warns []string
-	lex := readLexicon(rootAbs, true, &errs, &warns)
+	lex := readLexicon(rootAbs, &errs, &warns)
 	return lex, append(errs, warns...)
 }
 
-// checkDomainV7 enforces F12 under a v0.7 or later pin: the lexicon's
-// consistency, then one line per document or name that uses a banned word,
-// capped so a sweep in progress does not bury every other finding. strict
-// comes from the flag; DOMAIN.md's `strict: true` turns it on too. texts holds
-// the documents the validation walk already read, by bundle-relative path; v1
-// is a 1.0 pin.
-func checkDomainV7(rootAbs string, strictFlag bool, texts map[string]string, v1 bool, errs, warns *[]string) {
-	lex := readLexicon(rootAbs, true, errs, warns)
+// checkDomain enforces F12: the lexicon's consistency, then one line per
+// document or name that uses a banned word, capped so a sweep in progress
+// does not bury every other finding. strict comes from the flag; DOMAIN.md's
+// `strict: true` turns it on too. texts holds the documents the validation
+// walk already read, by bundle-relative path.
+func checkDomain(rootAbs string, strictFlag bool, texts map[string]string, errs, warns *[]string) {
+	lex := readLexicon(rootAbs, errs, warns)
 	if lex == nil {
 		return
 	}
@@ -621,7 +592,7 @@ func checkDomainV7(rootAbs string, strictFlag bool, texts map[string]string, v1 
 	}
 	var groups []*group
 	byKey := map[string]*group{}
-	for _, o := range scanBundle(rootAbs, lex, texts, v1) {
+	for _, o := range scanBundle(rootAbs, lex, texts) {
 		key := o.Rel
 		if o.InName() {
 			key = "\x00" + o.Rel

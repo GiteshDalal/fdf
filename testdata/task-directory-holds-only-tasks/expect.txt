@@ -1,0 +1,3 @@
+exit: 1
+contains: features/platform/refunds/INDEX.md: task directories may contain only NN-slug.md tasks — features/platform/refunds/ is the task directory of features/platform/refunds.md (F3)
+contains: features/platform/refunds/later/: task directories may contain only NN-slug.md tasks, and no directory — features/platform/refunds/ is the task directory of features/platform/refunds.md (F3)

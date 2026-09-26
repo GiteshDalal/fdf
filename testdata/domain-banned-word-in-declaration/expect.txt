@@ -1,0 +1,5 @@
+flags: --strict-domain
+exit: 1
+contains: FAIL: changes/holiday-closures.md: uses banned "store" ×3 → "Venue" (F12)
+contains: FAIL: changes/opening-hours-timezone.md: uses banned "store" → "Venue" (F12)
+contains: FAIL: features/venues/opening-hours.md: uses banned "store" ×2 → "Venue" (F12)

@@ -53,9 +53,6 @@ import (
 // target is the pin migrate writes: 1.0.
 const target = "1.0"
 
-// known0x are the pins migrate upgrades from: every 0.x version FDF had.
-var known0x = map[string]bool{"0.1": true, "0.2": true, "0.3": true, "0.4": true, "0.5": true, "0.6": true, "0.7": true}
-
 // Version is the CLI version, set by the command wrapper. A migrate that
 // finds the pin already current is indistinguishable from a migrate that has
 // nothing to do — unless the message names the binary doing the looking. An
@@ -81,13 +78,9 @@ var trailBasenames = map[string]string{
 	"LOG.md":  "log",
 }
 
-var pinLineRe = regexp.MustCompile(`(?m)^fdf_version:[^\r\n]*`)
-
-// pinValueRe tolerates unquoted pins (`fdf_version: 0.4`) and single-quoted
-// ones (`fdf_version: '1.0'`): the validator's YAML-based readPin accepts
-// them, and migrate must agree with the validator about what version a
-// bundle pins.
-var pinValueRe = regexp.MustCompile(`fdf_version:\s*["']?([^"'\s]+)["']?`)
+// pinKeyRe is the line of a frontmatter block that holds the pin, which
+// withPin rewrites.
+var pinKeyRe = regexp.MustCompile(`^fdf_version:`)
 var taskFileRe = regexp.MustCompile(`^\d{2}-[a-z0-9][a-z0-9-]*\.md$`)
 var statusRe = regexp.MustCompile(`(?m)^status:\s*(\S+)`)
 var scenarioRe = regexp.MustCompile(`(?m)^\s*Scenario(?: Outline)?:\s*(\S[^\n]*)`)
@@ -101,6 +94,10 @@ type Options struct {
 	DryRun  bool   // print the plan and change nothing
 	To      string // where the bundle goes, absolute; "" for the default
 	EnvRoot string // the bundle root FDF_ROOT_DIR names, absolute; "" when it is not set
+	// Skip holds globs, read from the project root as git reads a pathspec
+	// with :(glob) magic, naming files outside the bundle that the outside
+	// pass leaves as they are, listing what they say of the bundle.
+	Skip []string
 }
 
 // Run upgrades the bundle at o.Root to target: it works out the whole
@@ -124,11 +121,20 @@ func Run(o Options, out io.Writer) int {
 	// the repair path.
 	pin := readPin(root)
 	switch v, ok := specver.Parse(pin); {
+	case pin == "" && fdfroot.Unclosed(root):
+		fmt.Fprintln(out, "cannot migrate: INDEX.md's frontmatter has no closing `---` line, so it pins no fdf_version — end the block with one, and run migrate again; the bundle was left as it is.")
+		return 1
 	case pin == "":
 		// A register's or a group's INDEX.md pins nothing: the steps would
 		// build a second bundle inside the pinned one.
 		if bundle := fdfroot.BundleAbove(root); bundle != "" {
 			fmt.Fprintln(out, "error:", fdfroot.InsideBundle(root, bundle))
+			return 1
+		}
+		// Nor is one written for 1.0 that has lost its pin: read as 0.1 to
+		// 0.3, its registers would move into features/.
+		if sign := laidOut1(rootAbs); sign != "" {
+			fmt.Fprintf(out, "cannot migrate: INDEX.md pins no fdf_version, but %s, as in a bundle written for spec %s — if it was, pin fdf_version: \"%s\" in INDEX.md, and there is nothing to migrate; if it was written for an older version, pin that one (fdf 0.7 read a bundle with no pin as 0.2), and run migrate again; the bundle was left as it is.\n", sign, target, target)
 			return 1
 		}
 	case !ok:
@@ -137,9 +143,12 @@ func Run(o Options, out io.Writer) int {
 	case pin == target && o.To != "" && onDisk(filepath.Clean(o.To)) != rootAbs:
 		fmt.Fprintf(out, "cannot migrate: the bundle already pins fdf_version %s, and migrate moves nothing in a bundle at %s — move it with git mv, then point --root or FDF_ROOT_DIR at it; the bundle was left as it is.\n", target, target)
 		return 1
+	case pin == target && len(o.Skip) > 0:
+		fmt.Fprintf(out, "cannot migrate: the bundle already pins fdf_version %s, and migrate reads no file outside a bundle at %s — run it without --skip; the bundle was left as it is.\n", target, target)
+		return 1
 	case pin == target:
 		return repair(o, rootAbs, out)
-	case v.Major == 0 && !known0x[pin]:
+	case v.Major == 0 && !specver.Known0x(pin):
 		fmt.Fprintf(out, "cannot migrate: the bundle pins fdf_version %s, which is no 0.x version %s knows (0.1 to 0.7) — correct the pin in INDEX.md; the bundle was left as it is.\n", pin, binaryName())
 		return 1
 	case v.Major != 0:
@@ -157,7 +166,7 @@ func Run(o Options, out io.Writer) int {
 		fmt.Fprintf(out, "cannot migrate: %s; the bundle was left as it is.\n", problem)
 		return 1
 	}
-	p, problems, err := newPlan(rootAbs, pin, project, dest)
+	p, problems, err := newPlan(rootAbs, pin, project, dest, o.Skip)
 	if err != nil {
 		fmt.Fprintf(out, "error: %v\n", err)
 		return 1
@@ -291,12 +300,16 @@ func repair(o Options, root string, out io.Writer) int {
 	// Nothing is written through a symbolic link: a file it would restore
 	// that is one, such as a SPEC.md or a dangling Context document, or a
 	// register it would restore an index into, is refused first, as a
-	// migration refuses it.
+	// migration refuses it; and so is a register whose place a file takes.
 	var linked []string
 	for _, rel := range sortedKeys(restore) {
 		if reg := path.Dir(rel); reg != "." {
 			if to, err := os.Readlink(filepath.Join(root, reg)); err == nil {
 				linked = append(linked, linkedRegister(reg, to))
+				continue
+			}
+			if problem := registerFile(root, reg); problem != "" {
+				linked = append(linked, problem)
 				continue
 			}
 		}
@@ -352,6 +365,22 @@ func specCurrent(root string) bool {
 		}
 	}
 	return text == string(want)
+}
+
+// laidOut1 names what shows that the bundle at root, which pins nothing, was
+// written for spec 1.0: features/INDEX.md, the index of the register 1.0
+// files every feature in, or a SPEC.md that is 1.0's; or "" when neither is
+// there. A bundle from before 1.0 held a features/INDEX.md only in a group it
+// named features, which its pin, once written in, tells apart.
+func laidOut1(root string) string {
+	index := filepath.Join(root, "features", "INDEX.md")
+	switch {
+	case exists(index) && onDisk(index) == index:
+		return "it holds features/INDEX.md"
+	case specCurrent(root):
+		return "its SPEC.md is spec " + target + "'s"
+	}
+	return ""
 }
 
 // stubRe matches the validator's messages for a Context document that is
@@ -485,6 +514,29 @@ func preflightV4(root string) []string {
 	return problems
 }
 
+// stemTrailRe is a trail file of the stem layout, 0.4's and later's: a
+// <slug>.<role>.md beside its document.
+var stemTrailRe = regexp.MustCompile(`^([a-z0-9][a-z0-9-]*)\.(spec|plan|test|surface|log)\.md$`)
+
+// stemTrail is the first trail file of the stem layout in a group of the
+// bundle at root, beside the document it belongs to, or "" when there is
+// none: the mark of a bundle written for 0.4 or later.
+func stemTrail(root string) string {
+	groups, _ := os.ReadDir(root)
+	for _, g := range groups {
+		if !g.IsDir() || strings.HasPrefix(g.Name(), ".") {
+			continue
+		}
+		files, _ := os.ReadDir(filepath.Join(root, g.Name()))
+		for _, f := range files {
+			if m := stemTrailRe.FindStringSubmatch(f.Name()); m != nil && exists(filepath.Join(root, g.Name(), m[1]+".md")) {
+				return g.Name() + "/" + f.Name()
+			}
+		}
+	}
+	return ""
+}
+
 // featureIsDraft reports whether the sibling feature document of a paired
 // directory carries status: draft.
 func featureIsDraft(root, group, slug string) bool {
@@ -496,19 +548,18 @@ func featureIsDraft(root, group, slug string) bool {
 	return m != nil && string(m[1]) == "draft"
 }
 
+// readPin returns the pin of the bundle at root, read as the validator and
+// every command read it (fdfroot.Pin): from its INDEX.md, or, in a v0.1
+// bundle, its index.md, which the migration renames.
 func readPin(root string) string {
 	raw, err := os.ReadFile(filepath.Join(root, "INDEX.md"))
 	if err != nil {
-		// Also try lowercase pre-rename form.
 		raw, err = os.ReadFile(filepath.Join(root, "index.md"))
 		if err != nil {
 			return ""
 		}
 	}
-	if m := pinValueRe.FindSubmatch(raw); m != nil {
-		return string(m[1])
-	}
-	return ""
+	return fdfroot.Pin(string(raw))
 }
 
 func rel(root, p string) string {

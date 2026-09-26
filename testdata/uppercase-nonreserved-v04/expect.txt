@@ -1,3 +1,0 @@
-exit: 1
-contains: lowercase
-contains: (F3)

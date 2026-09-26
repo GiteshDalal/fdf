@@ -1,0 +1,2 @@
+exit: 1
+contains: features/venues/holiday-hours.plan.md: `# Tasks` does not link 01-build.md (F6)

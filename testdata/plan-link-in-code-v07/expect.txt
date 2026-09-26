@@ -1,2 +1,0 @@
-exit: 1
-contains: venues/opening-hours.plan.md: `# Tasks` does not link 01-build.md (F6)

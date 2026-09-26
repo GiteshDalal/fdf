@@ -1,0 +1,3 @@
+exit: 1
+contains: features/venues/card-payments.md: status 'retired' with a build trail requires features/venues/card-payments.spec.md
+contains: (F4)

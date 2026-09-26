@@ -1,3 +1,0 @@
-exit: 1
-contains: (F3)
-contains: notes.md

@@ -1,6 +1,7 @@
 package links
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -375,6 +376,29 @@ func TestBlocksReturnsTheCodeBlocksAlone(t *testing.T) {
 	}
 	if want := []string{"```sh\nfdf new x\n```\n", "    indented\n"}; strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Errorf("Blocks = %q, want %q", got, want)
+	}
+}
+
+// Rendered reads where a text links: an inline link at its target, and a
+// reference — full, collapsed or shortcut — where it is, with its
+// definition's target, the first of a label's, matched whatever its case and
+// spacing. A definition renders nothing, nor does a reference no definition
+// names, a footnote, a checkbox, or a link in code.
+func TestRenderedReadsAReferenceWhereItIs(t *testing.T) {
+	text := "# Tasks\n\n1. [Signup form][signup]\n2. [Welcome   Mail][]\n3. [Setup] and [x] done, [^1] noted.\n4. [Inline](inline.md) and `[signup]`.\n\n" +
+		"# Notes\n\n[signup]: tasks/01-signup.md\n[welcome mail]: <tasks/02-welcome mail.md>\n[setup]: tasks/03-setup.md \"T\"\n[SIGNUP]: tasks/other.md\n"
+	var got []string
+	for _, l := range Rendered(text) {
+		got = append(got, fmt.Sprintf("%s@%d", l.Target, l.Start))
+	}
+	want := []string{
+		"tasks/01-signup.md@" + fmt.Sprint(strings.Index(text, "[Signup form]")),
+		"<tasks/02-welcome mail.md>@" + fmt.Sprint(strings.Index(text, "[Welcome")),
+		"tasks/03-setup.md@" + fmt.Sprint(strings.Index(text, "[Setup]")),
+		"inline.md@" + fmt.Sprint(strings.Index(text, "inline.md")),
+	}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("Rendered:\n got %q\nwant %q", got, want)
 	}
 }
 

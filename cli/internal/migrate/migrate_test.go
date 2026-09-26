@@ -442,6 +442,36 @@ func TestMigrateKeepsTheFormOfWhatItRewrites(t *testing.T) {
 	}
 }
 
+// The pin is the fdf_version line of the root INDEX.md's frontmatter, where
+// every command reads it, and migrate rewrites that line alone: one in a
+// sample in the body is no pin, and keeps its words.
+func TestMigratePinsTheFrontmatterAlone(t *testing.T) {
+	sample := "\nA bundle pins its version so:\n\n```yaml\nfdf_version: \"0.7\"\n```\n"
+	// fdfroot.Pin reads a `---` line with the spaces around it, as the
+	// validator does, and the pin migrate writes goes where Pin read the old
+	// one.
+	for _, c := range []struct{ name, open, close string }{
+		{"plain", "---\n", "---\n"},
+		{"opening line ends in a space", "--- \n", "---\n"},
+		{"closing line ends in a tab", "---\n", "---\t\n"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			root := copyFixture(t, "valid-bugs-v07")
+			idx := string(mustRead(t, filepath.Join(root, "INDEX.md")))
+			idx = c.open + "fdf_version: \"0.7\"\n" + c.close + strings.TrimPrefix(idx, "---\nfdf_version: \"0.7\"\n---\n")
+			write(t, root, "INDEX.md", idx+sample)
+			var out bytes.Buffer
+			if code := Run(Options{Root: root}, &out); code != 0 {
+				t.Fatalf("migrate exit %d\n%s", code, out.String())
+			}
+			got := string(mustRead(t, filepath.Join(root, "INDEX.md")))
+			if !strings.HasPrefix(got, c.open+"fdf_version: \""+target+"\"\n"+c.close) || !strings.HasSuffix(got, sample) || strings.Count(got, "fdf_version") != 2 {
+				t.Errorf("the frontmatter's pin moves, and the sample keeps its words:\n%s", got)
+			}
+		})
+	}
+}
+
 // A bundle that is a symbolic link is not where the link is: migrate refuses
 // it, names the directory it links to, and writes nothing in it.
 func TestMigrateRefusesABundleThatIsASymlink(t *testing.T) {
@@ -598,7 +628,7 @@ func TestEveryRegisterAndContextDocumentHasItsText(t *testing.T) {
 func TestMigrateNeverWritesOverAFileItDidNotRead(t *testing.T) {
 	root := t.TempDir()
 	buildV03Bundle(t, root)
-	p, problems, err := newPlan(root, "0.3", "", root)
+	p, problems, err := newPlan(root, "0.3", "", root, nil)
 	if err != nil || len(problems) > 0 {
 		t.Fatalf("newPlan: %v %v", err, problems)
 	}
@@ -612,7 +642,7 @@ func TestMigrateNeverWritesOverAFileItDidNotRead(t *testing.T) {
 	}
 }
 
-// copyFixture copies a conformance fixture's bundle into a temp dir.
+// copyFixture copies a bundle migrate's tests start from into a temp dir.
 func copyFixture(t *testing.T, name string) string {
 	t.Helper()
 	dst := t.TempDir()
@@ -620,10 +650,12 @@ func copyFixture(t *testing.T, name string) string {
 	return dst
 }
 
-// copyFixtureTo copies a conformance fixture's bundle to dst.
+// copyFixtureTo copies the bundle testdata/name, one migrate's tests start
+// from, to dst: a 0.x bundle, which the conformance fixtures no longer hold
+// once fdf validates 1.0 alone, or one at 1.0.
 func copyFixtureTo(t *testing.T, name, dst string) {
 	t.Helper()
-	src := filepath.Join("..", "..", "..", "testdata", name, "bundle")
+	src := filepath.Join("testdata", name)
 	filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {
 		if err == nil && !d.IsDir() {
 			rel, _ := filepath.Rel(src, p)
@@ -847,6 +879,81 @@ func TestMigrateReadsUnquotedPin(t *testing.T) {
 	}
 }
 
+// A bundle that pins nothing is read as 0.1 to 0.3, whose layout has no
+// trail files. One in the stem layout was written for 0.4 or later and has
+// lost its pin: migrate asks for the pin, rather than for each trail file
+// to be renamed, and writes nothing.
+func TestMigrateAsksAnUnpinnedStemBundleForItsPin(t *testing.T) {
+	root := copyFixture(t, "valid-bugs-v07")
+	write(t, root, "INDEX.md", strings.Replace(string(mustRead(t, filepath.Join(root, "INDEX.md"))), "---\nfdf_version: \"0.7\"\n---\n\n", "", 1))
+	before := tree(t, root)
+	var out bytes.Buffer
+	if code := Run(Options{Root: root}, &out); code != 1 || out.String() != "cannot migrate — fix these first (bundle left unchanged):\n"+
+		"  INDEX.md: pins no fdf_version, so migrate reads the bundle as 0.1 to 0.3, whose layout has no trail file such as bugs/hours-off-by-one.log.md — pin the version it was written for, one of 0.4 to 0.7, in INDEX.md, and run migrate again\n" {
+		t.Errorf("migrate asks for the pin: exit %d\n%s", code, out.String())
+	}
+	if tree(t, root) != before {
+		t.Error("a refused migration changes nothing")
+	}
+}
+
+// A bundle written for 1.0 that has lost its pin is no bundle from before
+// 1.0: read as 0.1 to 0.3, its registers would move into features/. Migrate
+// says what shows it, features/INDEX.md or a SPEC.md that is 1.0's, asks for
+// the pin, and writes nothing.
+func TestMigrateAsksABundleLaidOutFor10ForItsPin(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "fdf")
+	var made bytes.Buffer
+	if code := scaffold.Init(root, &made); code != 0 {
+		t.Fatalf("init exit %d\n%s", code, made.String())
+	}
+	write(t, root, "INDEX.md", strings.Replace(string(mustRead(t, filepath.Join(root, "INDEX.md"))), "fdf_version: \""+target+"\"\n", "", 1))
+	for i, sign := range []string{"it holds features/INDEX.md", "its SPEC.md is spec " + target + "'s"} {
+		if i > 0 {
+			// Without features/INDEX.md, the copy of the spec shows it.
+			if err := os.Remove(filepath.Join(root, "features", "INDEX.md")); err != nil {
+				t.Fatal(err)
+			}
+		}
+		before := tree(t, root)
+		var out bytes.Buffer
+		want := "cannot migrate: INDEX.md pins no fdf_version, but " + sign + ", as in a bundle written for spec " + target + " — if it was, pin fdf_version: \"" + target + "\" in INDEX.md, and there is nothing to migrate; if it was written for an older version, pin that one (fdf 0.7 read a bundle with no pin as 0.2), and run migrate again; the bundle was left as it is.\n"
+		if code := Run(Options{Root: root, DryRun: true}, &out); code != 1 || out.String() != want {
+			t.Errorf("migrate asks for the pin: exit %d\n%s", code, out.String())
+		}
+		if tree(t, root) != before {
+			t.Error("a refused migration changes nothing")
+		}
+	}
+	// A group of an older bundle may be named features, and v0.1 spelled its
+	// index index.md: that is no sign, though a disk that ignores case opens
+	// it as features/INDEX.md.
+	old := t.TempDir()
+	write(t, old, "INDEX.md", "# Bundle\n")
+	write(t, old, "features/index.md", "# Features\n")
+	var out bytes.Buffer
+	Run(Options{Root: old, DryRun: true}, &out)
+	if strings.Contains(out.String(), "as in a bundle written for spec") {
+		t.Errorf("a group's index.md is no sign of %s:\n%s", target, out.String())
+	}
+}
+
+// Frontmatter that no `---` line closes pins nothing, whatever it says:
+// migrate says so, rather than read the bundle as one with no pin, and
+// writes nothing.
+func TestMigrateRefusesFrontmatterThatNeverCloses(t *testing.T) {
+	root := copyFixture(t, "valid-bugs-v07")
+	write(t, root, "INDEX.md", strings.Replace(string(mustRead(t, filepath.Join(root, "INDEX.md"))), "fdf_version: \"0.7\"\n---\n", "fdf_version: \"0.7\"\n", 1))
+	before := tree(t, root)
+	var out bytes.Buffer
+	if code := Run(Options{Root: root}, &out); code != 1 || out.String() != "cannot migrate: INDEX.md's frontmatter has no closing `---` line, so it pins no fdf_version — end the block with one, and run migrate again; the bundle was left as it is.\n" {
+		t.Errorf("migrate names the frontmatter: exit %d\n%s", code, out.String())
+	}
+	if tree(t, root) != before {
+		t.Error("a refused migration changes nothing")
+	}
+}
+
 // A migrate that finds the pin already current looks identical to a migrate
 // that is simply too old to know about newer versions — which is what happens
 // when a version shim (mise, asdf) holds an old fdf in a directory. The
@@ -1040,11 +1147,13 @@ func mustRead(t *testing.T, p string) []byte {
 
 // Older tools wrote a status tag after each index listing and nothing kept it
 // current; migration removes it, leaves other bold text and code alone, and
-// logs the migration in the bundle-root log.
+// logs the migration in the bundle-root log. Code is read as the link engine
+// reads it: a line that starts with a run of backticks and closes it, a
+// code span, opens no fence.
 func TestMigrateDropsIndexStatusTags(t *testing.T) {
 	root := t.TempDir()
 	buildV06Bundle(t, root)
-	write(t, root, "venues/INDEX.md", "# Venues\n\n* [Hours](/venues/hours.md) - opening hours. (**draft**)\n* [Menu](/venues/hours.md) - the menu. (**important**)\n\n```\n* [Sample](/venues/hours.md) - a sample. (**done**)\n```\n")
+	write(t, root, "venues/INDEX.md", "# Venues\n\n```fdf validate``` runs after any edit.\n\n* [Hours](/venues/hours.md) - opening hours. (**draft**)\n* [Menu](/venues/hours.md) - the menu. (**important**)\n\n```\n* [Sample](/venues/hours.md) - a sample. (**done**)\n```\n")
 	write(t, root, "changes/INDEX.md", "# Changes\n\n* [x](/changes/INDEX.md) - changes. (**specified**)\n")
 	var out bytes.Buffer
 	if code := Run(Options{Root: root}, &out); code != 0 {
@@ -1378,13 +1487,35 @@ func TestMigrateRefusesWhat10HasNoPlaceFor(t *testing.T) {
 	if after := tree(t, root); after != before {
 		t.Errorf("a refused migration changes nothing")
 	}
-	// A features that is no directory leaves the register no place.
-	root = buildV07Bundle(t)
-	write(t, root, "features", "notes\n")
+	// A file where a register goes leaves the register no place: a
+	// features, or a practices, whose index migrate writes.
+	for _, reg := range []string{"features", "practices"} {
+		root = buildV07Bundle(t)
+		write(t, root, reg, "notes\n")
+		before = tree(t, root)
+		out.Reset()
+		if code := Run(Options{Root: root}, &out); code != 1 || out.String() != "cannot migrate — fix these first (bundle left unchanged):\n"+
+			"  "+reg+": not a directory, where the "+reg+"/ register goes — move it out of the bundle root\n" {
+			t.Errorf("a %s that is no directory is refused: exit %d\n%s", reg, code, out.String())
+		}
+		if after := tree(t, root); after != before {
+			t.Errorf("a refused migration changes nothing")
+		}
+	}
+	// So in a bundle at 1.0 does one where an index it restores goes.
+	root = copyFixture(t, "valid-v10")
+	if err := os.RemoveAll(filepath.Join(root, "debts")); err != nil {
+		t.Fatal(err)
+	}
+	write(t, root, "debts", "notes\n")
+	before = tree(t, root)
 	out.Reset()
-	if code := Run(Options{Root: root}, &out); code != 1 || out.String() != "cannot migrate — fix these first (bundle left unchanged):\n"+
-		"  features: not a directory, where the features/ register goes — move it out of the bundle root\n" {
-		t.Errorf("a features that is no directory is refused: exit %d\n%s", code, out.String())
+	if code := Run(Options{Root: root}, &out); code != 1 || !strings.HasSuffix(out.String(), "cannot restore — fix these first (bundle left unchanged):\n"+
+		"  debts: not a directory, where the debts/ register goes — move it out of the bundle root\n") {
+		t.Errorf("a debts that is no directory is refused: exit %d\n%s", code, out.String())
+	}
+	if after := tree(t, root); after != before {
+		t.Errorf("a refused repair changes nothing")
 	}
 }
 
@@ -1429,7 +1560,7 @@ func gitIn(t *testing.T, dir string, args ...string) string {
 }
 
 // gitProject makes a git repository whose docs/features holds a copy of the
-// conformance fixture name, all committed, and returns the repository's root.
+// bundle testdata/name, all committed, and returns the repository's root.
 func gitProject(t *testing.T, name string) string {
 	t.Helper()
 	return gitProjectAt(t, name, t.TempDir())
@@ -1825,31 +1956,69 @@ func TestMigrateSaysHowToUndoAStoppedMigration(t *testing.T) {
 // stops at them, and git clean leaves them. So the next steps also print the
 // commands that back it out, the first of which takes the marks back, in the
 // repository that holds them, and the commands do put everything back: for
-// a plain directory and for a submodule, with a file outside the bundle
-// rewritten.
+// a plain directory, moved beside itself or --to a new place, and for a
+// submodule, with a file outside the bundle rewritten, and for a bundle that
+// is its own repository. That includes the directories migrate made, with
+// what a person's tools have left in them since, such as a Finder .DS_Store
+// git ignores: one left in a group's place in features/ would stop the next
+// run.
 func TestMigrateSaysHowToBackOutAMigration(t *testing.T) {
 	const says = "      to back the migration out instead, run these commands; the first takes back the\n" +
 		"      marks of `git add -N`, on which git stash and git clean would trip:\n"
-	for _, submodule := range []bool{false, true} {
-		var project string
-		if submodule {
+	for _, kind := range []string{"a plain directory", "a plain directory moved --to a new place", "a submodule", "its own repository"} {
+		var project, root, to, dest string
+		switch kind {
+		case "a submodule":
 			project = gitSuperproject(t, "valid-bugs-v07")
-		} else {
+		case "its own repository":
+			project = filepath.Join(t.TempDir(), "handbook")
+			copyFixtureTo(t, "valid-bugs-v07", project)
+			gitIn(t, project, "init", "-q")
+			gitIn(t, project, "add", "-A")
+			gitIn(t, project, "commit", "-qm", "bundle")
+			root, dest = project, project
+		default:
 			project = gitProject(t, "valid-bugs-v07")
 		}
-		write(t, project, "README.md", "# Project\n\nThe bundle is in docs/features.\n")
-		gitIn(t, project, "commit", "-qam", "readme")
+		if root == "" {
+			root, dest = filepath.Join(project, "docs", "features"), filepath.Join(project, "docs", "fdf")
+			write(t, project, "README.md", "# Project\n\nThe bundle is in docs/features.\n")
+			gitIn(t, project, "commit", "-qam", "readme")
+		}
+		if kind == "a plain directory moved --to a new place" {
+			to = filepath.Join(project, "handbook", "fdf")
+			dest = to
+		}
 		before := worktree(t, project)
 		var out bytes.Buffer
-		if code := Run(Options{Root: filepath.Join(project, "docs", "features"), Project: project}, &out); code != 0 {
-			t.Fatalf("submodule %v: migrate exit %d\n%s", submodule, code, out.String())
+		if code := Run(Options{Root: root, Project: project, To: to}, &out); code != 0 {
+			t.Fatalf("%s: migrate exit %d\n%s", kind, code, out.String())
 		}
-		if readme := string(mustRead(t, filepath.Join(project, "README.md"))); !strings.Contains(readme, "docs/fdf") {
-			t.Fatalf("submodule %v: the test needs a file outside the bundle rewritten:\n%s", submodule, readme)
+		if root != project {
+			if readme := string(mustRead(t, filepath.Join(project, "README.md"))); !strings.Contains(readme, "docs/fdf") && !strings.Contains(readme, "handbook/fdf") {
+				t.Fatalf("%s: the test needs a file outside the bundle rewritten:\n%s", kind, readme)
+			}
+		}
+		// Finder leaves a .DS_Store, which git ignores, in a directory it
+		// shows: a group's place in features/, a register migrate made, and
+		// the directory --to made to hold the bundle.
+		shown := []string{filepath.Join(dest, "features", "venues"), filepath.Join(dest, "practices")}
+		if to != "" {
+			shown = append(shown, filepath.Dir(to))
+		}
+		for _, dir := range shown {
+			write(t, dir, ".DS_Store", "Finder")
+			exclude := strings.TrimSpace(gitIn(t, dir, "rev-parse", "--git-path", "info/exclude"))
+			if !filepath.IsAbs(exclude) {
+				exclude = filepath.Join(dir, exclude)
+			}
+			if err := os.WriteFile(exclude, []byte(".DS_Store\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
 		}
 		_, rest, ok := strings.Cut(out.String(), says)
 		if !ok {
-			t.Fatalf("submodule %v: the next steps say how to back the migration out:\n%s", submodule, out.String())
+			t.Fatalf("%s: the next steps say how to back the migration out:\n%s", kind, out.String())
 		}
 		var cmds []string
 		for _, line := range strings.Split(rest, "\n") {
@@ -1860,20 +2029,23 @@ func TestMigrateSaysHowToBackOutAMigration(t *testing.T) {
 			cmds = append(cmds, cmd)
 		}
 		if len(cmds) == 0 || !strings.Contains(cmds[0], " reset -q -- ") {
-			t.Fatalf("submodule %v: the commands start by taking back the marks:\n%s", submodule, rest)
+			t.Fatalf("%s: the commands start by taking back the marks:\n%s", kind, rest)
 		}
 		for _, cmd := range cmds {
 			if b, err := exec.Command("sh", "-c", cmd).CombinedOutput(); err != nil {
-				t.Fatalf("submodule %v: %s: %v\n%s", submodule, cmd, err, b)
+				t.Fatalf("%s: %s: %v\n%s", kind, cmd, err, b)
 			}
 		}
 		if after := worktree(t, project); after != before {
-			t.Errorf("submodule %v: the commands put everything back:\n%s", submodule, strings.Join(cmds, "\n"))
+			t.Errorf("%s: the commands put everything back:\n%s\n%s", kind, strings.Join(cmds, "\n"), after)
 		}
-		for _, dir := range []string{project, filepath.Join(project, "docs", "features")} {
+		for _, dir := range []string{project, root} {
 			if status := gitIn(t, dir, "status", "--porcelain", "--untracked-files=all", "--ignored"); status != "" {
-				t.Errorf("submodule %v: git status is clean again in %s:\n%s", submodule, dir, status)
+				t.Errorf("%s: git status is clean again in %s:\n%s", kind, dir, status)
 			}
+		}
+		if _, err := os.Stat(filepath.Join(project, "handbook")); kind == "a plain directory moved --to a new place" && err == nil {
+			t.Errorf("%s: the directory migrate made above the destination is gone:\n%s", kind, strings.Join(cmds, "\n"))
 		}
 	}
 }
@@ -1981,6 +2153,124 @@ func TestMigrateRepointsARelativeSymlink(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "\n  relink  features/venues/assets → ../../../../assets\n") {
 		t.Errorf("the plan lists the link it repoints:\n%s", out.String())
+	}
+}
+
+// A symbolic link the move breaks, which migrate does not name again, is
+// listed with what is left behind: one in the bundle or outside it that
+// names its target by an absolute path, which cannot follow the move, and
+// one outside the bundle, which is the project's. One whose target stays
+// where it is is not. Outside a git repository, the bundle's own are
+// listed too.
+func TestMigrateListsASymbolicLinkTheMoveBreaks(t *testing.T) {
+	project := gitProject(t, "valid-bugs-v07")
+	write(t, project, "assets/logo.png", "PNG")
+	write(t, project, "docs/features/venues/diagram.png", "PNG")
+	for link, to := range map[string]string{
+		"docs/features/venues/current.png": filepath.Join(project, "docs", "features", "venues", "diagram.png"),
+		"docs/features/venues/logo.png":    filepath.Join(project, "assets", "logo.png"),
+		"assets/index":                     filepath.Join(project, "docs", "features", "INDEX.md"),
+		"assets/diagram.png":               "../docs/features/venues/diagram.png",
+		"assets/current.png":               "logo.png",
+	} {
+		if err := os.Symlink(to, filepath.Join(project, filepath.FromSlash(link))); err != nil {
+			t.Skip("symlinks unavailable:", err)
+		}
+	}
+	gitIn(t, project, "add", "-A")
+	gitIn(t, project, "commit", "-qm", "links")
+	var out bytes.Buffer
+	if code := Run(Options{Root: filepath.Join(project, "docs", "features"), Project: project, DryRun: true}, &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
+	}
+	for _, want := range []string{
+		"             left as they are: 3 symbolic links the move breaks (listed below)\n",
+		"  docs/fdf/features/venues/current.png  " + filepath.Join(project, "docs", "features", "venues", "diagram.png") + "  (a symbolic link the move breaks)\n",
+		"  assets/diagram.png  ../docs/features/venues/diagram.png  (a symbolic link the move breaks)\n",
+		"  assets/index  " + filepath.Join(project, "docs", "features", "INDEX.md") + "  (a symbolic link the move breaks)\n",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("the plan should say %q:\n%s", want, out.String())
+		}
+	}
+	for _, not := range []string{"venues/logo.png ", "assets/current.png"} {
+		if strings.Contains(out.String(), not) {
+			t.Errorf("a link whose target stays is not listed (%s):\n%s", not, out.String())
+		}
+	}
+
+	dir := t.TempDir()
+	root := filepath.Join(dir, "docs", "features")
+	copyFixtureTo(t, "valid-bugs-v07", root)
+	write(t, root, "venues/diagram.png", "PNG")
+	if err := os.Symlink(filepath.Join(root, "venues", "diagram.png"), filepath.Join(root, "venues", "current.png")); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if code := Run(Options{Root: root}, &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
+	}
+	for _, want := range []string{
+		"             left as they are: 1 symbolic link the move breaks (listed below)\n",
+		"  " + filepath.Join(dir, "docs", "fdf", "features", "venues", "current.png") + "  " + filepath.Join(root, "venues", "diagram.png") + "  (a symbolic link the move breaks)\n",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("outside git, the plan should say %q:\n%s", want, out.String())
+		}
+	}
+
+	// A bundle that is its own repository lists the link from its own root,
+	// which is the project's.
+	own := filepath.Join(t.TempDir(), "handbook")
+	copyFixtureTo(t, "valid-bugs-v07", own)
+	write(t, own, "venues/diagram.png", "PNG")
+	if err := os.Symlink(filepath.Join(own, "venues", "diagram.png"), filepath.Join(own, "venues", "current.png")); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, own, "init", "-q")
+	gitIn(t, own, "add", "-A")
+	gitIn(t, own, "commit", "-qm", "bundle")
+	out.Reset()
+	if code := Run(Options{Root: own, Project: own, DryRun: true}, &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
+	}
+	if want := "  features/venues/current.png  " + filepath.Join(own, "venues", "diagram.png") + "  (a symbolic link the move breaks)\n"; !strings.Contains(out.String(), want) {
+		t.Errorf("in a bundle that is its own repository, the plan should say %q:\n%s", want, out.String())
+	}
+}
+
+// A symbolic link may spell its target through another link, as macOS
+// spells /private/var as /var, and so may the root migrate is given: the
+// target is read as written, and then with its directory and the project
+// root as the disk resolves them, so the link is listed either way.
+func TestMigrateReadsALinksTargetHoweverItIsSpelled(t *testing.T) {
+	project := gitProject(t, "valid-bugs-v07")
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(project, alias); err != nil {
+		t.Skip("symlinks unavailable:", err)
+	}
+	write(t, project, "docs/features/venues/diagram.png", "PNG")
+	targets := [][2]string{
+		{"via-project.png", filepath.Join(project, "docs", "features", "venues", "diagram.png")},
+		{"via-alias.png", filepath.Join(alias, "docs", "features", "venues", "diagram.png")},
+	}
+	for _, l := range targets {
+		if err := os.Symlink(l[1], filepath.Join(project, "docs", "features", "venues", l[0])); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gitIn(t, project, "add", "-A")
+	gitIn(t, project, "commit", "-qm", "links")
+	for _, from := range []string{project, alias} {
+		var out bytes.Buffer
+		if code := Run(Options{Root: filepath.Join(from, "docs", "features"), Project: from, DryRun: true}, &out); code != 0 {
+			t.Fatalf("migrate from %s: exit %d\n%s", from, code, out.String())
+		}
+		for _, l := range targets {
+			if want := "  docs/fdf/features/venues/" + l[0] + "  " + l[1] + "  (a symbolic link the move breaks)\n"; !strings.Contains(out.String(), want) {
+				t.Errorf("migrated from %s, the plan should say %q:\n%s", from, want, out.String())
+			}
+		}
 	}
 }
 
@@ -2118,6 +2408,114 @@ func TestMigrateRewritesReferencesOutsideTheBundle(t *testing.T) {
 	}
 }
 
+// --skip leaves the files its globs name outside the bundle as they are, as
+// applied SQL migrations must stay, and lists each link into the bundle and
+// each mention of its path in them, in the order of the text. A glob reads
+// from the project root as git reads one, a directory naming everything in
+// it. A file migrate leaves as it is is no part of the clean-tree check.
+func TestMigrateLeavesWhatSkipNamesAsItIs(t *testing.T) {
+	project := gitProject(t, "valid-bugs-v07")
+	files := map[string]string{
+		"db/migrations/001_init.sql":    "-- The schema of docs/features/venues/opening-hours.md.\nCREATE TABLE hours (id int);\n",
+		"db/migrations/v2/002_more.sql": "-- See docs/features.\n",
+		"docs/old/notes.md":             "# Notes\n\nSee [hours](../features/venues/opening-hours.md), in docs/features/venues.\n",
+		"README.md":                     "# Project\n\nThe bundle is in docs/features.\n",
+	}
+	for rel, content := range files {
+		write(t, project, rel, content)
+	}
+	gitIn(t, project, "add", "-A")
+	gitIn(t, project, "commit", "-qm", "references")
+	files["db/migrations/001_init.sql"] += "-- not committed\n"
+	write(t, project, "db/migrations/001_init.sql", files["db/migrations/001_init.sql"])
+	var out bytes.Buffer
+	if code := Run(Options{Root: filepath.Join(project, "docs", "features"), Project: project, Skip: []string{"db/migrations", "docs/old/*.md"}}, &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
+	}
+	for rel, want := range files {
+		if rel == "README.md" {
+			want = "# Project\n\nThe bundle is in docs/fdf.\n"
+		}
+		if got := string(mustRead(t, filepath.Join(project, rel))); got != want {
+			t.Errorf("%s:\n%s\nwant:\n%s", rel, got, want)
+		}
+	}
+	for _, want := range []string{
+		"  outside    1 mention in 1 file; 0 links in 0 files\n",
+		"             left as they are: 4 mentions in a skipped file (listed below)\n",
+		"             skipped on request: 3 files that --skip names\n",
+		"\nleft as they are:\n" +
+			"  db/migrations/001_init.sql:1  docs/features/venues/opening-hours.md  (in a skipped file)\n" +
+			"  db/migrations/v2/002_more.sql:1  docs/features  (in a skipped file)\n" +
+			"  docs/old/notes.md:3  ../features/venues/opening-hours.md  (in a skipped file)\n" +
+			"  docs/old/notes.md:3  docs/features/venues  (in a skipped file)\n",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("the plan should say %q:\n%s", want, out.String())
+		}
+	}
+}
+
+// A --skip glob that names no file git tracks outside the bundle is refused,
+// since a mistyped one would leave as they are none of the files it was
+// meant to; and so is --skip where migrate reads nothing outside the bundle:
+// outside a git repository, and for a bundle that is its own. Nothing is
+// written.
+func TestMigrateRefusesASkipThatNamesNothing(t *testing.T) {
+	project := gitProject(t, "valid-bugs-v07")
+	write(t, project, "db/migrations/001_init.sql", "-- docs/features\n")
+	gitIn(t, project, "add", "-A")
+	gitIn(t, project, "commit", "-qm", "sql")
+	before := worktree(t, project)
+	var out bytes.Buffer
+	root := filepath.Join(project, "docs", "features")
+	if code := Run(Options{Root: root, Project: project, Skip: []string{"db/migration/**", "db/migrations/**", "docs/features/**"}}, &out); code != 1 {
+		t.Fatalf("migrate exit %d, want 1\n%s", code, out.String())
+	}
+	for _, want := range []string{
+		"  --skip 'db/migration/**': names no file git tracks outside the bundle — a glob reads from the project root, " + project + "\n",
+		"  --skip 'docs/features/**': names no file git tracks outside the bundle — a glob reads from the project root, " + project + "\n",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("migrate should refuse with %q:\n%s", want, out.String())
+		}
+	}
+	if strings.Contains(out.String(), "'db/migrations/**'") {
+		t.Errorf("a glob that names a file is no problem:\n%s", out.String())
+	}
+	if worktree(t, project) != before {
+		t.Error("a refused migration writes nothing")
+	}
+
+	plain := filepath.Join(t.TempDir(), "docs", "features")
+	copyFixtureTo(t, "valid-bugs-v07", plain)
+	own := filepath.Join(t.TempDir(), "handbook")
+	copyFixtureTo(t, "valid-bugs-v07", own)
+	gitIn(t, own, "init", "-q")
+	gitIn(t, own, "add", "-A")
+	gitIn(t, own, "commit", "-qm", "bundle")
+	for _, tc := range []struct{ root, project, want string }{
+		{plain, "", "  --skip: the bundle is not in a git repository, so migrate reads no file outside it — run it without --skip\n"},
+		{own, own, "  --skip: the bundle is its own git repository, so it has no outside — run it without --skip\n"},
+	} {
+		out.Reset()
+		if code := Run(Options{Root: tc.root, Project: tc.project, Skip: []string{"db/**"}}, &out); code != 1 || !strings.Contains(out.String(), tc.want) {
+			t.Errorf("migrate should refuse with %q: exit %d\n%s", tc.want, code, out.String())
+		}
+	}
+	// A bundle at target moves nothing, and migrate reads nothing outside it.
+	at := filepath.Join(t.TempDir(), "docs", "fdf")
+	copyFixtureTo(t, "valid-v10", at)
+	before = tree(t, at)
+	out.Reset()
+	if code := Run(Options{Root: at, Skip: []string{"db/**"}}, &out); code != 1 || out.String() != "cannot migrate: the bundle already pins fdf_version "+target+", and migrate reads no file outside a bundle at "+target+" — run it without --skip; the bundle was left as it is.\n" {
+		t.Errorf("migrate should refuse --skip on a bundle at %s: exit %d\n%s", target, code, out.String())
+	}
+	if tree(t, at) != before {
+		t.Error("a refused migration writes nothing")
+	}
+}
+
 // A log keeps its words, and what it says of the bundle's old path is
 // counted with them, not listed for a person to decide on: a link in it
 // that spells the path but leads elsewhere, as a mention in it.
@@ -2192,8 +2590,8 @@ func TestMigrateABundleThatIsItsOwnRepositoryHasNoOutside(t *testing.T) {
 }
 
 // gitSuperproject makes a git repository whose docs/features is a submodule
-// holding a copy of the conformance fixture name, all committed, and returns
-// the superproject's root.
+// holding a copy of the bundle testdata/name, all committed, and returns the
+// superproject's root.
 func gitSuperproject(t *testing.T, name string) string {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {

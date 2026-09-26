@@ -50,6 +50,20 @@ func read(t *testing.T, root, rel string) string {
 	return string(raw)
 }
 
+// pinTo makes the bundle at root one that pins version, as a bundle nobody
+// has migrated does.
+func pinTo(t *testing.T, root, version string) {
+	t.Helper()
+	index := read(t, root, "INDEX.md")
+	pinned := strings.Replace(index, `fdf_version: "1.0"`, `fdf_version: "`+version+`"`, 1)
+	if pinned == index {
+		t.Fatalf("INDEX.md pins no 1.0 to change:\n%s", index)
+	}
+	if err := os.WriteFile(filepath.Join(root, "INDEX.md"), []byte(pinned), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func logEntry(t *testing.T, root, id, entry string) string {
 	t.Helper()
 	var out bytes.Buffer
@@ -75,7 +89,7 @@ func validates(t *testing.T, root string, written ...string) {
 }
 
 func TestFeatureEntryStartsItsLog(t *testing.T) {
-	root := fixture(t, "valid-bugs-v10")
+	root := fixture(t, "valid-bugs")
 	out := logEntry(t, root, "features/venues/opening-hours", "**Decision**: holidays follow the Venue's calendar.")
 	if !strings.Contains(out, "features/venues/opening-hours.log.md (new log)") {
 		t.Errorf("should say the log was created:\n%s", out)
@@ -96,7 +110,7 @@ func TestFeatureEntryStartsItsLog(t *testing.T) {
 }
 
 func TestSameDayEntriesShareOneHeadingNewestFirst(t *testing.T) {
-	root := fixture(t, "valid-bugs-v10")
+	root := fixture(t, "valid-bugs")
 	logEntry(t, root, "features/venues/opening-hours", "first")
 	logEntry(t, root, "features/venues/opening-hours", "second")
 	got := read(t, root, "features/venues/opening-hours.log.md")
@@ -110,7 +124,7 @@ func TestSameDayEntriesShareOneHeadingNewestFirst(t *testing.T) {
 }
 
 func TestRootEntryGoesAboveOlderDays(t *testing.T) {
-	root := fixture(t, "valid-bugs-v10")
+	root := fixture(t, "valid-bugs")
 	logEntry(t, root, "", "**Checkpoint**: Context documents re-read.")
 	got := read(t, root, "LOG.md")
 	if !strings.Contains(got, "# Bundle Update Log\n\n## 2027-01-15\n* **Checkpoint**: Context documents re-read.\n\n## 2026-09-23\n") {
@@ -135,7 +149,7 @@ func TestInsertReadsTheDatesOfACRLFLog(t *testing.T) {
 // A date written by hand ahead of UTC can already head a log; today's UTC
 // entry goes below it, so the log stays newest first.
 func TestEntryKeepsDateOrderBelowALaterDate(t *testing.T) {
-	root := fixture(t, "valid-bugs-v10")
+	root := fixture(t, "valid-bugs")
 	log := "# Bundle Update Log\n\n## 2027-01-16\n* ahead of UTC\n\n## 2027-01-10\n* older\n"
 	if err := os.WriteFile(filepath.Join(root, "LOG.md"), []byte(log), 0o644); err != nil {
 		t.Fatal(err)
@@ -155,7 +169,7 @@ func TestEntryKeepsDateOrderBelowALaterDate(t *testing.T) {
 }
 
 func TestOwnersTakeTheirTasksAndTrailsEntries(t *testing.T) {
-	root := fixture(t, "valid-bugs-v10")
+	root := fixture(t, "valid-bugs")
 	out := logEntry(t, root, "features/venues/opening-hours/01-build", "task entry")
 	if !strings.Contains(out, "a task has no log of its own") || !strings.Contains(out, "features/venues/opening-hours.log.md") {
 		t.Errorf("a task's entry goes in its feature's log, with a note:\n%s", out)
@@ -171,7 +185,7 @@ func TestOwnersTakeTheirTasksAndTrailsEntries(t *testing.T) {
 }
 
 func TestRegisterChangeAndGroupLogs(t *testing.T) {
-	root := fixture(t, "valid-bugs-v10")
+	root := fixture(t, "valid-bugs")
 	logEntry(t, root, "bugs/closed-hours-shown-open", "**Investigated**: reproduced on staging.")
 	logEntry(t, root, "changes/closed-hours-fix", "**Decision**: fix the query, not the cache.")
 	logEntry(t, root, "features/venues", "**Group**: venues split out of payments.")
@@ -188,7 +202,7 @@ func TestRegisterChangeAndGroupLogs(t *testing.T) {
 }
 
 func TestContextEntriesGoToTheRootLog(t *testing.T) {
-	root := fixture(t, "valid-bugs-v10")
+	root := fixture(t, "valid-bugs")
 	out := logEntry(t, root, "DOMAIN", "**Context**: Venue gains `except: data store`.")
 	if !strings.Contains(out, "logged in LOG.md") || !strings.Contains(out, "Context document") {
 		t.Errorf("a Context document is logged in the root LOG.md:\n%s", out)
@@ -197,7 +211,7 @@ func TestContextEntriesGoToTheRootLog(t *testing.T) {
 
 // A log is the one sibling a draft feature may have.
 func TestDraftFeatureMayHaveALog(t *testing.T) {
-	root := fixture(t, "valid-bugs-v10")
+	root := fixture(t, "valid-bugs")
 	os.WriteFile(filepath.Join(root, "features", "venues", "holiday-hours.md"), []byte(draftFeature), 0o644)
 	logEntry(t, root, "features/venues/holiday-hours", "**Drafted**: waiting on the legal review of closure notices.")
 	validates(t, root, "features/venues/holiday-hours.log.md")
@@ -206,11 +220,12 @@ func TestDraftFeatureMayHaveALog(t *testing.T) {
 // fdf log works on spec 1.0 bundles: a 0.x bundle is upgraded with
 // `fdf migrate` first, and no log is written in it.
 func TestLogPointsA0xBundleAtMigrate(t *testing.T) {
-	root := fixture(t, "valid-bugs-v07")
+	root := fixture(t, "valid-bugs")
+	pinTo(t, root, "0.7")
 	before := read(t, root, "LOG.md")
 	var out bytes.Buffer
 	if code := Append(root, "", "an entry", &out); code != 1 ||
-		out.String() != "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0 bundles — run `fdf migrate` to upgrade it first\n" {
+		out.String() != "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n" {
 		t.Fatalf("exit %d\n%s", code, out.String())
 	}
 	if read(t, root, "LOG.md") != before {
@@ -221,7 +236,7 @@ func TestLogPointsA0xBundleAtMigrate(t *testing.T) {
 // A pin's value may be single-quoted, as scaffold.Pin (and fdf validate)
 // already read it; fdf log must agree, not just tolerate double quotes.
 func TestLogReadsASingleQuotedPin(t *testing.T) {
-	root := fixture(t, "valid-bugs-v10")
+	root := fixture(t, "valid-bugs")
 	index := read(t, root, "INDEX.md")
 	os.WriteFile(filepath.Join(root, "INDEX.md"), []byte(strings.Replace(index, `fdf_version: "1.0"`, `fdf_version: '1.0'`, 1)), 0o644)
 	os.WriteFile(filepath.Join(root, "features", "venues", "holiday-hours.md"), []byte(draftFeature), 0o644)
@@ -232,7 +247,7 @@ func TestLogReadsASingleQuotedPin(t *testing.T) {
 const draftFeature = "---\ntype: Feature\nstatus: draft\ntitle: Holiday hours\ndescription: Close a Venue for a day.\ntimestamp: 2027-01-15\n---\n\n# Feature\n\n```gherkin\nFeature: Holiday hours\n  As a Venue owner\n  I want to close my Venue for a day\n  So that customers are not sent to a closed door\n```\n\n# Scenarios\n\n```gherkin\nScenario: A closed day shows as closed\n  Given a Venue closed on 2027-12-25\n  When a customer views its opening hours\n  Then the day shows as closed\n```\n"
 
 func TestUnknownIDAndMissingBundle(t *testing.T) {
-	root := fixture(t, "valid-bugs-v10")
+	root := fixture(t, "valid-bugs")
 	var out bytes.Buffer
 	if code := Append(root, "features/venues/nowhere", "x", &out); code != 1 || !strings.Contains(out.String(), "no document or group") {
 		t.Errorf("unknown ID: exit %d\n%s", code, out.String())
@@ -254,7 +269,7 @@ func TestUnknownIDAndMissingBundle(t *testing.T) {
 // write there fails F3. A group written the 0.7 way gets its full ID
 // suggested.
 func TestLogGoesOnlyWhereLayoutPlacesOne(t *testing.T) {
-	root := fixture(t, "valid-bugs-v10")
+	root := fixture(t, "valid-bugs")
 	for rel, text := range map[string]string{
 		"assets/notes.md":                    "# Notes\n",
 		"features/venues/photos/front.png":   "PNG",
@@ -310,7 +325,7 @@ func TestTouchKeepsTheTimestampForm(t *testing.T) {
 }
 
 func TestIsID(t *testing.T) {
-	root := fixture(t, "valid-bugs-v10")
+	root := fixture(t, "valid-bugs")
 	for s, want := range map[string]bool{
 		"features/venues/opening-hours": true,
 		"features/venues":               true,

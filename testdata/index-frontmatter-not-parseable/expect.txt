@@ -1,0 +1,4 @@
+exit: 1
+contains: FAIL: INDEX.md: frontmatter is not parseable (F1): line 2: not parseable as frontmatter: "owner the docs team"
+contains: FAIL: notes.md: the bundle root holds only
+not-contains: pins no fdf_version

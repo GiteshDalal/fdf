@@ -35,12 +35,12 @@ func TestNewPointsA0xBundleAtMigrate(t *testing.T) {
 	for _, docType := range []string{"Change", "Fix"} {
 		var out bytes.Buffer
 		if code := New(root, "refund-window", docType, []string{"features/payments/instant-refunds"}, &out); code != 1 ||
-			out.String() != "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0 bundles — run `fdf migrate` to upgrade it first\n" {
+			out.String() != "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n" {
 			t.Errorf("%s on a v0.7 bundle: exit %d\n%s", docType, code, out.String())
 		}
 	}
 	var out bytes.Buffer
-	if code := History(root, "features/payments/instant-refunds", &out); code != 1 || !strings.Contains(out.String(), "run `fdf migrate`") {
+	if code := History(root, "features/payments/instant-refunds", &out); code != 1 || !strings.Contains(out.String(), "`fdf migrate --dry-run` shows the plan") {
 		t.Errorf("history on a v0.7 bundle: exit %d\n%s", code, out.String())
 	}
 	if _, err := os.Stat(filepath.Join(root, "changes")); err == nil {

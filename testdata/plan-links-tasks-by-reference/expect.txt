@@ -1,0 +1,3 @@
+exit: 1
+contains: features/wdise/example.plan.md: `# Tasks` does not link 02-do-more.md (F6)
+not-contains: does not link 01-do-thing.md

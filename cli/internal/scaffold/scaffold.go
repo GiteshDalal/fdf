@@ -78,14 +78,16 @@ func SpecDoc(version string) ([]byte, error) {
 // bundle.stubSentinel so validation can distinguish filled from unfilled.
 const stubSentinel = "<!-- fdf:stub -->"
 
-// EnsureSpec writes the current version's spec to /SPEC.md when the bundle
-// has none (init). fdf migrate vendors the spec it pins with SpecDoc.
-func EnsureSpec(root string, out io.Writer) int {
+// EnsureSpec writes the spec of version, the one the bundle pins, to
+// /SPEC.md when the bundle has none (init): a bundle restores the spec its
+// pin names, not the current one, which a later minor would make newer.
+// fdf migrate vendors the spec it pins with SpecDoc.
+func EnsureSpec(root, version string, out io.Writer) int {
 	specPath := filepath.Join(root, "SPEC.md")
 	if _, err := os.Stat(specPath); err == nil {
 		return 0
 	}
-	doc, err := SpecDoc(currentVersion)
+	doc, err := SpecDoc(version)
 	if err != nil {
 		fmt.Fprintln(out, "error:", err)
 		return 1
@@ -94,7 +96,7 @@ func EnsureSpec(root string, out io.Writer) int {
 		fmt.Fprintln(out, "error:", err)
 		return 1
 	}
-	fmt.Fprintf(out, "wrote SPEC.md (FDF v%s spec copy)\n", currentVersion)
+	fmt.Fprintf(out, "wrote SPEC.md (FDF v%s spec copy)\n", version)
 	return 0
 }
 
@@ -357,8 +359,9 @@ func Init(root string, out io.Writer) int {
 			return 1
 		}
 		// Backfill what a bundle initialized before it existed, or since
-		// lost, is missing: the spec copy, Context stubs and indexes.
-		if code := EnsureSpec(root, out); code != 0 {
+		// lost, is missing: the spec copy of the version it pins, Context
+		// stubs and indexes.
+		if code := EnsureSpec(root, Pin(root), out); code != 0 {
 			return code
 		}
 		if code := writeContextStubs(root, out); code != 0 {
@@ -377,6 +380,21 @@ func Init(root string, out io.Writer) int {
 		fmt.Fprintln(out, "error:", fdfroot.InsideBundle(root, bundle))
 		return 1
 	}
+	// Nor is a directory that holds Markdown already, such as a bundle from
+	// before 1.0 that never had an INDEX.md: init would write its LOG.md over
+	// the one there, and pin 1.0 over the old layout. Such a bundle is fdf
+	// migrate's.
+	if file, route := fdfroot.Unindexed(root); file != "" {
+		fmt.Fprintf(out, "error: %s holds %s but no INDEX.md, and fdf init starts a bundle only where there is none — %s; move anything else out first\n", root, file, route)
+		return 1
+	}
+	// Nor is docs/fdf beside a docs/features whose INDEX.md pins nothing, as
+	// a bundle's from before 1.0 may: fdf migrate moves such a bundle here
+	// (fdfroot.Beside).
+	if old := fdfroot.Beside(root); old != "" {
+		fmt.Fprintf(out, "error: %s beside %s holds an INDEX.md that pins no version, as a bundle's from before 1.0 may, and fdf init starts no bundle where fdf migrate would move that one — %s; if that is no bundle, rename its INDEX.md, and run fdf init again\n", old, root, fdfroot.Upgrading("it", old))
+		return 1
+	}
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		fmt.Fprintln(out, "error:", err)
 		return 1
@@ -391,7 +409,7 @@ func Init(root string, out io.Writer) int {
 		fmt.Fprintln(out, "error:", err)
 		return 1
 	}
-	if code := EnsureSpec(root, out); code != 0 {
+	if code := EnsureSpec(root, currentVersion, out); code != 0 {
 		return code
 	}
 	if code := writeContextStubs(root, out); code != 0 {

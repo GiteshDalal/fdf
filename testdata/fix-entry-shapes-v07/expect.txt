@@ -1,3 +1,0 @@
-exit: 1
-contains: changes/hours-fix.md: `# Regression cases` entry "Venue owner sets opening hours — `go test ./... -run TestHours`" sits under no `## <feature-id>` heading (F10)
-contains: changes/hours-fix.md: `## venues/opening-hours` entry "Venue owner sets opening hours — `go test ./... -run TestHours`" is not `- <scenario> — <verification>` (F10)

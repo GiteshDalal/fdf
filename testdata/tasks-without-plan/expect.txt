@@ -1,0 +1,2 @@
+exit: 1
+contains: tasks exist under features/wdise/example/ but features/wdise/example.plan.md is missing (F6)

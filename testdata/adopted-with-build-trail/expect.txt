@@ -1,0 +1,5 @@
+exit: 1
+contains: features/venues/card-payments.md: status 'adopted' but features/venues/card-payments.spec.md exists
+contains: features/venues/card-payments.md: status 'adopted' but features/venues/card-payments.plan.md exists
+contains: features/venues/card-payments.md: status 'adopted' but task directory features/venues/card-payments/ exists
+contains: (F4)

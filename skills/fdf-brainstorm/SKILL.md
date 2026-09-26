@@ -8,7 +8,7 @@ description: Use when a feature idea has no Feature document yet, or a draft FDF
 Turn a feature idea into a validated FDF feature document and approved design.
 
 New to FDF? Run `fdf spec` for the format rules (also vendored in the bundle
-at `docs/features/SPEC.md`) and `fdf help` for the CLI. The fdf-help skill
+at `docs/fdf/SPEC.md`) and `fdf help` for the CLI. The fdf-help skill
 explains how the fdf skills fit together.
 
 **This skill is for capabilities that do not exist yet.** If the capability is
@@ -64,9 +64,16 @@ propose — designing in ignorance of one is not.
 
 1. **Locate the bundle**: `fdf validate` (respects `--root`/`FDF_ROOT_DIR`).
    If no bundle exists, ask before running `fdf init`.
-2. **Scaffold**: `fdf new <group>/<slug>` (lowercase). Read the generated file
-   (`<group>/<slug>.md`). A `draft` feature has no trail siblings (at most a
-   log) and no task directory yet.
+2. **Scaffold**: `fdf new [<group>/…]<slug>` (lowercase). It writes
+   `features/[<group>/…]<slug>.md`, and the feature's ID — below,
+   `<feature>` — is that path without `.md`: `fdf new payments/instant-refunds`
+   writes `features/payments/instant-refunds.md`, whose ID is
+   `features/payments/instant-refunds`. File a feature flat
+   (`fdf new onboarding`) while `features/` is small, or in the group the
+   product's areas or `ARCHITECTURE.md`'s map suggest; groups nest
+   (`fdf new platform/payouts/weekly-payouts`). Read the generated file. A
+   `draft` feature has no trail siblings (at most a log) and no task directory
+   yet.
 3. **Understand the feature** through questions, ONE at a time: who is the
    user, what capability, what value, what are the edge cases? Prefer
    multiple-choice questions. **Chase ambiguous words**: when the user says
@@ -98,18 +105,18 @@ propose — designing in ignorance of one is not.
    covered) gets its own bullet here — the gate covers your decisions too.
    Pause for approval after each section, and end with one explicit gate:
    "Do you approve this design?" The spec is not written until yes.
-6. **Write `<group>/<slug>.spec.md`** (`type: Spec`) with sections:
+6. **Write `<feature>.spec.md`** (`type: Spec`) with sections:
    `## What is being built`, `## Why`, `## Design decisions` (one bullet per
    resolved ambiguity), `## Alternatives rejected` (each with its reason).
    Path is a **stem sibling** of the feature file — not nested under
-   `<group>/<slug>/`. In the same edit, flip the feature's `status` to
+   `<feature>/`. In the same edit, flip the feature's `status` to
    `specified`: a `draft` may not carry a spec (F4), so the spec and the flip
    land together.
 7. **Surface document.** Ask one question: does this feature add or change
    anything a person or another system uses directly? That is a screen,
    dialog or flow; an endpoint, RPC or webhook; a command or flag; an event,
    message, email or notification; a file format or export. If yes, write
-   `<group>/<slug>.surface.md` (`type: Surface`) beside the spec, with one
+   `<feature>.surface.md` (`type: Surface`) beside the spec, with one
    `#` heading per interface:
    - an API: request and response shapes, status and error codes, following
      SURFACES.md's conventions;
@@ -132,7 +139,7 @@ propose — designing in ignorance of one is not.
 9. **Log and gate.** Set the feature's `timestamp` to now (in UTC, like every
    date and time in the bundle), then log the approval in the feature's own
    log:
-   `fdf log <group>/<slug> "**Specified**: design approved by <who>; <the approach in one line>."`
+   `fdf log <feature> "**Specified**: design approved by <who>; <the approach in one line>."`
    It creates the log on first use. Feature-scoped entries stay out of the
    root `LOG.md`, which is for bundle-wide events. **Gate**: `fdf validate`
    exit 0 — use fdf-validate if it fails.
@@ -147,9 +154,10 @@ Next: the feature is `specified` — fdf-plan is the next skill.
 - One feature per brainstorm. If the idea spans independent subsystems,
   decompose it into features first, then brainstorm one.
 - A feature that builds on a delivered one — adds to its page, endpoint or
-  table — names it in `depends-on` (feature IDs, must exist, acyclic). That is
-  lineage, not a substitute for a Change: when a scenario of the delivered
-  feature would stop being true, you are altering it, and that is a Change.
+  table — names it in `depends-on` (full feature IDs, `features/…`, that
+  exist, with no cycle). That is lineage, not a substitute for a Change:
+  when a scenario of the delivered feature would stop being true, you are
+  altering it, and that is a Change.
 - Write `slug.spec.md` (and `slug.surface.md`) as stem siblings —
-  never `slug/SPEC.md` or other nested trail paths (those are the v0.3
-  layout; the task directory holds only tasks).
+  never `slug/SPEC.md` or any other trail document inside the task
+  directory, which holds only tasks.

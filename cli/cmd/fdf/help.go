@@ -118,9 +118,12 @@ var helpTopics = []helpTopic{
 			"changes/, practices/, debts/ and bugs/. It never overwrites: on a bundle\n" +
 			"already at this version it only adds what is missing, and on an older\n" +
 			"one it points you to `fdf migrate`. A directory inside a bundle, one of\n" +
-			"its registers or groups, is refused. Fill the Context stubs with the\n" +
-			"fdf-init skill before feature work: once a feature exists, F9 fails while\n" +
-			"any of them is still a stub.",
+			"its registers or groups, is refused, and so is one that holds Markdown\n" +
+			"but no INDEX.md, such as a bundle from before 1.0 that never had one,\n" +
+			"which is `fdf migrate`'s, and docs/fdf beside a docs/features whose\n" +
+			"INDEX.md pins no version, where migrate would move that bundle. Fill the\n" +
+			"Context stubs with the fdf-init skill before feature work: once a\n" +
+			"feature exists, F9 fails while any of them is still a stub.",
 		flags:    []flagDoc{rootFlagDoc},
 		examples: []string{"fdf init", "fdf init --root wiki/fdf"},
 	},
@@ -137,22 +140,25 @@ var helpTopics = []helpTopic{
 			"as it is, with a note. Installs into your home directory by default;\n" +
 			"--project installs into the current git project (nearest .git) so the\n" +
 			"setup is committed with the code. Re-run it after `fdf migrate` so the\n" +
-			"skills teach the new layout.",
+			"skills teach the new layout: a primer an earlier fdf wrote, untouched, is\n" +
+			"replaced, whether it named the root this install names, the root the\n" +
+			"skills' .fdf-version records, or docs/features, where every bundle was\n" +
+			"before 1.0.",
 		flags: []flagDoc{
 			{"--project", "install into the current git project instead of your home directory"},
-			{"--root <dir>", "bundle root the skills name (default docs/features, or FDF_ROOT_DIR)"},
+			{"--root <dir>", "bundle root the skills name (default docs/fdf, or FDF_ROOT_DIR)"},
 		},
 		examples: []string{
 			"fdf install claude-code",
 			"fdf install --project claude-code",
-			"fdf install --project --root docs/features codex",
+			"fdf install --project --root wiki/fdf codex",
 		},
 	},
 	{
 		name:    "migrate",
 		group:   "Set up",
 		summary: "Upgrade a 0.x bundle to spec 1.0 in one run",
-		usage:   "fdf migrate [--root <dir>] [--dry-run] [--to <dir>]",
+		usage:   "fdf migrate [--root <dir>] [--dry-run] [--to <dir>] [--skip <glob>]",
 		body: "Upgrade a bundle at any 0.x pin to spec 1.0, then validate it. It works\n" +
 			"out the whole migration and prints it before it writes anything; with\n" +
 			"--dry-run it stops there. Older layouts are made 0.7-shaped first (v0.1's\n" +
@@ -168,8 +174,14 @@ var helpTopics = []helpTopic{
 			"git-tracked text files: each Markdown link into the bundle, and each\n" +
 			"mention of its path. Each mention of the old path it leaves for a person\n" +
 			"to decide on — inside a URL, after a longer path, or in a link that leads\n" +
-			"elsewhere — is listed; those in logs, which keep their words, are counted,\n" +
-			"and so are those in what `fdf install` manages, which is left to it.\n" +
+			"elsewhere — is listed, and so is a symbolic link the move breaks that\n" +
+			"migrate cannot name again: an absolute one, or one outside the bundle.\n" +
+			"Those in logs, which keep their words, are counted, and so are those in\n" +
+			"what `fdf install` manages, which is left to it.\n" +
+			"--skip leaves the files a glob names outside the bundle as they are, such\n" +
+			"as applied SQL migrations whose checksums a tool verifies, and lists each\n" +
+			"mention of the old path in them; a glob reads from the project root, as\n" +
+			"git reads one: * within a directory, ** across them.\n" +
 			"Migrate starts only from a clean tree, in the repository that tracks the\n" +
 			"bundle, refuses to put a file where git would ignore it, and marks the\n" +
 			"files it writes with `git add -N`, so that `git diff -M` shows each move.\n" +
@@ -179,19 +191,20 @@ var helpTopics = []helpTopic{
 			"refuses what 1.0 has no place for, and what migrate cannot move safely — a\n" +
 			"stray Markdown file at the root, a document named index.md or log.md, a\n" +
 			"practice, debt or bug beside a directory of Markdown, a register that is a\n" +
-			"symbolic link, a v0.1 rename onto a file that is there — and leaves the\n" +
-			"bundle untouched, so a refused run is safe to retry after fixing what it\n" +
-			"names. A bundle already at 1.0 moves nothing: its spec copy, indexes and\n" +
-			"Context stubs are restored, never through a symbolic link. An unfilled\n" +
-			"Context stub is only a warning here; once the bundle has a feature, a\n" +
-			"plain `fdf validate` fails F9 until it is filled. Re-run `fdf install`\n" +
-			"afterwards.",
+			"symbolic link or whose place a file takes, a v0.1 rename onto a file that\n" +
+			"is there — and leaves the bundle untouched, so a refused run is safe to\n" +
+			"retry after fixing what it names. A bundle already at 1.0 moves nothing:\n" +
+			"its spec copy, indexes and Context stubs are restored, never through a\n" +
+			"symbolic link. An unfilled Context stub is only a warning here; once the\n" +
+			"bundle has a feature, a plain `fdf validate` fails F9 until it is filled.\n" +
+			"Re-run `fdf install` afterwards.",
 		flags: []flagDoc{
 			{"--dry-run", "print the plan, and change nothing"},
 			{"--to <dir>", "where the bundle goes (default docs/fdf beside a docs/features bundle, otherwise where it is)"},
+			{"--skip <glob>", "leave the files the glob names outside the bundle as they are, listing what they say of it; repeatable"},
 			rootFlagDoc,
 		},
-		examples: []string{"fdf migrate --dry-run", "fdf migrate", "fdf migrate --root docs/features --to docs/fdf"},
+		examples: []string{"fdf migrate --dry-run", "fdf migrate", "fdf migrate --root docs/features --to docs/fdf", "fdf migrate --skip 'db/migrations/**'"},
 	},
 	{
 		name:    "new",
@@ -401,6 +414,8 @@ var helpTopics = []helpTopic{
 		summary: "Check the bundle against its pinned spec (F1-F14, R1)",
 		usage:   "fdf validate [--root <dir>] [--repo-root <dir>] [--strict-domain]",
 		body: "Check the bundle against the spec version pinned in its root INDEX.md.\n" +
+			"A bundle that pins none, or one this fdf does not validate, fails F1 and\n" +
+			"is checked no further: `fdf migrate` upgrades a bundle from before 1.0.\n" +
 			"Every error names its rule: F1-F14 for the format, R1 for paths that must\n" +
 			"exist in the project. Warnings never fail the run: soft checks, and F12's\n" +
 			"banned words unless strict domain mode is on (`strict: true` in DOMAIN.md,\n" +

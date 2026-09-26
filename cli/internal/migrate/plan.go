@@ -62,8 +62,9 @@ type plan struct {
 
 	// symlinks are the bundle's symbolic links that name their target by a
 	// relative path, by path -> that target; relinks are those a move would
-	// break, by path once migrated -> the target they name then.
-	symlinks, relinks map[string]string
+	// break, by path once migrated -> the target they name then. absLinks
+	// are those that name it by an absolute path, which no move changes.
+	symlinks, relinks, absLinks map[string]string
 
 	// The older layouts' steps, which make a 0.x bundle 0.7-shaped.
 	moves   map[string]string // 0.1's case renames and 0.3's trail lift, by path before -> after
@@ -101,6 +102,19 @@ type plan struct {
 	outLinks, outLinkFiles, outMentions, outMentionFiles int
 	managed                                              int // mentions and links in what fdf install manages
 	left                                                 []left
+
+	// skip holds --skip's globs, and skipped the files outside the bundle
+	// they name, by path from the project root: the outside pass leaves
+	// them as they are, and lists what they say of the bundle.
+	skip    []string
+	skipped map[string]bool
+
+	// made are the directories migrate makes that were not there, which an
+	// undo removes whole: in the bundle, by path once migrated, features/
+	// or each group's place in it, and each register it writes an index
+	// into; and parents, the directories above the destination that
+	// relocate makes, absolute, the deepest first.
+	made, parents []string
 }
 
 // rootWrites are the files at the bundle root that migrate writes whatever
@@ -109,9 +123,10 @@ var rootWrites = map[string]bool{"INDEX.md": true, "LOG.md": true, "SPEC.md": tr
 
 // newPlan reads the bundle at root, pinned to pin, and works out its
 // migration to target, the bundle ending at dest, in the project at project
-// ("" outside a git repository). problems are the reasons it cannot be
+// ("" outside a git repository), leaving the files outside the bundle that
+// skip's globs name as they are. problems are the reasons it cannot be
 // migrated, found before anything is written.
-func newPlan(root, pin, project, dest string) (p *plan, problems []string, err error) {
+func newPlan(root, pin, project, dest string, skip []string) (p *plan, problems []string, err error) {
 	// A bundle that is a symbolic link is not where the link is, and the
 	// plan reads the files where they are: migrate works on the directory
 	// the link names.
@@ -121,8 +136,9 @@ func newPlan(root, pin, project, dest string) (p *plan, problems []string, err e
 	p = &plan{root: root, from: pin, project: project, texts0: map[string]string{}, moves: map[string]string{},
 		aliases: map[string]string{}, stubs: map[string]int{}, isGroup: map[string]bool{},
 		ids: map[string]string{}, texts: map[string]string{}, why: map[string][]string{},
-		symlinks: map[string]string{}, relinks: map[string]string{},
-		outTexts: map[string]string{}, outWhy: map[string][]string{}}
+		symlinks: map[string]string{}, relinks: map[string]string{}, absLinks: map[string]string{},
+		outTexts: map[string]string{}, outWhy: map[string][]string{},
+		skip: skip, skipped: map[string]bool{}}
 	p.base = project
 	if project == "" || project == root {
 		p.base = filepath.Dir(root)
@@ -146,16 +162,20 @@ func newPlan(root, pin, project, dest string) (p *plan, problems []string, err e
 		rel := relSlash(root, q)
 		p.files = append(p.files, rel)
 		// A symlink moves as the link it is: migrate never writes through
-		// it into the file it names, and names again a relative target
-		// that the move would change (relink). It writes the root's
-		// INDEX.md, LOG.md and SPEC.md whatever they hold, so one of them
-		// that is a link is refused.
+		// it into the file it names, names again a relative target that the
+		// move would change, and lists an absolute one it breaks (relink).
+		// It writes the root's INDEX.md, LOG.md and SPEC.md whatever they
+		// hold, so one of them that is a link is refused.
 		if d.Type()&os.ModeSymlink != 0 {
 			to, _ := os.Readlink(q)
 			if rootWrites[rel] {
 				linked = append(linked, linkedFile(rel, to))
 			}
-			if to != "" && !filepath.IsAbs(to) {
+			switch {
+			case to == "":
+			case filepath.IsAbs(to):
+				p.absLinks[rel] = to
+			default:
 				p.symlinks[rel] = filepath.ToSlash(to)
 			}
 		}
@@ -183,8 +203,13 @@ func newPlan(root, pin, project, dest string) (p *plan, problems []string, err e
 	v, _ := specver.Parse(pin)
 	stem := v.AtLeast(specver.Version{Minor: 4})
 	if !stem {
-		// Refuse content the v0.4 layout cannot hold.
+		// Refuse content the v0.4 layout cannot hold. A bundle that pins
+		// nothing but is in the stem layout was written for 0.4 or later,
+		// and needs its pin, not its trail renamed.
 		if problems := preflightV4(root); len(problems) > 0 {
+			if trail := stemTrail(root); pin == "" && trail != "" {
+				return nil, []string{fmt.Sprintf("INDEX.md: pins no fdf_version, so migrate reads the bundle as 0.1 to 0.3, whose layout has no trail file such as %s — pin the version it was written for, one of 0.4 to 0.7, in INDEX.md, and run migrate again", trail)}, nil
+			}
 			return nil, problems, nil
 		}
 		if err := p.caseRenames(); err != nil {
@@ -206,17 +231,59 @@ func newPlan(root, pin, project, dest string) (p *plan, problems []string, err e
 	if err := p.indexes(); err != nil {
 		return nil, nil, err
 	}
-	// A bundle that is its own repository has no outside.
-	if project != "" && project != root {
+	// A bundle that is its own repository has no outside, nor one outside a
+	// git repository, which is not searched: --skip names nothing there.
+	switch {
+	case project != "" && project != root:
+		if problems, err := p.skips(); err != nil || len(problems) > 0 {
+			return nil, problems, err
+		}
 		if err := p.outside(); err != nil {
 			return nil, nil, err
 		}
+	case len(skip) > 0 && project == "":
+		return nil, []string{"--skip: the bundle is not in a git repository, so migrate reads no file outside it — run it without --skip"}, nil
+	case len(skip) > 0:
+		return nil, []string{"--skip: the bundle is its own git repository, so it has no outside — run it without --skip"}, nil
 	}
 	// Git must see every file where migrate puts it (relocate.go).
 	if problems, err := p.ignored(); err != nil || len(problems) > 0 {
 		return nil, problems, err
 	}
+	p.findMade(dest)
 	return p, nil, nil
+}
+
+// findMade finds the directories migrate makes that are not there now,
+// which an undo removes whole once git has put the rest back, with any
+// hidden file a person's tools have left in them since, such as a Finder
+// .DS_Store: one left in a group's place in features/ would stop the next
+// run, which finds that place taken. In the bundle they are features/, or
+// each group's place in it when features/ is there already, and each
+// register migrate writes an index into; above the destination, the
+// directories relocate makes to hold it.
+func (p *plan) findMade(dest string) {
+	if _, err := os.Lstat(filepath.Join(p.root, "features")); err != nil {
+		p.made = append(p.made, "features")
+	} else {
+		for _, g := range p.groups {
+			p.made = append(p.made, "features/"+g)
+		}
+	}
+	for _, reg := range layout.Registers {
+		if _, err := os.Lstat(filepath.Join(p.root, reg)); err != nil && reg != "features" && p.exists(reg+"/INDEX.md") {
+			p.made = append(p.made, reg)
+		}
+	}
+	if !p.relocates() {
+		return
+	}
+	for d := filepath.Dir(dest); filepath.Dir(d) != d; d = filepath.Dir(d) {
+		if _, err := os.Lstat(d); err == nil {
+			break
+		}
+		p.parents = append(p.parents, d)
+	}
 }
 
 // refusals are what 1.0 has no place for, and migrate cannot move for the
@@ -284,8 +351,10 @@ func (p *plan) refusals() []string {
 			return nil
 		})
 	}
-	if fi, err := os.Lstat(filepath.Join(p.root, "features")); err == nil && !fi.IsDir() && fi.Mode()&os.ModeSymlink == 0 {
-		out = append(out, "features: not a directory, where the features/ register goes — move it out of the bundle root")
+	for _, reg := range layout.Registers {
+		if problem := registerFile(p.root, reg); problem != "" && reg != "releases" {
+			out = append(out, problem)
+		}
 	}
 	if !p.isGroup["features"] {
 		for _, g := range p.groups {
@@ -296,6 +365,17 @@ func (p *plan) refusals() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// registerFile says why the place of the register reg, at the bundle root
+// at root, is taken, or "" when it is not: a file is there, where migrate
+// would write the register's index. One that is a symbolic link is
+// linkedRegister's to name.
+func registerFile(root, reg string) string {
+	if fi, err := os.Lstat(filepath.Join(root, reg)); err == nil && !fi.IsDir() && fi.Mode()&os.ModeSymlink == 0 {
+		return fmt.Sprintf("%s: not a directory, where the %s/ register goes — move it out of the bundle root", reg, reg)
+	}
+	return ""
 }
 
 // linkedFile and linkedRegister say why migrate refuses a symbolic link it
@@ -539,7 +619,9 @@ func (p *plan) move() links.Move {
 
 // relink plans the symbolic links a move would break: a link that names its
 // target by a relative path names it again, from where the link is once
-// migrated, at the place that target is once migrated.
+// migrated, at the place that target is once migrated. One that names it by
+// an absolute path cannot follow it, and is listed with what is left
+// behind.
 func (p *plan) relink() {
 	mv := p.move()
 	for _, f := range sortedKeys(p.symlinks) {
@@ -550,6 +632,48 @@ func (p *plan) relink() {
 			p.relinks[p.to(f)] = nt
 		}
 	}
+	for _, f := range sortedKeys(p.absLinks) {
+		if !p.breaks(p.absLinks[f], mv) {
+			continue
+		}
+		// A link is listed from the project root, which is the bundle's own
+		// when the bundle is its repository.
+		where := path.Join(p.new, p.to(f))
+		if p.project == p.root {
+			where = p.to(f)
+		}
+		p.left = append(p.left, left{where, 0, p.absLinks[f], brokenLink})
+	}
+}
+
+// breaks reports whether the move changes where the file at the absolute
+// path target is, so that a symbolic link naming it no longer finds it. The
+// path is read from base as written, then as the disk resolves base, the
+// target's directory, or both, since a link and the root migrate is given
+// may each spell a path through a symbolic link (/var and /private/var on
+// macOS). The target's directory is there before the move, even when the
+// target is not.
+func (p *plan) breaks(target string, mv links.Move) bool {
+	target = filepath.Clean(target)
+	bases, targets := []string{p.base}, []string{target}
+	if real, err := filepath.EvalSymlinks(p.base); err == nil && real != p.base {
+		bases = append(bases, real)
+	}
+	if dir, err := filepath.EvalSymlinks(filepath.Dir(target)); err == nil {
+		if real := filepath.Join(dir, filepath.Base(target)); real != target {
+			targets = append(targets, real)
+		}
+	}
+	for _, t := range targets {
+		for _, b := range bases {
+			if r, err := filepath.Rel(b, t); err == nil && filepath.IsLocal(r) {
+				rel := filepath.ToSlash(r)
+				n, moved := mv.New(rel)
+				return moved && n != rel
+			}
+		}
+	}
+	return false
 }
 
 // isLog reports whether rel is a log, whose words record what things were
@@ -648,7 +772,7 @@ func (p *plan) repair() {
 		if isLog(shaped) {
 			p.logIDs += len(refactor.IDMentions(text, p.ids, "", skip, true))
 		} else {
-			for k := range fieldPaths(text) {
+			for k := range refactor.FieldPaths(text) {
 				skip[k] = true
 			}
 			if ids := refactor.IDMentions(text, p.ids, "", skip, true); len(ids) > 0 {
@@ -833,38 +957,6 @@ func linkTargets(text string) map[int]bool {
 	return out
 }
 
-// fieldPaths marks the bytes of the resource and applies-to values in text's
-// frontmatter, inline or as a list: paths in the project, which name code,
-// never a feature.
-func fieldPaths(text string) map[int]bool {
-	out := map[int]bool{}
-	if !strings.HasPrefix(text, "---") {
-		return out
-	}
-	in, pos := false, 0
-	for i, line := range strings.SplitAfter(text, "\n") {
-		start := pos
-		pos += len(line)
-		t := strings.TrimSpace(line)
-		switch {
-		case i > 0 && t == "---":
-			return out
-		case strings.HasPrefix(line, "resource:") || strings.HasPrefix(line, "applies-to:"):
-			in = true
-		case in && strings.HasPrefix(t, "-"):
-			// an item of the field's list
-		default:
-			in = false
-		}
-		if in {
-			for k := start; k < pos; k++ {
-				out[k] = true
-			}
-		}
-	}
-	return out
-}
-
 // replace applies non-overlapping replacements to text, in any order; of two
 // that overlap, the earlier one wins.
 func replace(text string, reps []refactor.Replacement) string {
@@ -900,41 +992,47 @@ func withLogFrontmatter(text, to string) string {
 }
 
 // stripStatusTags removes the status tag older tools put after an index
-// listing (` (**draft**)`), outside code, and says how many it removed.
-// Nothing kept it current, so it went stale as soon as the document moved on;
-// a status lives only in its document.
+// listing (` (**draft**)`), outside code blocks, which it reads as the link
+// engine does (links.Blocks), and says how many it removed. Nothing kept it
+// current, so it went stale as soon as the document moved on; a status
+// lives only in its document.
 func stripStatusTags(text string) (string, int) {
-	lines := strings.Split(text, "\n")
-	fence, removed := "", 0
-	for i, line := range lines {
-		t := strings.TrimSpace(line)
-		if fence != "" {
-			if strings.HasPrefix(t, fence) {
-				fence = ""
+	blocks := links.Blocks(text)
+	inBlock := func(at int) bool {
+		for _, b := range blocks {
+			if b.Start <= at && at < b.End {
+				return true
 			}
-			continue
 		}
-		if strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~") {
-			fence = t[:3]
-			continue
-		}
-		if m := statusTagRe.FindStringSubmatch(line); m != nil {
-			lines[i] = m[1] + m[2]
+		return false
+	}
+	var b strings.Builder
+	removed, pos := 0, 0
+	for _, line := range strings.SplitAfter(text, "\n") {
+		at := pos
+		pos += len(line)
+		body, nl := strings.CutSuffix(line, "\n")
+		if m := statusTagRe.FindStringSubmatch(body); m != nil && !inBlock(at) {
+			line = m[1] + m[2]
+			if nl {
+				line += "\n"
+			}
 			removed++
 		}
+		b.WriteString(line)
 	}
-	return strings.Join(lines, "\n"), removed
+	return b.String(), removed
 }
 
-// withPin returns the root INDEX.md's text pinned to version: its
-// fdf_version line rewritten, or the pin added to the frontmatter the text
-// has, or to a frontmatter block of its own. A line keeps its ending, and a
-// line added ends as the text's lines do.
+// withPin returns the root INDEX.md's text pinned to version: the
+// fdf_version line of its frontmatter rewritten, where fdfroot.Pin reads the
+// pin, between `---` lines read as Pin reads them, spaces around them and
+// all, or the pin added to the frontmatter the text has, or to a frontmatter
+// block of its own. A line keeps its ending, and a line added ends as the
+// text's lines do. An fdf_version line anywhere else, such as in a sample in
+// the body, is no pin, and keeps its words.
 func withPin(text, version string) string {
 	line := fmt.Sprintf(`fdf_version: "%s"`, version)
-	if pinLineRe.MatchString(text) {
-		return pinLineRe.ReplaceAllString(text, line)
-	}
 	eol := "\n"
 	if strings.Contains(text, "\r\n") {
 		eol = "\r\n"
@@ -944,11 +1042,18 @@ func withPin(text, version string) string {
 		bom, text = text[:3], text[3:]
 	}
 	lines := strings.SplitAfter(text, "\n")
-	if strings.TrimRight(lines[0], "\r\n") == "---" {
-		for _, l := range lines[1:] {
-			if strings.TrimRight(l, "\r\n") == "---" {
-				return bom + lines[0] + line + eol + strings.Join(lines[1:], "")
+	if strings.TrimSpace(lines[0]) == "---" {
+		for i, l := range lines[1:] {
+			if strings.TrimSpace(l) != "---" {
+				continue
 			}
+			for j := 1; j <= i; j++ {
+				if pinKeyRe.MatchString(lines[j]) {
+					lines[j] = line + lines[j][len(strings.TrimRight(lines[j], "\r\n")):]
+					return bom + strings.Join(lines, "")
+				}
+			}
+			return bom + lines[0] + line + eol + strings.Join(lines[1:], "")
 		}
 	}
 	return bom + "---" + eol + line + eol + "---" + eol + eol + text

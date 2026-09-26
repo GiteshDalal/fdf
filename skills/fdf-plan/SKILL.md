@@ -8,7 +8,7 @@ description: Use when an FDF feature is specified (slug.spec.md approved) and ha
 Turn an approved `slug.spec.md` into an executable plan with provable acceptance.
 
 New to FDF? The format is defined in the bundle itself at
-`docs/features/SPEC.md` — exact frontmatter fields, casing and position
+`docs/fdf/SPEC.md` — exact frontmatter fields, casing and position
 rules, and the F/R validation rules this skill cites. The fdf-help skill
 explains how the fdf skills fit together. Run `fdf spec` for the format rules
 and `fdf help` for the CLI.
@@ -54,8 +54,10 @@ task. Stop and tell the user: that feature changes only through a Change
 
 ## Process
 
-1. Read the feature doc and `<group>/<slug>.spec.md` (and
-   `<group>/<slug>.surface.md` if present); run `fdf validate`.
+1. Read the feature doc and `<feature>.spec.md` (and `<feature>.surface.md`
+   if present) — `<feature>` is the feature's ID, its path from the bundle
+   root without `.md`, such as `features/payments/instant-refunds`; run
+   `fdf validate`.
    **Survey the project before writing anything**: find the real
    directories, existing patterns, test harness, and commands. `resource:`
    paths must exist (R1); invented paths are confidently wrong. Match
@@ -74,14 +76,14 @@ task. Stop and tell the user: that feature changes only through a Change
 4. **Knowingly out of scope → file a debt, don't bury it.** If the plan
    deliberately leaves something undone — a migration the feature does not
    need yet, a call site left on the old mechanism — `fdf debt
-   [<group>/]<slug>` records it with the paths that carry it. A deferral
+   [<group>/…]<slug>` records it with the paths that carry it. A deferral
    written into a task's `# Steps` as a TODO is invisible the moment that task
    is `done`.
 5. **Uncovered requirement → new scenario.** If the spec demands behavior no
    scenario names (a limit, an error path), add the Scenario to the feature
    document first — F8 only proves what scenarios name.
 6. **Decompose** into tasks under the task directory only:
-   `<group>/<slug>/01-slug.md`, `02-slug.md`, … (`type: Task`,
+   `<feature>/01-slug.md`, `02-slug.md`, … (`type: Task`,
    `status: pending`). Each task:
    - `# Objective` — one sentence.
    - `# Steps` — executable without guessing: exact files, function
@@ -118,7 +120,7 @@ task. Stop and tell the user: that feature changes only through a Change
      (`depends-on: [01-count-core, 02-cli]`). A comma-joined string
      (`depends-on: 01-count-core, 02-cli`) is one bogus ID and fails F6.
      This graph drives parallel execution in fdf-execute.
-7. **Write `<group>/<slug>.test.md`** (`type: Test`): a `# Test Cases`
+7. **Write `<feature>.test.md`** (`type: Test`): a `# Test Cases`
    section with one case per scenario. Each case is a `## <scenario name>`
    heading, the name exactly as the Gherkin spells it (F8 matches it exactly,
    so a bullet or a table row naming the scenario does not count), followed by
@@ -135,14 +137,14 @@ task. Stop and tell the user: that feature changes only through a Change
    word `DOMAIN.md` bans; the lexicon stops at the surface.
 8. **The final task always satisfies `slug.test.md`** — writing/running what
    it names. Every plan ends with it; it depends-on every other task.
-9. **Write `<group>/<slug>.plan.md`** (`type: Plan`): `# Tasks` — ordered
+9. **Write `<feature>.plan.md`** (`type: Plan`): `# Tasks` — ordered
    list linking every task file with **relative paths from the plan** (e.g.
    `instant-refunds/01-refund-api.md` → `slug/01-….md`). Plan order is the
    readable order; depends-on is execution truth.
 10. Flip feature status to `planned`, set its `timestamp` to now (in UTC,
     like every date and time in the bundle), and log it in the feature's own
     log, not the root `LOG.md`:
-    `fdf log <group>/<slug> "**Planned**: <n> tasks; <what planning decided>."`
+    `fdf log <feature> "**Planned**: <n> tasks; <what planning decided>."`
     Then `fdf validate` exit 0 —
     fdf-validate on failure (F8 enforces `slug.test.md` scenario coverage).
     Validate here, not between steps 6 and 9: tasks, test document and plan
@@ -159,8 +161,8 @@ in Claude Code) or start a fresh session, and give them a prompt to resume
 with:
 
 ```text
-Use the fdf-execute skill on <group>/<slug> (status: planned).
-Plan: docs/features/<group>/<slug>.plan.md (<N> tasks). Batches from depends-on:
+Use the fdf-execute skill on <feature> (status: planned).
+Plan: docs/fdf/<feature>.plan.md (<N> tasks). Batches from depends-on:
   1. 01-…, 02-…   2. 03-…   3. 04-… (satisfies <slug>.test.md)
 Suggested models: 01, 02 mechanical → fast (e.g. Sonnet-class);
   03, 04 need judgment → most capable (e.g. Opus-class).

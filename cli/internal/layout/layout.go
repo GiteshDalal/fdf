@@ -223,13 +223,19 @@ func (b *Bundle) Dir(rel string) Position {
 			case !ownsTasks[reg]:
 				return stray(sub+"/", fmt.Sprintf("shares its name with the %s %s.md, and a %s owns no directory — rename one of them", nouns[reg], sub, nouns[reg]))
 			case i < len(parts)-1:
-				return stray(sub+"/"+parts[i+1]+"/", taskDirProblem+", and no directory")
+				return stray(sub+"/"+parts[i+1]+"/", taskDirProblem+", and no directory"+ownedBy(sub))
 			}
 			return Position{Kind: TaskDir, Register: reg, ID: sub}
 		}
 		dir = sub
 	}
 	return Position{Kind: Group, Register: reg, ID: dir}
+}
+
+// ownedBy names the document whose task directory is at id: a directory
+// meant for a group, beside a document of its name, is that document's.
+func ownedBy(id string) string {
+	return fmt.Sprintf(" — %s/ is the task directory of %s.md", id, id)
 }
 
 // File returns the position of the Markdown file at rel, a slash-separated
@@ -247,7 +253,7 @@ func (b *Bundle) File(rel string) Position {
 		if taskRe.MatchString(name) {
 			return Position{Kind: Task, Register: d.Register, ID: d.ID}
 		}
-		return stray(rel, taskDirProblem)
+		return stray(rel, taskDirProblem+ownedBy(d.ID))
 	}
 	switch {
 	case name == "INDEX.md":
@@ -281,7 +287,17 @@ func (b *Bundle) File(rel string) Position {
 // bug owns no directory. And each directory on its way that is there is
 // spelled as the ID spells it: on a disk that ignores case, one spelled
 // otherwise is where the document would land, under a name F3 rejects.
-func (b *Bundle) Place(id string) string {
+func (b *Bundle) Place(id string) string { return b.place(id, false) }
+
+// PlaceGroup says why a group cannot be made at id, as Place says it for a
+// document, or "" when it can. A group may take a name no document may,
+// index or log: a disk that ignores case reads index.md as INDEX.md, but no
+// directory as either. A document of its name beside it would make it that
+// document's task directory, or, beside a practice, debt or bug, an error.
+func (b *Bundle) PlaceGroup(id string) string { return b.place(id, true) }
+
+// place is Place, or PlaceGroup when group is set.
+func (b *Bundle) place(id string, group bool) string {
 	parts := strings.Split(id, "/")
 	reg := parts[0]
 	if !IsRegister(reg) || reg == "releases" || len(parts) < 2 {
@@ -293,7 +309,7 @@ func (b *Bundle) Place(id string) string {
 		}
 	}
 	dir, name := path.Dir(id), path.Base(id)
-	if twin := caseTwins[name+".md"]; twin != "" {
+	if twin := caseTwins[name+".md"]; twin != "" && !group {
 		return fmt.Sprintf("%s is not a slug: a disk that ignores case reads %s.md as the %s beside it (F3); choose another name", name, name, twin)
 	}
 	for i := 0; i < len(parts)-1; i++ {
@@ -311,6 +327,10 @@ func (b *Bundle) Place(id string) string {
 		}
 	}
 	switch {
+	case b.has(dir, name+".md") && group && ownsTasks[reg]:
+		return fmt.Sprintf("%s.md is there, and %s/ beside it would be its task directory (F3); choose another name", id, id)
+	case b.has(dir, name+".md") && group:
+		return fmt.Sprintf("%s.md is there, and a %s owns no directory (F3); choose another name", id, nouns[reg])
 	case b.has(dir, name+".md"):
 		return id + ".md already exists"
 	case !b.has(dir, name) || !b.HoldsMarkdown(id):

@@ -1,0 +1,2 @@
+exit: 0
+contains: warn: features/venues/opening-hours.md: uses banned "store" ×2 → "Venue" (F12)

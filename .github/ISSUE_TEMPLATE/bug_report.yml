@@ -7,7 +7,7 @@ body:
     attributes:
       label: fdf version
       description: Output of `fdf version`
-      placeholder: fdf 0.2.2
+      placeholder: fdf 1.0.0
     validations:
       required: true
   - type: input
@@ -30,13 +30,13 @@ body:
       label: How to reproduce
       description: >-
         Commands you ran, plus the smallest bundle layout that triggers it
-        (a `tree docs/features/` snippet and the relevant file contents).
+        (a `tree docs/fdf/` snippet and the relevant file contents).
       placeholder: |
         fdf validate
         ---
-        docs/features/
+        docs/fdf/
         ├── INDEX.md
-        └── payments/instant-refunds.md
+        └── features/payments/instant-refunds.md
     validations:
       required: true
   - type: textarea

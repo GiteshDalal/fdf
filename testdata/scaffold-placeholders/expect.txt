@@ -1,0 +1,5 @@
+exit: 1
+contains: warn: features/venues/hours.md: still holds a scaffold's placeholder text
+contains: warn: features/venues/INDEX.md: still holds a scaffold's placeholder text
+not-contains: warn: features/venues/done.md: still holds
+contains: status 'adopted' requires `resource`

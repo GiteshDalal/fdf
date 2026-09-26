@@ -69,6 +69,111 @@ func Find(text string) []Link {
 	return out
 }
 
+// Rendered returns every link a reader of text follows, in order: each
+// inline link and image, at its target, and each reference — [text][label],
+// [label][] or [label] — whose label a definition in text names, at the
+// reference, with that definition's target. A definition renders nothing,
+// and a link in code is a sample, so neither is among them. A label matches
+// as CommonMark matches one, whatever its case and runs of white space, and
+// the first definition of a label wins. A reference's Start and End are the
+// reference's own bytes, which do not spell its target: Rendered is for
+// reading where a text links, Find for repairing what it spells.
+func Rendered(text string) []Link {
+	defs := map[string]string{}
+	var out []Link
+	for _, l := range Find(text) {
+		switch {
+		case l.InCode:
+		case l.Def:
+			if label := defLabel(text, l.Start); label != "" {
+				if _, seen := defs[label]; !seen {
+					defs[label] = l.Target
+				}
+			}
+		default:
+			out = append(out, l)
+		}
+	}
+	if len(defs) == 0 {
+		return out
+	}
+	code := Code(text)
+	for i := 0; i < len(text); i++ {
+		if text[i] != '[' || escaped(text, i) || inRanges(code, i) {
+			continue
+		}
+		label, end, ok := reference(text, i)
+		if !ok {
+			continue
+		}
+		if target, defined := defs[label]; defined {
+			out = append(out, Link{Start: i, End: end, Target: target})
+		}
+		i = end - 1
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Start < out[j].Start })
+	return out
+}
+
+// defLabelRe is the label of a reference definition, on the line before its
+// target.
+var defLabelRe = regexp.MustCompile(`^[ \t]*\[([^\]\n]+)\]:[ \t]*<?$`)
+
+// defLabel is the normalized label of the definition whose target starts at
+// text[at].
+func defLabel(text string, at int) string {
+	line := text[strings.LastIndex(text[:at], "\n")+1 : at]
+	if m := defLabelRe.FindStringSubmatch(line); m != nil {
+		return normalLabel(m[1])
+	}
+	return ""
+}
+
+// normalLabel is a label as CommonMark matches one: case folded, and each
+// run of white space one space.
+func normalLabel(label string) string {
+	return strings.ToLower(strings.Join(strings.Fields(label), " "))
+}
+
+// reference reads the reference that starts with the [ at text[i]: the
+// label it names and where it ends, or ok false when it is no reference —
+// an inline link's text, a definition, a footnote, or brackets that do not
+// close on their line.
+func reference(text string, i int) (label string, end int, ok bool) {
+	closing := func(from int) int {
+		for j := from; j < len(text) && text[j] != '\n'; j++ {
+			if text[j] == '[' && !escaped(text, j) {
+				return -1
+			}
+			if text[j] == ']' && !escaped(text, j) {
+				return j
+			}
+		}
+		return -1
+	}
+	j := closing(i + 1)
+	if j < 0 || j == i+1 || text[i+1] == '^' {
+		return "", 0, false
+	}
+	first := text[i+1 : j]
+	switch {
+	case j+1 < len(text) && text[j+1] == '(':
+		return "", 0, false
+	case j+1 < len(text) && text[j+1] == ':' && strings.TrimLeft(text[strings.LastIndex(text[:i], "\n")+1:i], " \t") == "":
+		return "", 0, false
+	case j+1 < len(text) && text[j+1] == '[':
+		k := closing(j + 2)
+		if k < 0 {
+			return "", 0, false
+		}
+		if k == j+2 {
+			return normalLabel(first), k + 1, true
+		}
+		return normalLabel(text[j+2 : k]), k + 1, true
+	}
+	return normalLabel(first), j + 1, true
+}
+
 // inline reads what follows an inline link's "](", from text[i]: spaces, the
 // destination, an optional title, and the parenthesis that closes it. The
 // destination is <…>, which may hold spaces, or a run without spaces in

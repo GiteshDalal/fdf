@@ -31,11 +31,6 @@ type doc struct {
 // and its maps are Validate's, so the checks after the walk read them as
 // they always have.
 type collection struct {
-	// stem, v5, v6 and v7 gate the rules each document records under: the
-	// pin is 0.4, 0.5, 0.6 or 0.7, or later. v1 is a 1.0 pin, whose links
-	// the links engine reads.
-	stem, v5, v6, v7, v1 bool
-
 	errs, warns *[]string
 	crossLinks  *[]crossLink
 	resources   *[]resourceRef
@@ -52,7 +47,7 @@ type collection struct {
 	debtTrails     map[string]string // debt ID -> rel of its .log.md
 	bugs           map[string]*bugInfo
 	bugTrails      map[string]string // bug ID -> rel of its .log.md
-	texts          map[string]string // v0.7: every .md file's text, for F12's scan
+	texts          map[string]string // every .md file's text, for F12's scan
 	contextDocs    map[string]bool   // a root Context document -> whether it is still a stub (F9)
 }
 
@@ -80,27 +75,19 @@ func (c *collection) resource(rel, field string, v any) {
 }
 
 // read records what every Markdown file gives the checks after the walk,
-// whatever its position — its text for F12 and any placeholder a scaffold
-// left in it (v0.7), and its links — and returns its text without a byte
-// order mark.
+// whatever its position — its text for F12, any placeholder a scaffold left
+// in it, and its links, outside code, as the links engine reads them — and
+// returns its text without a byte order mark.
 func (c *collection) read(rel string, raw []byte) string {
 	text := strings.TrimPrefix(string(raw), "\uFEFF")
-	if c.v7 {
-		c.texts[filepath.ToSlash(rel)] = string(raw) // F12 reads it again, from here
-		if rel != "SPEC.md" && (placeholderRe.MatchString(linkScanText(text)) || gherkinPlaceholderRe.MatchString(text)) {
-			c.warn("%s: still holds a scaffold's placeholder text (`TODO —`, `<role>`) — fill it in, or delete what does not apply", rel)
-		}
+	c.texts[filepath.ToSlash(rel)] = string(raw) // F12 reads it again, from here
+	if rel != "SPEC.md" && (placeholderRe.MatchString(linkScanText(text)) || gherkinPlaceholderRe.MatchString(text)) {
+		c.warn("%s: still holds a scaffold's placeholder text (`TODO —`, `<role>`) — fill it in, or delete what does not apply", rel)
 	}
-	if c.v1 {
-		for _, l := range links.Find(text) {
-			if !l.InCode {
-				*c.crossLinks = append(*c.crossLinks, crossLink{rel, l.Target})
-			}
+	for _, l := range links.Find(text) {
+		if !l.InCode {
+			*c.crossLinks = append(*c.crossLinks, crossLink{rel, l.Target})
 		}
-		return text
-	}
-	for _, m := range linkRe.FindAllStringSubmatch(linkScanText(text), -1) {
-		*c.crossLinks = append(*c.crossLinks, crossLink{rel, m[1]})
 	}
 	return text
 }
@@ -108,22 +95,23 @@ func (c *collection) read(rel string, raw []byte) string {
 // listingRe is a bulleted link, the line an index lists a document with.
 var listingRe = regexp.MustCompile(`(?m)^\s*[-*]\s+\[.*\]\(.*\)`)
 
-// reserved checks an INDEX.md or a LOG.md, which is not a document.
+// reserved checks an INDEX.md or a LOG.md, which is not a document. Only the
+// root INDEX.md carries frontmatter: its pin, which Validate read first, line
+// by line, as every command reads it. A line of it that does not parse is F1,
+// as in any document.
 func (c *collection) reserved(rel, name, text string) {
 	if name != "INDEX.md" {
-		checkLogBody(rel, text, c.v7, c.errs, c.warns)
+		checkLogBody(rel, text, c.errs, c.warns)
 		return
 	}
 	block, delimited, _ := splitFrontmatter(text)
-	if delimited {
-		data, _ := parseFrontmatter(block)
-		if rel != "INDEX.md" || data == nil || data["fdf_version"] == nil {
-			c.warn("%s: index file should not carry frontmatter", rel)
-		} else if v, _ := data["fdf_version"].(string); !supportedVersions[v] {
-			c.fail("%s", unsupportedPin(v))
+	switch {
+	case delimited && rel != "INDEX.md":
+		c.warn("%s: index file should not carry frontmatter", rel)
+	case delimited:
+		if _, err := parseFrontmatter(block); err != nil {
+			c.fail("%s: frontmatter is not parseable (F1): %v", rel, err)
 		}
-	} else if rel == "INDEX.md" {
-		c.warn("INDEX.md: root index should pin fdf_version")
 	}
 	if !listingRe.MatchString(text) {
 		c.warn("%s: index file has no bulleted listing", rel)
@@ -155,23 +143,15 @@ func (c *collection) document(rel, text string) (doc, bool) {
 			c.warn("%s: missing recommended `%s`", rel, f)
 		}
 	}
-	if c.v7 {
-		checkTimestamp(rel, data["timestamp"], c.errs, c.warns)
-	}
+	checkTimestamp(rel, data["timestamp"], c.errs, c.warns)
 	d.status, _ = data["status"].(string)
 	return d, true
 }
 
-// root checks a document at the bundle root: a Context document, or another,
-// which may not take a type that has a position of its own.
+// root checks a document at the bundle root: a Context document, or SPEC.md,
+// the vendored spec, which takes none of the types that have positions of
+// their own.
 func (c *collection) root(rel, name string, isContext bool, d doc, text string) {
-	contextList := "STACK/ARCHITECTURE/INFRA.md"
-	switch {
-	case c.v6:
-		contextList = "STACK/ARCHITECTURE/SURFACES/INFRA/DOMAIN.md"
-	case c.stem:
-		contextList = "STACK/ARCHITECTURE/SURFACES/INFRA.md"
-	}
 	switch {
 	case isContext:
 		if d.docType != "Context" {
@@ -179,9 +159,9 @@ func (c *collection) root(rel, name string, isContext bool, d doc, text string) 
 		}
 		c.contextDocs[name] = isStub(text)
 	case d.docType == "Context":
-		c.fail("%s: `type: Context` is reserved for %s at the bundle root (F3)", rel, contextList)
-	case structural[d.docType] || (c.stem && structuralV4[d.docType]) || (c.v5 && structuralV5[d.docType]) || (c.v6 && structuralV6[d.docType]) || (c.v7 && structuralV7[d.docType]):
-		c.fail("%s: `type: %s` documents cannot live at the bundle root — move it to its FDF position (F3)", rel, d.docType)
+		c.fail("%s: `type: Context` is reserved for STACK/ARCHITECTURE/SURFACES/INFRA/DOMAIN.md — the vendored spec is `type: Reference` (F3)", rel)
+	case structural[d.docType]:
+		c.fail("%s: `type: %s` has a position of its own, which is not the bundle root — the vendored spec is `type: Reference` (F3)", rel, d.docType)
 	}
 }
 
@@ -190,34 +170,23 @@ func (c *collection) feature(rel, id string, d doc) {
 	if d.docType != "Feature" {
 		c.fail("%s: expected `type: Feature`, got %q (F3)", rel, d.docType)
 	}
-	vocab := featureStatuses
-	switch {
-	case c.v7:
-		vocab = featureStatusesV7
-	case c.v5:
-		vocab = featureStatusesV5
-	}
-	if !in(vocab, d.status) {
-		c.fail("%s: Feature `status` must be one of %s, got %q (F2)", rel, strings.Join(vocab, "|"), d.status)
+	if !in(featureStatuses, d.status) {
+		c.fail("%s: Feature `status` must be one of %s, got %q (F2)", rel, strings.Join(featureStatuses, "|"), d.status)
 	}
 	version, _ := d.data["version"].(string)
 	f := &featureInfo{rel: rel, status: d.status, version: version, body: d.body}
 	f.replacedBy = asList(d.data["replaced-by"])
 	f.surface, _ = d.data["surface"].(string)
-	if c.v7 {
-		// A feature's own `resource` is v0.7: required on an adopted
-		// feature, which has no tasks to reach its code through.
-		f.resource = asList(d.data["resource"])
-		c.resource(rel, "resource", d.data["resource"])
-	}
+	// A feature's own `resource` is required on an adopted feature, which
+	// has no tasks to reach its code through.
+	f.resource = asList(d.data["resource"])
+	c.resource(rel, "resource", d.data["resource"])
 	c.features[id] = f
-	if c.v5 {
-		c.featureDeps[id] = asList(d.data["depends-on"])
-	}
+	c.featureDeps[id] = asList(d.data["depends-on"])
 	// An adopted feature may be a map entry: a Feature: block and no
 	// scenarios yet. A retired one may be too, when it was adopted and never
 	// backfilled; whether it was built is known only after the walk (F4).
-	checkFeatureBody(rel, d.body, c.v7 && (d.status == "adopted" || d.status == "retired"), c.errs)
+	checkFeatureBody(rel, d.body, d.status == "adopted" || d.status == "retired", c.errs)
 }
 
 // trail records <slug>.<role>.md beside the feature, Change or Fix id.
@@ -237,7 +206,7 @@ func (c *collection) trail(rel, id, role string, d doc, text string) {
 	case "log":
 		// The same ISO-date, newest-first rules as a LOG.md.
 		p.log = true
-		checkLogBody(rel, text, c.v7, c.errs, c.warns)
+		checkLogBody(rel, text, c.errs, c.warns)
 	case "surface":
 		p.surface = true
 	}
@@ -333,7 +302,7 @@ func (c *collection) registerLog(rel, register, id string, d doc, text string) {
 	if d.docType != "Log" {
 		c.fail("%s: expected `type: Log`, got %q (F3)", rel, d.docType)
 	}
-	checkLogBody(rel, text, c.v7, c.errs, c.warns)
+	checkLogBody(rel, text, c.errs, c.warns)
 	switch register {
 	case "practices":
 		c.practiceTrails[id] = rel
@@ -355,9 +324,5 @@ func (c *collection) release(rel, version string, d doc) {
 	if d.data["date"] == nil {
 		c.warn("%s: missing recommended `date`", rel)
 	}
-	body := d.body
-	if c.v7 && !c.v1 {
-		body = linkScanText(body) // a link in code is a sample, not a listing
-	}
-	c.releases[version] = &releaseInfo{rel, d.status, body}
+	c.releases[version] = &releaseInfo{rel, d.status, d.body}
 }

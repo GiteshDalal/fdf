@@ -1,3 +1,0 @@
-exit: 1
-contains: (F8)
-contains: TEST.md

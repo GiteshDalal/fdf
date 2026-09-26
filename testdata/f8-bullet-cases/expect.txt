@@ -1,0 +1,2 @@
+exit: 1
+contains: features/venues/opening-hours.test.md: scenario "Venue owner sets opening hours" has no test case — a case is a `## Venue owner sets opening hours` heading under `# Test Cases`, matched exactly (F8)

@@ -200,7 +200,11 @@ func makePlan(rootAbs, from, to string) (*plan, error) {
 		return nil, fmt.Errorf("%s is not a document, group or task in this bundle%s", from, scaffold.IDHint(rootAbs, from))
 	}
 
-	if exists(src(to+".md")) || p.kind == kGroup && exists(src(to)) {
+	// A group's place is read by its own name, which any disk reads alike: on
+	// one that ignores case, os.Stat finds features/INDEX.md for a group
+	// called features/index, whose name is free. A document it would land
+	// beside is PlaceGroup's.
+	if p.kind == kGroup && exists(src(to)) || p.kind != kGroup && exists(src(to+".md")) {
 		return nil, fmt.Errorf("%s already exists — a move never overwrites; pick another name, or move documents into an existing group one at a time", to)
 	}
 
@@ -238,7 +242,7 @@ func makePlan(rootAbs, from, to string) (*plan, error) {
 		case strings.HasPrefix(to, from+"/"):
 			return nil, fmt.Errorf("%s/ cannot move into itself", from)
 		}
-		if problem := b.Place(to); problem != "" {
+		if problem := b.PlaceGroup(to); problem != "" {
 			return nil, fmt.Errorf("%s", problem)
 		}
 		p.dirs[from] = to
@@ -393,16 +397,53 @@ func isPathByte(c byte) bool {
 }
 
 // mentions finds every mention of a moved document's ID outside a link
-// target (IDMentions), and, for a renamed task, its name in its siblings'
-// depends-on.
+// target and a `resource` or `applies-to` path, which names code
+// (FieldPaths), with IDMentions, and, for a renamed task, its name in its
+// siblings' depends-on.
 func (p *plan) mentions(text, rel string, targets map[int]bool) []span {
+	skip := FieldPaths(text)
+	for k := range targets {
+		skip[k] = true
+	}
 	var out []span
-	for _, r := range IDMentions(text, p.ids, p.prefix, targets, false) {
+	for _, r := range IDMentions(text, p.ids, p.prefix, skip, false) {
 		out = append(out, span{r.Start, r.End, r.Text})
 	}
 	// A renamed task is named by its siblings' `depends-on`.
 	if p.task[0] != "" && path.Dir(rel) == path.Dir(p.from) && path.Base(rel) != p.task[0]+".md" {
 		out = append(out, dependsOnRenames(text, p.task[0], p.task[1])...)
+	}
+	return out
+}
+
+// FieldPaths marks the bytes of the resource and applies-to values in text's
+// frontmatter, inline or as a list: paths in the project, which name code,
+// never a document, so no ID in them is one to rewrite.
+func FieldPaths(text string) map[int]bool {
+	out := map[int]bool{}
+	if !strings.HasPrefix(text, "---") {
+		return out
+	}
+	in, pos := false, 0
+	for i, line := range strings.SplitAfter(text, "\n") {
+		start := pos
+		pos += len(line)
+		t := strings.TrimSpace(line)
+		switch {
+		case i > 0 && t == "---":
+			return out
+		case strings.HasPrefix(line, "resource:") || strings.HasPrefix(line, "applies-to:"):
+			in = true
+		case in && strings.HasPrefix(t, "-"):
+			// an item of the field's list
+		default:
+			in = false
+		}
+		if in {
+			for k := start; k < pos; k++ {
+				out[k] = true
+			}
+		}
 	}
 	return out
 }

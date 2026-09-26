@@ -55,3 +55,16 @@ func TestOrderIsNumericNotLexical(t *testing.T) {
 		}
 	}
 }
+
+func TestKnown0xIsEachVersionBefore1(t *testing.T) {
+	for _, s := range []string{"0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7"} {
+		if !Known0x(s) {
+			t.Errorf("Known0x(%q) = false; FDF had that version", s)
+		}
+	}
+	for _, s := range []string{"0.0", "0.8", "0.10", "1.0", "1.7", "0.07", "v0.7", ""} {
+		if Known0x(s) {
+			t.Errorf("Known0x(%q) = true; FDF had no such version before 1.0", s)
+		}
+	}
+}

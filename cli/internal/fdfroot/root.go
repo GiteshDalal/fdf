@@ -5,6 +5,7 @@ package fdfroot
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -12,9 +13,76 @@ import (
 )
 
 // NoBundle is what every command says when the bundle root holds no bundle,
-// so a wrong --root reads the same whichever command met it first.
+// so a wrong --root reads the same whichever command met it first. A root
+// that holds Markdown nonetheless, such as a bundle from before 1.0 that
+// never had an INDEX.md, is sent to fdf migrate, not to fdf init, which
+// refuses it (Unindexed), and so is docs/fdf beside a docs/features whose
+// INDEX.md pins nothing, which fdf init refuses too (Beside).
 func NoBundle(root string) error {
+	if file, route := Unindexed(root); file != "" {
+		return fmt.Errorf("no bundle at %s (no INDEX.md), though it holds %s — %s; or point --root at the bundle", root, file, route)
+	}
+	if old := Beside(root); old != "" {
+		return fmt.Errorf("no bundle at %s (no INDEX.md), and %s beside it holds an INDEX.md that pins no version, as a bundle's from before 1.0 may — %s, and migrate moves the bundle here; if that is no bundle, rename its INDEX.md, then run `fdf init`, or point --root at the bundle", root, old, Upgrading("it", old))
+	}
 	return fmt.Errorf("no bundle at %s (no INDEX.md) — run `fdf init` first, or point --root at the bundle", root)
+}
+
+// Beside returns the docs/features beside a root at docs/fdf when its
+// INDEX.md, spelled so, pins no version, as a bundle's from before 1.0 may:
+// fdf 0.7 read such a bundle there, the default now passes it over
+// (Default), and fdf migrate moves it to docs/fdf. It returns "" otherwise:
+// a documentation site's docs/features, which may hold Markdown, is no
+// bundle, and has no INDEX.md spelled so.
+func Beside(root string) string {
+	if filepath.Base(root) != "fdf" || filepath.Base(filepath.Dir(root)) != "docs" {
+		return ""
+	}
+	old := filepath.Join(filepath.Dir(root), "features")
+	entries, _ := os.ReadDir(old)
+	for _, e := range entries {
+		if e.Name() == "INDEX.md" && !pinned(old) {
+			return old
+		}
+	}
+	return ""
+}
+
+// Unindexed returns a Markdown file in the directory at root, which holds no
+// INDEX.md, by its path from root, and how fdf migrate takes the bundle from
+// before 1.0 that the file makes it, on the user's decision (Upgrading): a
+// v0.1 bundle's index.md, which migrate renames, as it is, and any other
+// once it has an INDEX.md, which need not pin a version. Both are "" when
+// root holds no Markdown but its README.md; what is hidden is passed over.
+func Unindexed(root string) (file, route string) {
+	entries, _ := os.ReadDir(root)
+	for _, e := range entries {
+		if e.Name() == "index.md" {
+			return "index.md", "a v0.1 bundle's index.md counts as its INDEX.md, and " + Upgrading("the bundle", root)
+		}
+	}
+	filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		switch {
+		case err != nil:
+			return nil
+		case p != root && strings.HasPrefix(d.Name(), "."):
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		case d.IsDir() || !strings.HasSuffix(d.Name(), ".md"):
+			return nil
+		}
+		if rel, _ := filepath.Rel(root, p); rel != "README.md" {
+			file = filepath.ToSlash(rel)
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	if file == "" {
+		return "", ""
+	}
+	return file, "a bundle from before 1.0 needs an INDEX.md, which need not pin a version, committed where git tracks it, and " + Upgrading("it", root)
 }
 
 // InsideBundle is what every command, fdf migrate included, says when root is
@@ -23,6 +91,20 @@ func NoBundle(root string) error {
 // met it first.
 func InsideBundle(root, bundle string) error {
 	return fmt.Errorf("%s is inside the bundle at %s, not a bundle of its own — pass --root %s, or leave --root out", root, bundle, bundle)
+}
+
+// Upgrading is how a message that meets a bundle from before 1.0 names the
+// upgrade of what: the user's decision, which fdf migrate's dry run informs,
+// with --root when root is not "". The upgrade moves the bundle's documents
+// and rewrites references to them across the project, and an agent reads
+// these messages: fdf 0.7's skills told it to run fdf migrate whenever a pin
+// was not supported.
+func Upgrading(what, root string) string {
+	dryRun := "`fdf migrate --dry-run`"
+	if root != "" {
+		dryRun = "`fdf migrate --root " + root + " --dry-run`"
+	}
+	return "upgrading " + what + " is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: " + dryRun + " shows the plan"
 }
 
 // CheckBundle returns NoBundle unless root holds a bundle: an INDEX.md at its
@@ -162,7 +244,69 @@ func Default(projectRoot string) Resolution {
 	return Resolution{Root: old, Source: "pre-1.0 default docs/features"}
 }
 
-var pinLineRe = regexp.MustCompile(`(?m)^fdf_version:`)
+// pinKeyRe is a frontmatter line that holds the fdf_version key.
+var pinKeyRe = regexp.MustCompile(`^fdf_version:\s?(.*)$`)
+
+// Pin returns the spec version that index, the text of a bundle's root
+// INDEX.md, pins: the value of the fdf_version key in its frontmatter,
+// unquoted, or "" when it has none. It is the one reader of a pin: the
+// validator, every command, root resolution and fdf migrate read it here.
+// The key is read line by line, so a line of the frontmatter that does not
+// parse hides no pin, and the validator, which reports that line as F1, reads
+// the pin the commands read. A pin written anywhere but the frontmatter, such
+// as in a sample in the body, is none, and so is one in a block that no `---`
+// line closes (Unclosed).
+func Pin(index string) string {
+	block, closed := frontmatter(index)
+	if !closed {
+		return ""
+	}
+	// A delimited block: the pin is its fdf_version key, unquoted.
+	for _, l := range block {
+		if m := pinKeyRe.FindStringSubmatch(l); m != nil {
+			return strings.Trim(strings.Trim(strings.TrimSpace(m[1]), `"`), `'`)
+		}
+	}
+	return ""
+}
+
+// frontmatter returns the lines of the frontmatter block that index opens, a
+// byte order mark and CRLF line ends tolerated, and whether a `---` line
+// closes it; nil when index opens none.
+func frontmatter(index string) (block []string, closed bool) {
+	lines := strings.Split(strings.ReplaceAll(strings.TrimPrefix(index, "\uFEFF"), "\r\n", "\n"), "\n")
+	if strings.TrimSpace(lines[0]) != "---" {
+		return nil, false
+	}
+	for i, line := range lines[1:] {
+		if strings.TrimSpace(line) == "---" {
+			return lines[1 : i+1], true
+		}
+	}
+	return lines[1:], false
+}
+
+// PinOf returns the pin of the bundle at root: Pin of its INDEX.md, or ""
+// when it has none, or no INDEX.md.
+func PinOf(root string) string {
+	raw, err := os.ReadFile(filepath.Join(root, "INDEX.md"))
+	if err != nil {
+		return ""
+	}
+	return Pin(string(raw))
+}
+
+// Unclosed reports whether the INDEX.md at root opens a frontmatter block
+// that no `---` line closes. Pin reads no pin there, whatever the block
+// says, and the readers of a pin say so rather than that it is missing.
+func Unclosed(root string) bool {
+	raw, err := os.ReadFile(filepath.Join(root, "INDEX.md"))
+	if err != nil {
+		return false
+	}
+	block, closed := frontmatter(string(raw))
+	return block != nil && !closed
+}
 
 // pinned reports whether dir holds an INDEX.md, its name spelled exactly so,
 // that pins an fdf_version, as every bundle fdf has written since 0.2 does.
@@ -173,7 +317,7 @@ func pinned(dir string) bool {
 	for _, e := range entries {
 		if e.Name() == "INDEX.md" {
 			raw, err := os.ReadFile(filepath.Join(dir, e.Name()))
-			return err == nil && pinLineRe.Match(raw)
+			return err == nil && Pin(string(raw)) != ""
 		}
 	}
 	return false

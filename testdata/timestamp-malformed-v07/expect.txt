@@ -1,6 +1,0 @@
-exit: 1
-contains: venues/opening-hours.md: `timestamp` "2026-09-23T10:30:00" is neither a date (2026-02-14) nor an RFC 3339 time with Z or an offset (2026-02-14T09:30:00Z) (F1)
-contains: venues/opening-hours/01-build.md: `timestamp` "yesterday" is neither a date
-contains: venues/opening-hours.spec.md: `timestamp` "2026-02-30" is neither a date
-contains: warn: bugs/hours-off-by-one.md: missing recommended `timestamp`
-not-contains: bugs/hours-off-by-one.md: `timestamp`

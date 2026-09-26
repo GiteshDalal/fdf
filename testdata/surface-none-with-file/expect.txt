@@ -1,0 +1,2 @@
+exit: 1
+contains: features/venues/opening-hours.md: says `surface: none` but features/venues/opening-hours.surface.md exists

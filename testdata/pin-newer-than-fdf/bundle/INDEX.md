@@ -1,5 +1,5 @@
 ---
-fdf_version: "9.0"
+fdf_version: "1.1"
 ---
 
 # Example — Feature Bundle
