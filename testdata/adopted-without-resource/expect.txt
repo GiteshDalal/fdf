@@ -1,0 +1,3 @@
+exit: 1
+contains: features/venues/card-payments.md: status 'adopted' requires `resource` naming the code it documents
+contains: (F4)

@@ -1,0 +1,3 @@
+exit: 1
+contains: features/venues/card-payments.md: an adopted feature carries no `version`
+contains: (F4)

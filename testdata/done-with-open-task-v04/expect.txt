@@ -1,3 +1,0 @@
-exit: 1
-contains: (F4)
-contains: 01-do-thing.md

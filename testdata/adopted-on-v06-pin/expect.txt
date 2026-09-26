@@ -1,2 +1,0 @@
-exit: 1
-contains: venues/card-payments.md: Feature `status` must be one of draft|specified|planned|implementing|done|retired, got "adopted" (F2)

@@ -15,7 +15,7 @@ import (
 // scenario that starts with the same words, and prose that exercises the
 // replacement rules.
 func lexiconBundle(t *testing.T) string {
-	root := fixture(t, "valid-bugs-v10")
+	root := fixture(t, "valid-bugs")
 	write(t, root, "DOMAIN.md", `---
 type: Context
 title: Domain Language
@@ -226,7 +226,8 @@ func TestLexiconSuggestsMovesThatRun(t *testing.T) {
 // fdf lexicon works on spec 1.0 bundles: a 0.x bundle is upgraded with
 // `fdf migrate` first.
 func TestLexiconPointsA0xBundleAtMigrate(t *testing.T) {
-	root := fixture(t, "valid-bugs-v07")
+	root := fixture(t, "valid-bugs")
+	pinTo(t, root, "0.7")
 	var out bytes.Buffer
 	if code := Lexicon(root, LexiconOptions{}, &out); code != 1 ||
 		out.String() != "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0 bundles — run `fdf migrate` to upgrade it first\n" {

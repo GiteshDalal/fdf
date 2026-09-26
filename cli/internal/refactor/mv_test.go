@@ -56,6 +56,18 @@ func write(t *testing.T, root, rel, text string) {
 	}
 }
 
+// pinTo makes the bundle at root one that pins version, as a bundle nobody
+// has migrated does.
+func pinTo(t *testing.T, root, version string) {
+	t.Helper()
+	index := read(t, root, "INDEX.md")
+	pinned := strings.Replace(index, `fdf_version: "1.0"`, `fdf_version: "`+version+`"`, 1)
+	if pinned == index {
+		t.Fatalf("INDEX.md pins no 1.0 to change:\n%s", index)
+	}
+	write(t, root, "INDEX.md", pinned)
+}
+
 func validates(t *testing.T, root string) string {
 	t.Helper()
 	var out bytes.Buffer
@@ -121,7 +133,7 @@ func TestIDMentionsReadAnIDWhereItEnds(t *testing.T) {
 }
 
 func TestMoveRenamesAFeatureWithItsTrailAndRepairsEveryReference(t *testing.T) {
-	root := fixture(t, "valid-bugs-v10")
+	root := fixture(t, "valid-bugs")
 	// A release listing the feature, and a sample link in a code fence that
 	// must stay a sample.
 	write(t, root, "features/venues/opening-hours.spec.md", read(t, root, "features/venues/opening-hours.spec.md")+
@@ -168,7 +180,7 @@ func TestMoveRenamesAFeatureWithItsTrailAndRepairsEveryReference(t *testing.T) {
 }
 
 func TestMoveToANewGroupMovesTheListing(t *testing.T) {
-	root := fixture(t, "valid-bugs-v10")
+	root := fixture(t, "valid-bugs")
 	out := move(t, root, "features/venues/opening-hours", "features/sites/opening-hours")
 	if s := read(t, root, "features/venues/INDEX.md"); strings.Contains(s, "opening-hours") {
 		t.Fatalf("the old group index no longer lists the feature:\n%s", s)
@@ -198,7 +210,7 @@ func TestMoveToANewGroupMovesTheListing(t *testing.T) {
 }
 
 func TestMoveToANewGroupKeepsURLsAnchorsAndMailLinksInTheListing(t *testing.T) {
-	root := fixture(t, "valid-bugs-v10")
+	root := fixture(t, "valid-bugs")
 	write(t, root, "features/venues/INDEX.md", strings.Replace(read(t, root, "features/venues/INDEX.md"),
 		"* [opening-hours](opening-hours.md) - a capability.",
 		"* [opening-hours](opening-hours.md) - a capability. See [the site](https://example.com/hours), [the top](#top) and [the team](mailto:team@example.com).", 1))
@@ -218,7 +230,7 @@ func TestMoveToANewGroupKeepsURLsAnchorsAndMailLinksInTheListing(t *testing.T) {
 // other document's listing, not the moved one's: it stays where it is, and
 // only the mention inside it is repaired, like any other reference.
 func TestMoveToANewGroupLeavesAnotherListingsSecondLinkRepaired(t *testing.T) {
-	root := fixture(t, "valid-bugs-v10")
+	root := fixture(t, "valid-bugs")
 	write(t, root, "features/venues/INDEX.md", read(t, root, "features/venues/INDEX.md")+
 		"* [Venues](/features/venues/INDEX.md) - the group; see [opening-hours](opening-hours.md) for its hours.\n")
 	move(t, root, "features/venues/opening-hours", "features/sites/opening-hours")
@@ -232,7 +244,7 @@ func TestMoveToANewGroupLeavesAnotherListingsSecondLinkRepaired(t *testing.T) {
 }
 
 func TestMoveRenamesAWholeGroup(t *testing.T) {
-	root := fixture(t, "valid-bugs-v10")
+	root := fixture(t, "valid-bugs")
 	move(t, root, "features/venues", "features/sites")
 	gone(t, root, "features/venues")
 	if s := read(t, root, "features/INDEX.md"); !strings.Contains(s, "(/features/sites/INDEX.md)") {
@@ -245,7 +257,7 @@ func TestMoveRenamesAWholeGroup(t *testing.T) {
 }
 
 func TestMoveRefilesADebtAsABug(t *testing.T) {
-	root := fixture(t, "valid-bugs-v10")
+	root := fixture(t, "valid-bugs")
 	os.RemoveAll(filepath.Join(root, "bugs"))
 	write(t, root, "debts/INDEX.md", "# Debt\n\n* [Deferred batch import](deferred-batch-import.md) - deferred.\n")
 	write(t, root, "debts/deferred-batch-import.md", "---\ntype: Debt\nstatus: open\ntitle: Deferred batch import\ndescription: d.\ntimestamp: 2026-09-16T00:00:00Z\n---\n\n# Gap\n\nBatch import waits for the nightly job.\n")
@@ -272,7 +284,7 @@ func TestMoveRefilesADebtAsABug(t *testing.T) {
 }
 
 func TestMoveRenumbersATask(t *testing.T) {
-	root := fixture(t, "valid-bugs-v10")
+	root := fixture(t, "valid-bugs")
 	write(t, root, "features/venues/opening-hours/02-docs.md", "---\ntype: Task\nstatus: done\ntitle: Docs\ndepends-on: 01-build\ntimestamp: 2026-09-23T00:00:00Z\n---\n\n# Objective\n\nDocs.\n")
 	plan := read(t, root, "features/venues/opening-hours.plan.md")
 	write(t, root, "features/venues/opening-hours.plan.md", plan+"2. [02-docs.md](opening-hours/02-docs.md)\n")
@@ -287,7 +299,7 @@ func TestMoveRenumbersATask(t *testing.T) {
 }
 
 func TestMoveDryRunChangesNothing(t *testing.T) {
-	root := fixture(t, "valid-bugs-v10")
+	root := fixture(t, "valid-bugs")
 	before := read(t, root, "changes/closed-hours-fix.md")
 	var out bytes.Buffer
 	if code := Move(root, "", "features/venues/opening-hours", "features/venues/trading-hours", true, &out); code != 0 {
@@ -303,7 +315,7 @@ func TestMoveDryRunChangesNothing(t *testing.T) {
 }
 
 func TestLogsKeepTheirWordsButNotBrokenLinks(t *testing.T) {
-	root := fixture(t, "valid-bugs-v10")
+	root := fixture(t, "valid-bugs")
 	write(t, root, "bugs/hours-off-by-one.log.md", read(t, root, "bugs/hours-off-by-one.log.md")+
 		"\nFirst seen in features/venues/opening-hours; see [it](/features/venues/opening-hours.md).\n")
 	move(t, root, "features/venues/opening-hours", "features/venues/trading-hours")
@@ -319,19 +331,20 @@ func TestLogsKeepTheirWordsButNotBrokenLinks(t *testing.T) {
 // fdf mv works on spec 1.0 bundles: a 0.x bundle is upgraded with
 // `fdf migrate` first, and nothing in it moves.
 func TestMovePointsA0xBundleAtMigrate(t *testing.T) {
-	root := fixture(t, "valid-bugs-v07")
+	root := fixture(t, "valid-bugs")
+	pinTo(t, root, "0.7")
 	var out bytes.Buffer
-	if code := Move(root, "", "venues/opening-hours", "venues/trading-hours", false, &out); code != 1 ||
+	if code := Move(root, "", "features/venues/opening-hours", "features/venues/trading-hours", false, &out); code != 1 ||
 		out.String() != "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0 bundles — run `fdf migrate` to upgrade it first\n" {
 		t.Fatalf("exit %d\n%s", code, out.String())
 	}
-	read(t, root, "venues/opening-hours.md")
+	read(t, root, "features/venues/opening-hours.md")
 }
 
 // No name is reserved inside a register: a feature group called bugs/ moves,
 // and takes features, like any other.
 func TestMoveTreatsAGroupCalledBugsAsAnyOther(t *testing.T) {
-	root := fixture(t, "valid-bugs-v10")
+	root := fixture(t, "valid-bugs")
 	move(t, root, "features/venues/opening-hours", "features/bugs/opening-hours")
 	read(t, root, "features/bugs/opening-hours.md")
 	if s := read(t, root, "features/INDEX.md"); !strings.Contains(s, "* [Bugs](/features/bugs/INDEX.md) - features in bugs.\n") {
@@ -348,7 +361,7 @@ func TestMoveTreatsAGroupCalledBugsAsAnyOther(t *testing.T) {
 // on the way gets an index listed in its parent's, and a group the move
 // leaves empty is named.
 func TestMoveBetweenFlatAndNestedGroups(t *testing.T) {
-	root := fixture(t, "valid-bugs-v10")
+	root := fixture(t, "valid-bugs")
 	// macOS Finder leaves one in any directory it has shown. It is not the
 	// group's, so the group it is left in is emptied all the same.
 	write(t, root, "features/venues/.DS_Store", "finder")
@@ -404,7 +417,7 @@ func TestMoveBetweenFlatAndNestedGroups(t *testing.T) {
 // holds Markdown is an F3 error, and moving the entry away is the repair
 // the validator asks for.
 func TestMoveLeavesADirectoryBesideAnEntry(t *testing.T) {
-	root := fixture(t, "valid-bugs-v10")
+	root := fixture(t, "valid-bugs")
 	bug := read(t, root, "bugs/hours-off-by-one.md")
 	write(t, root, "bugs/hours-off-by-one.md", strings.Replace(bug, "# Symptom\n", "# Symptom\n\n![Screenshot](hours-off-by-one/screenshot.png)\n", 1))
 	write(t, root, "bugs/hours-off-by-one/screenshot.png", "PNG")
@@ -431,7 +444,7 @@ func TestMoveLeavesADirectoryBesideAnEntry(t *testing.T) {
 }
 
 func TestMoveRefusals(t *testing.T) {
-	root := fixture(t, "valid-bugs-v10")
+	root := fixture(t, "valid-bugs")
 	cases := []struct{ from, to, want string }{
 		{"features/venues/opening-hours", "features/venues/opening-hours", "already where it is"},
 		{"features/venues/ghost", "features/venues/x", "is not a document, group or task"},
@@ -486,7 +499,7 @@ func TestMoveRefusals(t *testing.T) {
 // group spelled in lowercase would land, and the bundle would fail F3. The
 // move is refused, naming the directory as it is spelled, and nothing moves.
 func TestMoveRefusesAGroupSpelledInAnotherCase(t *testing.T) {
-	root := fixture(t, "valid-bugs-v10")
+	root := fixture(t, "valid-bugs")
 	write(t, root, "features/Places/map.png", "PNG")
 	for _, tc := range []struct{ from, to string }{
 		{"features/venues/opening-hours", "features/places/opening-hours"},
@@ -506,7 +519,7 @@ func TestMoveRefusesAGroupSpelledInAnotherCase(t *testing.T) {
 // even though they did not. A footnote is not a link, and a reference
 // definition inside a code fence is a sample; neither changes.
 func TestMoveDeeperRepairsLinksThatLeaveTheBundle(t *testing.T) {
-	root := fixture(t, "valid-bugs-v10")
+	root := fixture(t, "valid-bugs")
 	write(t, root, "changes/old-fix.md", read(t, root, "changes/old-fix.md")+
 		"\n- [auth](../../okf/modules/auth.md#login)\n"+
 		"- [angle](<../../okf/modules/auth.md>)\n"+

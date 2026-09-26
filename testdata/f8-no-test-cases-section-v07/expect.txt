@@ -1,2 +1,0 @@
-exit: 1
-contains: venues/opening-hours.test.md: has no `# Test Cases` section

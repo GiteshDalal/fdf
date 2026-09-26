@@ -1,3 +1,0 @@
-exit: 0
-contains: warn: venues/opening-hours.spec.md: uses banned "line item" → "Order Line", "store" → "Venue" (F12)
-not-contains: "item" → "Product"

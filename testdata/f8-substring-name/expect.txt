@@ -1,0 +1,2 @@
+exit: 1
+contains: features/venues/opening-hours.test.md: scenario "Venue owner" has no test case

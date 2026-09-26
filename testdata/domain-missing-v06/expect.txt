@@ -1,3 +1,0 @@
-exit: 1
-contains: DOMAIN.md: required once the bundle has features
-contains: (F9)

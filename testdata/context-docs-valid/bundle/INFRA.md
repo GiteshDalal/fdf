@@ -18,4 +18,3 @@ goreleaser binaries.
 ## Environments & targets
 
 macOS and Linux.
-

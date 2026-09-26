@@ -1,3 +1,0 @@
-exit: 1
-contains: venues/card-payments.md: status 'adopted' requires `resource` naming the code it documents
-contains: (F4)

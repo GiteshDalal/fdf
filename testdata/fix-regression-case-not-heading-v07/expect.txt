@@ -1,2 +1,0 @@
-exit: 1
-contains: changes/hours-fix.md: done, but venues/opening-hours.test.md has no case for "Venue owner sets opening hours" (F10)

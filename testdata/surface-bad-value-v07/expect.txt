@@ -1,2 +1,0 @@
-exit: 1
-contains: venues/opening-hours.md: `surface` is `none` or absent, got "yes" (F4)

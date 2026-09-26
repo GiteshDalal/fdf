@@ -1,3 +1,0 @@
-exit: 1
-contains: cannot live at the bundle root
-contains: (F3)

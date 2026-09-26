@@ -1,0 +1,4 @@
+exit: 0
+contains: features/venues/opening-hours.md: has no features/venues/opening-hours.surface.md
+not-contains: features/venues/nightly-report.md: has no
+not-contains: features/venues/card-payments.md: has no

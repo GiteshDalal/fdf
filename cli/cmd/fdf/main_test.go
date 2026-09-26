@@ -312,7 +312,7 @@ func TestBundleCommandsAnnounceVersionAndRoot(t *testing.T) {
 // against, so R1 is skipped with a warning rather than failing every path —
 // and the repository's own hidden directories are not bundle directories.
 func TestValidateBundleThatIsItsOwnRepository(t *testing.T) {
-	src := filepath.Join("..", "..", "..", "testdata", "valid-adopted-v07", "repo", "docs", "features")
+	src := filepath.Join("..", "..", "..", "testdata", "valid-adopted", "repo", "docs", "fdf")
 	root := t.TempDir()
 	err := filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {
 		if err != nil {

@@ -1,3 +1,0 @@
-exit: 1
-contains: bugs/hours-off-by-one.md: `# Violates` entry "Venue owner sets opening hours" sits under no `## <feature-id>` heading (F14)
-contains: bugs/hours-off-by-one.md: `## venues/opening-hours` entry "Owner sets the hours" is not `- <scenario name>` (F14)

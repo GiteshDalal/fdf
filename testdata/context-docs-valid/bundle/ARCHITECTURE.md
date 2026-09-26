@@ -18,4 +18,3 @@ By package under cli/.
 ## Design principles
 
 Small, testable functions.
-

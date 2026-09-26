@@ -1,0 +1,2 @@
+exit: 1
+contains: bugs/no-affects.md: `# Violates` names `## features/venues/opening-hours`, which is not listed in `affects` (F14)
