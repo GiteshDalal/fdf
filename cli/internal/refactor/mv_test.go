@@ -158,6 +158,40 @@ func TestMoveToANewGroupMovesTheListing(t *testing.T) {
 	validates(t, root)
 }
 
+func TestMoveToANewGroupKeepsURLsAnchorsAndMailLinksInTheListing(t *testing.T) {
+	root := fixture(t, "valid-bugs-v07")
+	write(t, root, "venues/INDEX.md", strings.Replace(read(t, root, "venues/INDEX.md"),
+		"* [opening-hours](opening-hours.md) - a capability.",
+		"* [opening-hours](opening-hours.md) - a capability. See [the site](https://example.com/hours), [the top](#top) and [the team](mailto:team@example.com).", 1))
+	move(t, root, "venues/opening-hours", "sites/opening-hours")
+	s := read(t, root, "sites/INDEX.md")
+	for _, want := range []string{"(opening-hours.md)", "(https://example.com/hours)", "(#top)", "(mailto:team@example.com)"} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("want %q in the moved listing line:\n%s", want, s)
+		}
+	}
+	validates(t, root)
+}
+
+// A listing line identifies its own document by its FIRST link, the way
+// scaffold.ListingTarget reads every other index (Unlist, Listed, ListedIn).
+// A line that goes on to mention the moved document as a later link is some
+// other document's listing, not the moved one's: it stays where it is, and
+// only the mention inside it is repaired, like any other reference.
+func TestMoveToANewGroupLeavesAnotherListingsSecondLinkRepaired(t *testing.T) {
+	root := fixture(t, "valid-bugs-v07")
+	write(t, root, "venues/INDEX.md", read(t, root, "venues/INDEX.md")+
+		"* [Venues](/venues/INDEX.md) - the group; see [opening-hours](opening-hours.md) for its hours.\n")
+	move(t, root, "venues/opening-hours", "sites/opening-hours")
+	if s := read(t, root, "venues/INDEX.md"); !strings.Contains(s, "* [Venues](/venues/INDEX.md) - the group; see [opening-hours](../sites/opening-hours.md) for its hours.\n") {
+		t.Fatalf("another document's listing stays behind, its mention of the moved document repaired:\n%s", s)
+	}
+	if s := read(t, root, "sites/INDEX.md"); strings.Contains(s, "Venues") {
+		t.Fatalf("the other document's listing must not be carried off to the new index:\n%s", s)
+	}
+	validates(t, root)
+}
+
 func TestMoveRenamesAWholeGroup(t *testing.T) {
 	root := fixture(t, "valid-bugs-v07")
 	move(t, root, "venues", "sites")
@@ -320,5 +354,35 @@ func TestMoveRefusals(t *testing.T) {
 	var out bytes.Buffer
 	if code := Move(root, "", "venues/opening-hours", "venues/other", false, &out); code != 1 || !strings.Contains(out.String(), "already exists") {
 		t.Fatalf("an existing target is refused:\n%s", out.String())
+	}
+}
+
+// A move that changes a document's depth repairs the links that leave the
+// bundle too: the file that holds them moved, so its path to them changed,
+// even though they did not. A footnote is not a link, and a reference
+// definition inside a code fence is a sample; neither changes.
+func TestMoveDeeperRepairsLinksThatLeaveTheBundle(t *testing.T) {
+	root := fixture(t, "valid-bugs-v07")
+	write(t, root, "changes/old-fix.md", read(t, root, "changes/old-fix.md")+
+		"\n- [auth](../../okf/modules/auth.md#login)\n"+
+		"- [angle](<../../okf/modules/auth.md>)\n"+
+		"- [code](../../src/refund.go)\n"+
+		"- [defined][okf]\n\n"+
+		"[okf]: ../../okf/modules/auth.md\n"+
+		"[^1]: See the notes.\n\n"+
+		"```markdown\n[sample]: ../venues/opening-hours.md\n```\n")
+	move(t, root, "changes/old-fix", "changes/hours/old-fix")
+	got := read(t, root, "changes/hours/old-fix.md")
+	for _, want := range []string{
+		"(../../../okf/modules/auth.md#login)",
+		"(<../../../okf/modules/auth.md>)",
+		"(../../../src/refund.go)",
+		"[okf]: ../../../okf/modules/auth.md",
+		"[^1]: See the notes.",
+		"[sample]: ../venues/opening-hours.md",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("after moving one level deeper, want %q in:\n%s", want, got)
+		}
 	}
 }

@@ -116,7 +116,7 @@ func WithGroupListing(text, dir, group string) (string, bool) {
 	lines := strings.Split(text, "\n")
 	after := -1 // the line the listing goes after
 	for i, l := range lines {
-		t := listingTarget(l, idxDir)
+		t := ListingTarget(l, idxDir)
 		if t == groupRel+"/INDEX.md" || t == groupRel {
 			return text, false
 		}
@@ -176,7 +176,7 @@ func addListing(root, idxRel, target, title, line string, out io.Writer) int {
 	}
 	text := string(raw)
 	for _, l := range strings.Split(text, "\n") {
-		if listingTarget(l, path.Dir(idxRel)) == target {
+		if ListingTarget(l, path.Dir(idxRel)) == target {
 			return 0
 		}
 	}
@@ -201,7 +201,7 @@ func ListedIn(root, rel string) string {
 		return ""
 	}
 	for _, l := range strings.Split(string(raw), "\n") {
-		if listingTarget(l, path.Dir(idxRel)) == rel {
+		if ListingTarget(l, path.Dir(idxRel)) == rel {
 			return idxRel
 		}
 	}
@@ -242,7 +242,7 @@ func Listed(root, idxRel string) []string {
 	}
 	var out []string
 	for _, l := range strings.Split(string(raw), "\n") {
-		if t := listingTarget(l, path.Dir(idxRel)); t != "" {
+		if t := ListingTarget(l, path.Dir(idxRel)); t != "" {
 			out = append(out, t)
 		}
 	}
@@ -260,7 +260,7 @@ func unlistFrom(root, idxRel string, targets ...string) (string, error) {
 	var kept []string
 	lines := strings.Split(string(raw), "\n")
 	for _, l := range lines {
-		t := listingTarget(l, path.Dir(idxRel))
+		t := ListingTarget(l, path.Dir(idxRel))
 		listed := false
 		for _, target := range targets {
 			listed = listed || t == target
@@ -275,10 +275,10 @@ func unlistFrom(root, idxRel string, targets ...string) (string, error) {
 	return idxRel, os.WriteFile(p, []byte(strings.Join(kept, "\n")), 0o644)
 }
 
-// listingTarget is the bundle-relative path a listing line links to, or ""
+// ListingTarget is the bundle-relative path a listing line links to, or ""
 // when the line is not a listing. A link starting with / is from the bundle
 // root; any other is from the index's own directory.
-func listingTarget(line, idxDir string) string {
+func ListingTarget(line, idxDir string) string {
 	m := listingLinkRe.FindStringSubmatch(line)
 	if m == nil {
 		return ""
