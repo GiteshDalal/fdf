@@ -1056,15 +1056,14 @@ func stripStatusTags(text string) (string, int) {
 	return b.String(), removed
 }
 
-// withPin returns the root INDEX.md's text pinned to version: its
-// fdf_version line rewritten, or the pin added to the frontmatter the text
-// has, or to a frontmatter block of its own. A line keeps its ending, and a
-// line added ends as the text's lines do.
+// withPin returns the root INDEX.md's text pinned to version: the
+// fdf_version line of its frontmatter rewritten, where fdfroot.Pin reads the
+// pin, or the pin added to the frontmatter the text has, or to a frontmatter
+// block of its own. A line keeps its ending, and a line added ends as the
+// text's lines do. An fdf_version line anywhere else, such as in a sample in
+// the body, is no pin, and keeps its words.
 func withPin(text, version string) string {
 	line := fmt.Sprintf(`fdf_version: "%s"`, version)
-	if pinLineRe.MatchString(text) {
-		return pinLineRe.ReplaceAllString(text, line)
-	}
 	eol := "\n"
 	if strings.Contains(text, "\r\n") {
 		eol = "\r\n"
@@ -1075,10 +1074,17 @@ func withPin(text, version string) string {
 	}
 	lines := strings.SplitAfter(text, "\n")
 	if strings.TrimRight(lines[0], "\r\n") == "---" {
-		for _, l := range lines[1:] {
-			if strings.TrimRight(l, "\r\n") == "---" {
-				return bom + lines[0] + line + eol + strings.Join(lines[1:], "")
+		for i, l := range lines[1:] {
+			if strings.TrimRight(l, "\r\n") != "---" {
+				continue
 			}
+			for j := 1; j <= i; j++ {
+				if pinKeyRe.MatchString(lines[j]) {
+					lines[j] = line + lines[j][len(strings.TrimRight(lines[j], "\r\n")):]
+					return bom + strings.Join(lines, "")
+				}
+			}
+			return bom + lines[0] + line + eol + strings.Join(lines[1:], "")
 		}
 	}
 	return bom + "---" + eol + line + eol + "---" + eol + eol + text

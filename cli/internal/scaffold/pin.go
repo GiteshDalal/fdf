@@ -6,42 +6,16 @@ package scaffold
 import (
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/GiteshDalal/fdf/cli/internal/fdfroot"
 	"github.com/GiteshDalal/fdf/cli/internal/specver"
 )
 
-var pinKeyRe = regexp.MustCompile(`^fdf_version:\s?(.*)$`)
-
 // Pin returns the fdf_version the bundle at root pins in its root INDEX.md's
-// frontmatter, read as the validator reads it, or "" when there is none.
-func Pin(root string) string {
-	raw, err := os.ReadFile(filepath.Join(root, "INDEX.md"))
-	if err != nil {
-		return ""
-	}
-	lines := strings.Split(strings.ReplaceAll(strings.TrimPrefix(string(raw), "\uFEFF"), "\r\n", "\n"), "\n")
-	if strings.TrimSpace(lines[0]) != "---" {
-		return ""
-	}
-	for i, line := range lines[1:] {
-		if strings.TrimSpace(line) != "---" {
-			continue
-		}
-		// A delimited block: the pin is its fdf_version key, unquoted.
-		for _, l := range lines[1 : i+1] {
-			if m := pinKeyRe.FindStringSubmatch(l); m != nil {
-				return strings.Trim(strings.Trim(strings.TrimSpace(m[1]), `"`), `'`)
-			}
-		}
-		return ""
-	}
-	return ""
-}
+// frontmatter, read as the validator reads it (fdfroot.Pin), or "" when there
+// is none.
+func Pin(root string) string { return fdfroot.PinOf(root) }
 
 // Supported lists the spec versions the commands work on: the embedded ones of
 // the current major version, oldest first. A minor version only adds, so the
@@ -61,11 +35,12 @@ func Supported() []string {
 
 // RequireSupported reports whether the commands can work on the bundle at
 // root, and when they cannot, says why and what to run: a bundle that pins a
-// 0.x version, or none, is upgraded with `fdf migrate` first, and one that
-// pins a version newer than this fdf knows needs a newer fdf. A pin that is
-// not a version is corrected in INDEX.md. A root whose INDEX.md pins nothing
-// inside a pinned bundle is a register or a group of that bundle, which is
-// the root to pass.
+// 0.x version is upgraded with `fdf migrate` first, one that pins none is
+// pinned, or upgraded, and one that pins a version newer than this fdf knows
+// needs a newer fdf. A pin that is not a version is corrected in INDEX.md,
+// and so is frontmatter that never closes (fdfroot.Unclosed). A root whose
+// INDEX.md pins nothing inside a pinned bundle is a register or a group of
+// that bundle, which is the root to pass.
 func RequireSupported(root string, out io.Writer) bool {
 	pin := Pin(root)
 	supported := Supported()
@@ -83,8 +58,10 @@ func RequireSupported(root string, out io.Writer) bool {
 	list := strings.Join(supported, ", ")
 	newest, _ := specver.Parse(supported[len(supported)-1])
 	switch v, ok := specver.Parse(pin); {
+	case fdfroot.Unclosed(root):
+		fmt.Fprintln(out, "error: this bundle's INDEX.md frontmatter has no closing `---` line, so it pins no fdf_version — end the block with one")
 	case pin == "":
-		fmt.Fprintf(out, "error: this bundle's INDEX.md pins no fdf_version; fdf's commands work on spec %s bundles — run `fdf migrate` to upgrade it first\n", list)
+		fmt.Fprintf(out, "error: this bundle's INDEX.md pins no fdf_version; fdf's commands work on spec %s bundles — pin the version it was written for, as fdf_version: \"%s\", or upgrade a bundle from before 1.0 with `fdf migrate` first\n", list, currentVersion)
 	case !ok:
 		fmt.Fprintf(out, "error: this bundle pins fdf_version %s, which is not a MAJOR.MINOR version such as %s — correct the pin in INDEX.md\n", pin, currentVersion)
 	case newest.Less(v):

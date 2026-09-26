@@ -81,13 +81,9 @@ var trailBasenames = map[string]string{
 	"LOG.md":  "log",
 }
 
-var pinLineRe = regexp.MustCompile(`(?m)^fdf_version:[^\r\n]*`)
-
-// pinValueRe tolerates unquoted pins (`fdf_version: 0.4`) and single-quoted
-// ones (`fdf_version: '1.0'`): the validator's YAML-based readPin accepts
-// them, and migrate must agree with the validator about what version a
-// bundle pins.
-var pinValueRe = regexp.MustCompile(`fdf_version:\s*["']?([^"'\s]+)["']?`)
+// pinKeyRe is the line of a frontmatter block that holds the pin, which
+// withPin rewrites.
+var pinKeyRe = regexp.MustCompile(`^fdf_version:`)
 var taskFileRe = regexp.MustCompile(`^\d{2}-[a-z0-9][a-z0-9-]*\.md$`)
 var statusRe = regexp.MustCompile(`(?m)^status:\s*(\S+)`)
 var scenarioRe = regexp.MustCompile(`(?m)^\s*Scenario(?: Outline)?:\s*(\S[^\n]*)`)
@@ -128,6 +124,9 @@ func Run(o Options, out io.Writer) int {
 	// the repair path.
 	pin := readPin(root)
 	switch v, ok := specver.Parse(pin); {
+	case pin == "" && fdfroot.Unclosed(root):
+		fmt.Fprintln(out, "cannot migrate: INDEX.md's frontmatter has no closing `---` line, so it pins no fdf_version — end the block with one, and run migrate again; the bundle was left as it is.")
+		return 1
 	case pin == "":
 		// A register's or a group's INDEX.md pins nothing: the steps would
 		// build a second bundle inside the pinned one.
@@ -552,19 +551,18 @@ func featureIsDraft(root, group, slug string) bool {
 	return m != nil && string(m[1]) == "draft"
 }
 
+// readPin returns the pin of the bundle at root, read as the validator and
+// every command read it (fdfroot.Pin): from its INDEX.md, or, in a v0.1
+// bundle, its index.md, which the migration renames.
 func readPin(root string) string {
 	raw, err := os.ReadFile(filepath.Join(root, "INDEX.md"))
 	if err != nil {
-		// Also try lowercase pre-rename form.
 		raw, err = os.ReadFile(filepath.Join(root, "index.md"))
 		if err != nil {
 			return ""
 		}
 	}
-	if m := pinValueRe.FindSubmatch(raw); m != nil {
-		return string(m[1])
-	}
-	return ""
+	return fdfroot.Pin(string(raw))
 }
 
 func rel(root, p string) string {

@@ -195,26 +195,6 @@ const stubSentinel = "<!-- fdf:stub -->"
 var placeholderRe = regexp.MustCompile(`(?m)^\s*(?:[-*]\s+)?(?:\d+\.\s+)?(?:[a-z-]+:\s*)?TODO —|\) - TODO\.|\s(?:—|–|--)\s+TODO\b`)
 var gherkinPlaceholderRe = regexp.MustCompile(`(?m)^\s*As an? <role>\s*$`)
 
-// readPin returns the fdf_version pinned by the bundle's root INDEX.md, or ""
-// if absent/unreadable. It runs before the walk: the pin decides whether the
-// bundle is validated at all.
-func readPin(rootAbs string) string {
-	raw, err := os.ReadFile(filepath.Join(rootAbs, "INDEX.md"))
-	if err != nil {
-		return ""
-	}
-	block, delimited, _ := splitFrontmatter(strings.TrimPrefix(string(raw), "\uFEFF"))
-	if !delimited {
-		return ""
-	}
-	data, _ := parseFrontmatter(block)
-	if data == nil {
-		return ""
-	}
-	v, _ := data["fdf_version"].(string)
-	return v
-}
-
 func in(list []string, s string) bool {
 	for _, v := range list {
 		if v == s {
@@ -256,8 +236,15 @@ func Validate(root string, opts Options) int {
 		fmt.Fprintln(out, "error:", fdfroot.NoBundle(root))
 		return 1
 	}
-	pinnedVer := readPin(rootAbs)
-	if problem := pinProblem(pinnedVer); problem != "" {
+	// The pin decides whether the bundle is checked at all, so it is read
+	// first, as every command reads it.
+	pinnedVer := fdfroot.PinOf(rootAbs)
+	problem := pinProblem(pinnedVer)
+	if fdfroot.Unclosed(rootAbs) {
+		// Its pin line may be there, and a missing pin would not say why.
+		problem = "INDEX.md: its frontmatter has no closing `---` line, so it pins no fdf_version — end the block with one (F1)"
+	}
+	if problem != "" {
 		fmt.Fprintf(out, "FAIL: %s\n\nBundle not validated: fdf checks a bundle against the version its INDEX.md pins, and validates %s.\n", problem, supportedList())
 		return 1
 	}

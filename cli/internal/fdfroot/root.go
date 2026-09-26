@@ -162,7 +162,69 @@ func Default(projectRoot string) Resolution {
 	return Resolution{Root: old, Source: "pre-1.0 default docs/features"}
 }
 
-var pinLineRe = regexp.MustCompile(`(?m)^fdf_version:`)
+// pinKeyRe is a frontmatter line that holds the fdf_version key.
+var pinKeyRe = regexp.MustCompile(`^fdf_version:\s?(.*)$`)
+
+// Pin returns the spec version that index, the text of a bundle's root
+// INDEX.md, pins: the value of the fdf_version key in its frontmatter,
+// unquoted, or "" when it has none. It is the one reader of a pin: the
+// validator, every command, root resolution and fdf migrate read it here.
+// The key is read line by line, so a line of the frontmatter that does not
+// parse hides no pin, and the validator, which reports that line as F1, reads
+// the pin the commands read. A pin written anywhere but the frontmatter, such
+// as in a sample in the body, is none, and so is one in a block that no `---`
+// line closes (Unclosed).
+func Pin(index string) string {
+	block, closed := frontmatter(index)
+	if !closed {
+		return ""
+	}
+	// A delimited block: the pin is its fdf_version key, unquoted.
+	for _, l := range block {
+		if m := pinKeyRe.FindStringSubmatch(l); m != nil {
+			return strings.Trim(strings.Trim(strings.TrimSpace(m[1]), `"`), `'`)
+		}
+	}
+	return ""
+}
+
+// frontmatter returns the lines of the frontmatter block that index opens, a
+// byte order mark and CRLF line ends tolerated, and whether a `---` line
+// closes it; nil when index opens none.
+func frontmatter(index string) (block []string, closed bool) {
+	lines := strings.Split(strings.ReplaceAll(strings.TrimPrefix(index, "\uFEFF"), "\r\n", "\n"), "\n")
+	if strings.TrimSpace(lines[0]) != "---" {
+		return nil, false
+	}
+	for i, line := range lines[1:] {
+		if strings.TrimSpace(line) == "---" {
+			return lines[1 : i+1], true
+		}
+	}
+	return lines[1:], false
+}
+
+// PinOf returns the pin of the bundle at root: Pin of its INDEX.md, or ""
+// when it has none, or no INDEX.md.
+func PinOf(root string) string {
+	raw, err := os.ReadFile(filepath.Join(root, "INDEX.md"))
+	if err != nil {
+		return ""
+	}
+	return Pin(string(raw))
+}
+
+// Unclosed reports whether the INDEX.md at root opens a frontmatter block
+// that no `---` line closes. Pin reads no pin there, whatever the block
+// says, and the readers of a pin say so rather than that it is missing.
+func Unclosed(root string) bool {
+	raw, err := os.ReadFile(filepath.Join(root, "INDEX.md"))
+	if err != nil {
+		return false
+	}
+	block, closed := frontmatter(string(raw))
+	return block != nil && !closed
+}
 
 // pinned reports whether dir holds an INDEX.md, its name spelled exactly so,
 // that pins an fdf_version, as every bundle fdf has written since 0.2 does.
@@ -173,7 +235,7 @@ func pinned(dir string) bool {
 	for _, e := range entries {
 		if e.Name() == "INDEX.md" {
 			raw, err := os.ReadFile(filepath.Join(dir, e.Name()))
-			return err == nil && pinLineRe.Match(raw)
+			return err == nil && Pin(string(raw)) != ""
 		}
 	}
 	return false

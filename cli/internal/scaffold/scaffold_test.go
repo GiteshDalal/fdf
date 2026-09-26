@@ -394,13 +394,14 @@ func TestWriteNewNeverOverwrites(t *testing.T) {
 }
 
 // The commands write spec 1.x, so they refuse any other bundle before they
-// write anything, and name the fix: `fdf migrate` for a 0.x pin or none, a
-// newer fdf for a newer pin, and the pin itself when it is not a version.
+// write anything, and name the fix: `fdf migrate` for a 0.x pin, the pin or
+// `fdf migrate` for none, a newer fdf for a newer pin, the pin itself when it
+// is not a version, and the frontmatter when no `---` line closes it.
 func TestScaffoldsPointA0xBundleAtMigrate(t *testing.T) {
 	for _, tc := range []struct{ pin, says string }{
 		{"0.7", "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0 bundles — run `fdf migrate` to upgrade it first\n"},
 		{"0.5", "error: this bundle pins fdf_version 0.5; fdf's commands work on spec 1.0 bundles — run `fdf migrate` to upgrade it first\n"},
-		{"", "error: this bundle's INDEX.md pins no fdf_version; fdf's commands work on spec 1.0 bundles — run `fdf migrate` to upgrade it first\n"},
+		{"", "error: this bundle's INDEX.md pins no fdf_version; fdf's commands work on spec 1.0 bundles — pin the version it was written for, as fdf_version: \"" + currentVersion + "\", or upgrade a bundle from before 1.0 with `fdf migrate` first\n"},
 		{"1.3", "error: this bundle pins fdf_version 1.3, newer than any spec this fdf knows (1.0) — upgrade fdf\n"},
 		// A pin that is almost 1.0 is no 0.x version to migrate.
 		{"1.0.0", "error: this bundle pins fdf_version 1.0.0, which is not a MAJOR.MINOR version such as " + currentVersion + " — correct the pin in INDEX.md\n"},
@@ -422,6 +423,15 @@ func TestScaffoldsPointA0xBundleAtMigrate(t *testing.T) {
 				t.Errorf("fdf %s on pin %q writes nothing, but the bundle holds %d entries", name, tc.pin, len(entries))
 			}
 		}
+	}
+	// Its pin line may be there, so a missing pin would not say why.
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "INDEX.md"), []byte("---\nfdf_version: \""+currentVersion+"\"\n\n# Bundle\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if code := New(root, "payments/refunds", &out); code != 1 || out.String() != "error: this bundle's INDEX.md frontmatter has no closing `---` line, so it pins no fdf_version — end the block with one\n" {
+		t.Errorf("fdf new on frontmatter that never closes: exit %d\n%s", code, out.String())
 	}
 }
 
@@ -482,22 +492,6 @@ func tree(t *testing.T, root string) string {
 		return nil
 	})
 	return b.String()
-}
-
-func TestPinReadsTheFrontmatterAsTheValidatorDoes(t *testing.T) {
-	for index, want := range map[string]string{
-		"---\nfdf_version: \"0.6\"\n---\n# B\n":             "0.6",
-		"---\nfdf_version: 0.5\n---\n":                      "0.5",
-		"\uFEFF---\r\nfdf_version: '0.7'\r\n---\r\n# B\r\n": "0.7",
-		"# B\n\nfdf_version: \"0.6\"\n":                     "", // not frontmatter
-		"---\nfdf_version: \"0.6\"\n# B\n":                  "", // unterminated
-	} {
-		root := t.TempDir()
-		os.WriteFile(filepath.Join(root, "INDEX.md"), []byte(index), 0o644)
-		if got := Pin(root); got != want {
-			t.Errorf("Pin(%q) = %q, want %q", index, got, want)
-		}
-	}
 }
 
 // Re-running init on a current bundle adds back what is missing — the

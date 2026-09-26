@@ -71,9 +71,10 @@ command's usage line, its group and summary in the overview, `fdf help <command>
 `help_test.go` checks that every dispatcher command has one topic and every flag it defines
 is documented. A command that works on a bundle stops with `fdfroot.NoBundle` when the root
 holds no `INDEX.md`. Every command but `validate`, `migrate` and `serve` works on spec 1.x
-bundles only: `scaffold.RequireSupported` stops it on a bundle that pins 0.x, or no
-version, and points it at `fdf migrate`; a pin that is not a `MAJOR.MINOR` version is to
-be corrected in `INDEX.md`, and a root inside a pinned bundle is sent to that bundle.
+bundles only: `scaffold.RequireSupported` stops it on a bundle that pins 0.x, which it
+points at `fdf migrate`, or no version, which is to be pinned, or migrated; a pin that is
+not a `MAJOR.MINOR` version is to be corrected in `INDEX.md`, and a root inside a pinned
+bundle is sent to that bundle.
 
 - **`cli/internal/fdfroot`** — root resolution, used by every command. Bundle root precedence:
   `--root` flag > `FDF_ROOT_DIR` env > the default: the first of `docs/fdf` and
@@ -86,6 +87,12 @@ be corrected in `INDEX.md`, and a root inside a pinned bundle is sent to that bu
   directory above a root whose `INDEX.md` pins a version: a root whose own `INDEX.md` pins
   nothing below one, such as `--root docs/fdf/features`, is a register or group of that
   bundle, which the commands' gate and `fdf migrate` refuse in `InsideBundle`'s words.
+  `Pin` (and `PinOf`, for a bundle's root) is the one reader of a pin — the
+  `fdf_version` key of the root `INDEX.md`'s frontmatter, read line by line, so a line
+  of it that does not parse hides no pin, and one written in the body is none — which
+  the validator, every command (`scaffold.Pin`), root resolution and `fdf migrate` share.
+  Frontmatter that no `---` line closes pins nothing (`Unclosed`), and the validator,
+  the commands' gate and `fdf migrate` each say so, not that the pin is missing.
   Relative roots resolve against the
   **project root**, found by walking up to the topmost `.git`. A `.git` *file* (submodule)
   marks a boundary but the walk continues to the superproject — so `resource:` paths always
@@ -137,9 +144,10 @@ be corrected in `INDEX.md`, and a root inside a pinned bundle is sent to that bu
 - **`cli/internal/bundle`** (`validate.go`) — the heart of the tool. `Validate()` is the
   enforcement engine for the spec. Rules are coded **F1–F14** (format conformance) and **R1**
   (repo integrity); every error message ends with its rule code, e.g. `(F4)`. Highlights:
-  - A directory with no `INDEX.md` is no bundle (`fdfroot.NoBundle`). `readPin()` reads
-    `fdf_version` from the root `INDEX.md` *before* the walk: the pin decides whether the
-    bundle is checked at all. The validator checks spec **1.0** (`supportedVersions`); a
+  - A directory with no `INDEX.md` is no bundle (`fdfroot.NoBundle`). The pin is read
+    *before* the walk (`fdfroot.PinOf`): it decides whether the bundle is checked at all,
+    and a line of the root `INDEX.md`'s frontmatter that does not parse is F1, as in any
+    document. The validator checks spec **1.0** (`supportedVersions`); a
     missing pin, one that is not a `MAJOR.MINOR` version, an older one (a 0.x bundle, for
     `fdf migrate`) or a newer one (for a newer fdf) is an F1 error that names the fix
     (`pinProblem`), and the bundle is checked no further.

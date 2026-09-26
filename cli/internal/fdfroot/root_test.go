@@ -155,6 +155,7 @@ func TestDefaultFindsABundleAtEitherLocation(t *testing.T) {
 		{"both", map[string]string{"docs/fdf/INDEX.md": pinned, "docs/features/INDEX.md": pinned}, "docs/fdf", "default docs/fdf", "docs/features"},
 		{"a site's index.md", map[string]string{"docs/features/index.md": pinned}, "docs/fdf", "default docs/fdf", ""},
 		{"an INDEX.md with no pin", map[string]string{"docs/features/INDEX.md": page}, "docs/fdf", "default docs/fdf", ""},
+		{"an INDEX.md that quotes a pin", map[string]string{"docs/features/INDEX.md": page + "\n```yaml\nfdf_version: \"0.7\"\n```\n"}, "docs/fdf", "default docs/fdf", ""},
 		{"docs/fdf, and a site", map[string]string{"docs/fdf/INDEX.md": pinned, "docs/features/INDEX.md": page}, "docs/fdf", "default docs/fdf", ""},
 	} {
 		tmp := t.TempDir()
@@ -172,6 +173,62 @@ func TestDefaultFindsABundleAtEitherLocation(t *testing.T) {
 		if r.Root != filepath.Join(tmp, filepath.FromSlash(tc.root)) || r.Source != tc.source || seen != tc.seen {
 			t.Errorf("%s: got %+v; want root %s (%s), shadowing %q", tc.name, r, tc.root, tc.source, tc.seen)
 		}
+	}
+}
+
+// A pin is the fdf_version key of the root INDEX.md's frontmatter, unquoted,
+// read line by line: another line of the frontmatter that does not parse
+// hides no pin, and a pin written anywhere else is none. PinOf reads the
+// INDEX.md of a bundle.
+func TestPinReadsTheFrontmatterLineByLine(t *testing.T) {
+	for index, want := range map[string]string{
+		"---\nfdf_version: \"1.0\"\n---\n# B\n":                      "1.0",
+		"---\nfdf_version: 0.5\n---\n":                               "0.5",
+		"\uFEFF---\r\nfdf_version: '0.7'\r\n---\r\n# B\r\n":          "0.7",
+		"---\nfdf_version: \"1.0\"\nnot: [a\nno key\n---\n":          "1.0", // a line that does not parse
+		"# B\n\nfdf_version: \"0.6\"\n":                              "",    // not frontmatter
+		"---\ntitle: B\n---\n\n```yaml\nfdf_version: \"0.6\"\n```\n": "",    // a sample in the body
+		"---\nfdf_version: \"0.6\"\n# B\n":                           "",    // unterminated
+	} {
+		if got := Pin(index); got != want {
+			t.Errorf("Pin(%q) = %q, want %q", index, got, want)
+		}
+	}
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "INDEX.md"), []byte("---\nfdf_version: \"1.0\"\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := PinOf(root); got != "1.0" {
+		t.Errorf("PinOf = %q, want 1.0", got)
+	}
+	if got := PinOf(t.TempDir()); got != "" {
+		t.Errorf("PinOf with no INDEX.md = %q, want none", got)
+	}
+}
+
+// Frontmatter that no `---` line closes pins nothing, whatever it says, and
+// Unclosed tells it from an INDEX.md that pins nothing, so that each reader
+// of a pin can say why.
+func TestUnclosedTellsFrontmatterThatNeverCloses(t *testing.T) {
+	for index, want := range map[string]bool{
+		"---\nfdf_version: \"1.0\"\n\n# B\n":     true,
+		"---\r\nfdf_version: \"1.0\"\r\n# B\r\n": true,
+		"---":                                    true,
+		"---\nfdf_version: \"1.0\"\n---\n# B\n":  false,
+		"---\n---\n# B\n":                        false,
+		"# B\n\n---\n":                           false,
+		"":                                       false,
+	} {
+		root := t.TempDir()
+		if err := os.WriteFile(filepath.Join(root, "INDEX.md"), []byte(index), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := Unclosed(root); got != want {
+			t.Errorf("Unclosed with INDEX.md %q = %v, want %v", index, got, want)
+		}
+	}
+	if Unclosed(t.TempDir()) {
+		t.Error("a root with no INDEX.md has no frontmatter to close")
 	}
 }
 

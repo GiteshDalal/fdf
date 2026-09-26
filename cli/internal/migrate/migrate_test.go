@@ -442,6 +442,23 @@ func TestMigrateKeepsTheFormOfWhatItRewrites(t *testing.T) {
 	}
 }
 
+// The pin is the fdf_version line of the root INDEX.md's frontmatter, where
+// every command reads it, and migrate rewrites that line alone: one in a
+// sample in the body is no pin, and keeps its words.
+func TestMigratePinsTheFrontmatterAlone(t *testing.T) {
+	root := copyFixture(t, "valid-bugs-v07")
+	sample := "\nA bundle pins its version so:\n\n```yaml\nfdf_version: \"0.7\"\n```\n"
+	write(t, root, "INDEX.md", string(mustRead(t, filepath.Join(root, "INDEX.md")))+sample)
+	var out bytes.Buffer
+	if code := Run(Options{Root: root}, &out); code != 0 {
+		t.Fatalf("migrate exit %d\n%s", code, out.String())
+	}
+	idx := string(mustRead(t, filepath.Join(root, "INDEX.md")))
+	if !strings.HasPrefix(idx, "---\nfdf_version: \""+target+"\"\n---\n") || !strings.HasSuffix(idx, sample) {
+		t.Errorf("the frontmatter's pin moves, and the sample keeps its words:\n%s", idx)
+	}
+}
+
 // A bundle that is a symbolic link is not where the link is: migrate refuses
 // it, names the directory it links to, and writes nothing in it.
 func TestMigrateRefusesABundleThatIsASymlink(t *testing.T) {
@@ -905,6 +922,22 @@ func TestMigrateAsksABundleLaidOutFor10ForItsPin(t *testing.T) {
 	Run(Options{Root: old, DryRun: true}, &out)
 	if strings.Contains(out.String(), "as in a bundle written for spec") {
 		t.Errorf("a group's index.md is no sign of %s:\n%s", target, out.String())
+	}
+}
+
+// Frontmatter that no `---` line closes pins nothing, whatever it says:
+// migrate says so, rather than read the bundle as one with no pin, and
+// writes nothing.
+func TestMigrateRefusesFrontmatterThatNeverCloses(t *testing.T) {
+	root := copyFixture(t, "valid-bugs-v07")
+	write(t, root, "INDEX.md", strings.Replace(string(mustRead(t, filepath.Join(root, "INDEX.md"))), "fdf_version: \"0.7\"\n---\n", "fdf_version: \"0.7\"\n", 1))
+	before := tree(t, root)
+	var out bytes.Buffer
+	if code := Run(Options{Root: root}, &out); code != 1 || out.String() != "cannot migrate: INDEX.md's frontmatter has no closing `---` line, so it pins no fdf_version — end the block with one, and run migrate again; the bundle was left as it is.\n" {
+		t.Errorf("migrate names the frontmatter: exit %d\n%s", code, out.String())
+	}
+	if tree(t, root) != before {
+		t.Error("a refused migration changes nothing")
 	}
 }
 

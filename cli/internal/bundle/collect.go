@@ -96,14 +96,22 @@ func (c *collection) read(rel string, raw []byte) string {
 var listingRe = regexp.MustCompile(`(?m)^\s*[-*]\s+\[.*\]\(.*\)`)
 
 // reserved checks an INDEX.md or a LOG.md, which is not a document. Only the
-// root INDEX.md carries frontmatter: its pin, which Validate read first.
+// root INDEX.md carries frontmatter: its pin, which Validate read first, line
+// by line, as every command reads it. A line of it that does not parse is F1,
+// as in any document.
 func (c *collection) reserved(rel, name, text string) {
 	if name != "INDEX.md" {
 		checkLogBody(rel, text, c.errs, c.warns)
 		return
 	}
-	if _, delimited, _ := splitFrontmatter(text); delimited && rel != "INDEX.md" {
+	block, delimited, _ := splitFrontmatter(text)
+	switch {
+	case delimited && rel != "INDEX.md":
 		c.warn("%s: index file should not carry frontmatter", rel)
+	case delimited:
+		if _, err := parseFrontmatter(block); err != nil {
+			c.fail("%s: frontmatter is not parseable (F1): %v", rel, err)
+		}
 	}
 	if !listingRe.MatchString(text) {
 		c.warn("%s: index file has no bulleted listing", rel)
