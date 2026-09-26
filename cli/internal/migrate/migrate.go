@@ -135,6 +135,12 @@ func Run(o Options, out io.Writer) int {
 			fmt.Fprintln(out, "error:", fdfroot.InsideBundle(root, bundle))
 			return 1
 		}
+		// Nor is one written for 1.0 that has lost its pin: read as 0.1 to
+		// 0.3, its registers would move into features/.
+		if sign := laidOut1(rootAbs); sign != "" {
+			fmt.Fprintf(out, "cannot migrate: INDEX.md pins no fdf_version, but %s, as in a bundle written for spec %s — if it was, pin fdf_version: \"%s\" in INDEX.md, and there is nothing to migrate; if it was written for an older version, pin that one (fdf 0.7 read a bundle with no pin as 0.2), and run migrate again; the bundle was left as it is.\n", sign, target, target)
+			return 1
+		}
 	case !ok:
 		fmt.Fprintf(out, "cannot migrate: the bundle pins fdf_version %s, which is not a MAJOR.MINOR version such as %s — correct the pin in INDEX.md; the bundle was left as it is.\n", pin, scaffold.CurrentVersion())
 		return 1
@@ -365,6 +371,22 @@ func specCurrent(root string) bool {
 	return text == string(want)
 }
 
+// laidOut1 names what shows that the bundle at root, which pins nothing, was
+// written for spec 1.0: features/INDEX.md, the index of the register 1.0
+// files every feature in, or a SPEC.md that is 1.0's; or "" when neither is
+// there. A bundle from before 1.0 held a features/INDEX.md only in a group it
+// named features, which its pin, once written in, tells apart.
+func laidOut1(root string) string {
+	index := filepath.Join(root, "features", "INDEX.md")
+	switch {
+	case exists(index) && onDisk(index) == index:
+		return "it holds features/INDEX.md"
+	case specCurrent(root):
+		return "its SPEC.md is spec " + target + "'s"
+	}
+	return ""
+}
+
 // stubRe matches the validator's messages for a Context document that is
 // still an unfilled stub (bundle's F9 check): "freshly scaffolded stub" while
 // the bundle has features — migrate's advisory form of F9 — and "still an
@@ -494,6 +516,29 @@ func preflightV4(root string) []string {
 	})
 	sort.Strings(problems)
 	return problems
+}
+
+// stemTrailRe is a trail file of the stem layout, 0.4's and later's: a
+// <slug>.<role>.md beside its document.
+var stemTrailRe = regexp.MustCompile(`^([a-z0-9][a-z0-9-]*)\.(spec|plan|test|surface|log)\.md$`)
+
+// stemTrail is the first trail file of the stem layout in a group of the
+// bundle at root, beside the document it belongs to, or "" when there is
+// none: the mark of a bundle written for 0.4 or later.
+func stemTrail(root string) string {
+	groups, _ := os.ReadDir(root)
+	for _, g := range groups {
+		if !g.IsDir() || strings.HasPrefix(g.Name(), ".") {
+			continue
+		}
+		files, _ := os.ReadDir(filepath.Join(root, g.Name()))
+		for _, f := range files {
+			if m := stemTrailRe.FindStringSubmatch(f.Name()); m != nil && exists(filepath.Join(root, g.Name(), m[1]+".md")) {
+				return g.Name() + "/" + f.Name()
+			}
+		}
+	}
+	return ""
 }
 
 // featureIsDraft reports whether the sibling feature document of a paired

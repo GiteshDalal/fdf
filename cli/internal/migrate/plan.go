@@ -196,8 +196,13 @@ func newPlan(root, pin, project, dest string, skip []string) (p *plan, problems 
 	v, _ := specver.Parse(pin)
 	stem := v.AtLeast(specver.Version{Minor: 4})
 	if !stem {
-		// Refuse content the v0.4 layout cannot hold.
+		// Refuse content the v0.4 layout cannot hold. A bundle that pins
+		// nothing but is in the stem layout was written for 0.4 or later,
+		// and needs its pin, not its trail renamed.
 		if problems := preflightV4(root); len(problems) > 0 {
+			if trail := stemTrail(root); pin == "" && trail != "" {
+				return nil, []string{fmt.Sprintf("INDEX.md: pins no fdf_version, so migrate reads the bundle as 0.1 to 0.3, whose layout has no trail file such as %s — pin the version it was written for, one of 0.4 to 0.7, in INDEX.md, and run migrate again", trail)}, nil
+			}
 			return nil, problems, nil
 		}
 		if err := p.caseRenames(); err != nil {
@@ -979,30 +984,36 @@ func withLogFrontmatter(text, to string) string {
 }
 
 // stripStatusTags removes the status tag older tools put after an index
-// listing (` (**draft**)`), outside code, and says how many it removed.
-// Nothing kept it current, so it went stale as soon as the document moved on;
-// a status lives only in its document.
+// listing (` (**draft**)`), outside code blocks, which it reads as the link
+// engine does (links.Blocks), and says how many it removed. Nothing kept it
+// current, so it went stale as soon as the document moved on; a status
+// lives only in its document.
 func stripStatusTags(text string) (string, int) {
-	lines := strings.Split(text, "\n")
-	fence, removed := "", 0
-	for i, line := range lines {
-		t := strings.TrimSpace(line)
-		if fence != "" {
-			if strings.HasPrefix(t, fence) {
-				fence = ""
+	blocks := links.Blocks(text)
+	inBlock := func(at int) bool {
+		for _, b := range blocks {
+			if b.Start <= at && at < b.End {
+				return true
 			}
-			continue
 		}
-		if strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~") {
-			fence = t[:3]
-			continue
-		}
-		if m := statusTagRe.FindStringSubmatch(line); m != nil {
-			lines[i] = m[1] + m[2]
+		return false
+	}
+	var b strings.Builder
+	removed, pos := 0, 0
+	for _, line := range strings.SplitAfter(text, "\n") {
+		at := pos
+		pos += len(line)
+		body, nl := strings.CutSuffix(line, "\n")
+		if m := statusTagRe.FindStringSubmatch(body); m != nil && !inBlock(at) {
+			line = m[1] + m[2]
+			if nl {
+				line += "\n"
+			}
 			removed++
 		}
+		b.WriteString(line)
 	}
-	return strings.Join(lines, "\n"), removed
+	return b.String(), removed
 }
 
 // withPin returns the root INDEX.md's text pinned to version: its

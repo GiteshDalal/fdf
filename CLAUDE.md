@@ -262,7 +262,8 @@ be corrected in `INDEX.md`, and a root inside a pinned bundle is sent to that bu
   that is its own repository has no outside. Refused before anything is written: a
   root inside a pinned bundle, or one that is a symbolic link, or whose `INDEX.md`,
   `LOG.md` or `SPEC.md` is one; a pin that is not a version, a newer one or an unknown
-  0.x one; a v0.1 rename (`caseRenames`) or a 0.3 lift (`liftTrails`) onto a file that
+  0.x one, or none in a bundle written for 1.0 (`laidOut1`: its `features/INDEX.md`,
+  or a `SPEC.md` that is 1.0's), which needs only its pin; a v0.1 rename (`caseRenames`) or a 0.3 lift (`liftTrails`) onto a file that
   is there; a stray root Markdown file, a document named `index.md` or `log.md`, a
   practice, debt or bug beside a directory of Markdown, a group whose place in
   `features/` is taken or a register's taken by a file (`registerFile`: a `features`,

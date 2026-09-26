@@ -847,6 +847,65 @@ func TestMigrateReadsUnquotedPin(t *testing.T) {
 	}
 }
 
+// A bundle that pins nothing is read as 0.1 to 0.3, whose layout has no
+// trail files. One in the stem layout was written for 0.4 or later and has
+// lost its pin: migrate asks for the pin, rather than for each trail file
+// to be renamed, and writes nothing.
+func TestMigrateAsksAnUnpinnedStemBundleForItsPin(t *testing.T) {
+	root := copyFixture(t, "valid-bugs-v07")
+	write(t, root, "INDEX.md", strings.Replace(string(mustRead(t, filepath.Join(root, "INDEX.md"))), "---\nfdf_version: \"0.7\"\n---\n\n", "", 1))
+	before := tree(t, root)
+	var out bytes.Buffer
+	if code := Run(Options{Root: root}, &out); code != 1 || out.String() != "cannot migrate — fix these first (bundle left unchanged):\n"+
+		"  INDEX.md: pins no fdf_version, so migrate reads the bundle as 0.1 to 0.3, whose layout has no trail file such as bugs/hours-off-by-one.log.md — pin the version it was written for, one of 0.4 to 0.7, in INDEX.md, and run migrate again\n" {
+		t.Errorf("migrate asks for the pin: exit %d\n%s", code, out.String())
+	}
+	if tree(t, root) != before {
+		t.Error("a refused migration changes nothing")
+	}
+}
+
+// A bundle written for 1.0 that has lost its pin is no bundle from before
+// 1.0: read as 0.1 to 0.3, its registers would move into features/. Migrate
+// says what shows it, features/INDEX.md or a SPEC.md that is 1.0's, asks for
+// the pin, and writes nothing.
+func TestMigrateAsksABundleLaidOutFor10ForItsPin(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "fdf")
+	var made bytes.Buffer
+	if code := scaffold.Init(root, &made); code != 0 {
+		t.Fatalf("init exit %d\n%s", code, made.String())
+	}
+	write(t, root, "INDEX.md", strings.Replace(string(mustRead(t, filepath.Join(root, "INDEX.md"))), "fdf_version: \""+target+"\"\n", "", 1))
+	for i, sign := range []string{"it holds features/INDEX.md", "its SPEC.md is spec " + target + "'s"} {
+		if i > 0 {
+			// Without features/INDEX.md, the copy of the spec shows it.
+			if err := os.Remove(filepath.Join(root, "features", "INDEX.md")); err != nil {
+				t.Fatal(err)
+			}
+		}
+		before := tree(t, root)
+		var out bytes.Buffer
+		want := "cannot migrate: INDEX.md pins no fdf_version, but " + sign + ", as in a bundle written for spec " + target + " — if it was, pin fdf_version: \"" + target + "\" in INDEX.md, and there is nothing to migrate; if it was written for an older version, pin that one (fdf 0.7 read a bundle with no pin as 0.2), and run migrate again; the bundle was left as it is.\n"
+		if code := Run(Options{Root: root, DryRun: true}, &out); code != 1 || out.String() != want {
+			t.Errorf("migrate asks for the pin: exit %d\n%s", code, out.String())
+		}
+		if tree(t, root) != before {
+			t.Error("a refused migration changes nothing")
+		}
+	}
+	// A group of an older bundle may be named features, and v0.1 spelled its
+	// index index.md: that is no sign, though a disk that ignores case opens
+	// it as features/INDEX.md.
+	old := t.TempDir()
+	write(t, old, "INDEX.md", "# Bundle\n")
+	write(t, old, "features/index.md", "# Features\n")
+	var out bytes.Buffer
+	Run(Options{Root: old, DryRun: true}, &out)
+	if strings.Contains(out.String(), "as in a bundle written for spec") {
+		t.Errorf("a group's index.md is no sign of %s:\n%s", target, out.String())
+	}
+}
+
 // A migrate that finds the pin already current looks identical to a migrate
 // that is simply too old to know about newer versions — which is what happens
 // when a version shim (mise, asdf) holds an old fdf in a directory. The
@@ -1040,11 +1099,13 @@ func mustRead(t *testing.T, p string) []byte {
 
 // Older tools wrote a status tag after each index listing and nothing kept it
 // current; migration removes it, leaves other bold text and code alone, and
-// logs the migration in the bundle-root log.
+// logs the migration in the bundle-root log. Code is read as the link engine
+// reads it: a line that starts with a run of backticks and closes it, a
+// code span, opens no fence.
 func TestMigrateDropsIndexStatusTags(t *testing.T) {
 	root := t.TempDir()
 	buildV06Bundle(t, root)
-	write(t, root, "venues/INDEX.md", "# Venues\n\n* [Hours](/venues/hours.md) - opening hours. (**draft**)\n* [Menu](/venues/hours.md) - the menu. (**important**)\n\n```\n* [Sample](/venues/hours.md) - a sample. (**done**)\n```\n")
+	write(t, root, "venues/INDEX.md", "# Venues\n\n```fdf validate``` runs after any edit.\n\n* [Hours](/venues/hours.md) - opening hours. (**draft**)\n* [Menu](/venues/hours.md) - the menu. (**important**)\n\n```\n* [Sample](/venues/hours.md) - a sample. (**done**)\n```\n")
 	write(t, root, "changes/INDEX.md", "# Changes\n\n* [x](/changes/INDEX.md) - changes. (**specified**)\n")
 	var out bytes.Buffer
 	if code := Run(Options{Root: root}, &out); code != 0 {
@@ -1848,30 +1909,43 @@ func TestMigrateSaysHowToUndoAStoppedMigration(t *testing.T) {
 // commands that back it out, the first of which takes the marks back, in the
 // repository that holds them, and the commands do put everything back: for
 // a plain directory and for a submodule, with a file outside the bundle
-// rewritten.
+// rewritten, and for a bundle that is its own repository.
 func TestMigrateSaysHowToBackOutAMigration(t *testing.T) {
 	const says = "      to back the migration out instead, run these commands; the first takes back the\n" +
 		"      marks of `git add -N`, on which git stash and git clean would trip:\n"
-	for _, submodule := range []bool{false, true} {
-		var project string
-		if submodule {
+	for _, kind := range []string{"a plain directory", "a submodule", "its own repository"} {
+		var project, root string
+		switch kind {
+		case "a submodule":
 			project = gitSuperproject(t, "valid-bugs-v07")
-		} else {
+		case "its own repository":
+			project = filepath.Join(t.TempDir(), "handbook")
+			copyFixtureTo(t, "valid-bugs-v07", project)
+			gitIn(t, project, "init", "-q")
+			gitIn(t, project, "add", "-A")
+			gitIn(t, project, "commit", "-qm", "bundle")
+			root = project
+		default:
 			project = gitProject(t, "valid-bugs-v07")
 		}
-		write(t, project, "README.md", "# Project\n\nThe bundle is in docs/features.\n")
-		gitIn(t, project, "commit", "-qam", "readme")
+		if root == "" {
+			root = filepath.Join(project, "docs", "features")
+			write(t, project, "README.md", "# Project\n\nThe bundle is in docs/features.\n")
+			gitIn(t, project, "commit", "-qam", "readme")
+		}
 		before := worktree(t, project)
 		var out bytes.Buffer
-		if code := Run(Options{Root: filepath.Join(project, "docs", "features"), Project: project}, &out); code != 0 {
-			t.Fatalf("submodule %v: migrate exit %d\n%s", submodule, code, out.String())
+		if code := Run(Options{Root: root, Project: project}, &out); code != 0 {
+			t.Fatalf("%s: migrate exit %d\n%s", kind, code, out.String())
 		}
-		if readme := string(mustRead(t, filepath.Join(project, "README.md"))); !strings.Contains(readme, "docs/fdf") {
-			t.Fatalf("submodule %v: the test needs a file outside the bundle rewritten:\n%s", submodule, readme)
+		if root != project {
+			if readme := string(mustRead(t, filepath.Join(project, "README.md"))); !strings.Contains(readme, "docs/fdf") {
+				t.Fatalf("%s: the test needs a file outside the bundle rewritten:\n%s", kind, readme)
+			}
 		}
 		_, rest, ok := strings.Cut(out.String(), says)
 		if !ok {
-			t.Fatalf("submodule %v: the next steps say how to back the migration out:\n%s", submodule, out.String())
+			t.Fatalf("%s: the next steps say how to back the migration out:\n%s", kind, out.String())
 		}
 		var cmds []string
 		for _, line := range strings.Split(rest, "\n") {
@@ -1882,19 +1956,19 @@ func TestMigrateSaysHowToBackOutAMigration(t *testing.T) {
 			cmds = append(cmds, cmd)
 		}
 		if len(cmds) == 0 || !strings.Contains(cmds[0], " reset -q -- ") {
-			t.Fatalf("submodule %v: the commands start by taking back the marks:\n%s", submodule, rest)
+			t.Fatalf("%s: the commands start by taking back the marks:\n%s", kind, rest)
 		}
 		for _, cmd := range cmds {
 			if b, err := exec.Command("sh", "-c", cmd).CombinedOutput(); err != nil {
-				t.Fatalf("submodule %v: %s: %v\n%s", submodule, cmd, err, b)
+				t.Fatalf("%s: %s: %v\n%s", kind, cmd, err, b)
 			}
 		}
 		if after := worktree(t, project); after != before {
-			t.Errorf("submodule %v: the commands put everything back:\n%s", submodule, strings.Join(cmds, "\n"))
+			t.Errorf("%s: the commands put everything back:\n%s", kind, strings.Join(cmds, "\n"))
 		}
-		for _, dir := range []string{project, filepath.Join(project, "docs", "features")} {
+		for _, dir := range []string{project, root} {
 			if status := gitIn(t, dir, "status", "--porcelain", "--untracked-files=all", "--ignored"); status != "" {
-				t.Errorf("submodule %v: git status is clean again in %s:\n%s", submodule, dir, status)
+				t.Errorf("%s: git status is clean again in %s:\n%s", kind, dir, status)
 			}
 		}
 	}
