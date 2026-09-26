@@ -118,9 +118,11 @@ var helpTopics = []helpTopic{
 			"changes/, practices/, debts/ and bugs/. It never overwrites: on a bundle\n" +
 			"already at this version it only adds what is missing, and on an older\n" +
 			"one it points you to `fdf migrate`. A directory inside a bundle, one of\n" +
-			"its registers or groups, is refused. Fill the Context stubs with the\n" +
-			"fdf-init skill before feature work: once a feature exists, F9 fails while\n" +
-			"any of them is still a stub.",
+			"its registers or groups, is refused, and so is one that holds Markdown\n" +
+			"but no INDEX.md, such as a bundle from before 1.0 that never had one,\n" +
+			"which is `fdf migrate`'s. Fill the Context stubs with the fdf-init skill\n" +
+			"before feature work: once a feature exists, F9 fails while any of them\n" +
+			"is still a stub.",
 		flags:    []flagDoc{rootFlagDoc},
 		examples: []string{"fdf init", "fdf init --root wiki/fdf"},
 	},

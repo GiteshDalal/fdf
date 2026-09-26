@@ -5,6 +5,7 @@ package fdfroot
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -12,9 +13,52 @@ import (
 )
 
 // NoBundle is what every command says when the bundle root holds no bundle,
-// so a wrong --root reads the same whichever command met it first.
+// so a wrong --root reads the same whichever command met it first. A root
+// that holds Markdown nonetheless, such as a bundle from before 1.0 that
+// never had an INDEX.md, is sent to fdf migrate, not to fdf init, which
+// refuses it (Unindexed).
 func NoBundle(root string) error {
+	if file, route := Unindexed(root); file != "" {
+		return fmt.Errorf("no bundle at %s (no INDEX.md), though it holds %s — %s; or point --root at the bundle", root, file, route)
+	}
 	return fmt.Errorf("no bundle at %s (no INDEX.md) — run `fdf init` first, or point --root at the bundle", root)
+}
+
+// Unindexed returns a Markdown file in the directory at root, which holds no
+// INDEX.md, by its path from root, and how fdf migrate takes the bundle from
+// before 1.0 that the file makes it: a v0.1 bundle's index.md, which migrate
+// renames, as it is, and any other once it has an INDEX.md, which need not
+// pin a version. Both are "" when root holds no Markdown but its README.md;
+// what is hidden is passed over.
+func Unindexed(root string) (file, route string) {
+	entries, _ := os.ReadDir(root)
+	for _, e := range entries {
+		if e.Name() == "index.md" {
+			return "index.md", fmt.Sprintf("run `fdf migrate --root %s`, which renames a v0.1 bundle's index.md", root)
+		}
+	}
+	filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		switch {
+		case err != nil:
+			return nil
+		case p != root && strings.HasPrefix(d.Name(), "."):
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		case d.IsDir() || !strings.HasSuffix(d.Name(), ".md"):
+			return nil
+		}
+		if rel, _ := filepath.Rel(root, p); rel != "README.md" {
+			file = filepath.ToSlash(rel)
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	if file == "" {
+		return "", ""
+	}
+	return file, fmt.Sprintf("a bundle from before 1.0 needs an INDEX.md, which need not pin a version, committed where git tracks it, and then `fdf migrate --root %s`", root)
 }
 
 // InsideBundle is what every command, fdf migrate included, says when root is

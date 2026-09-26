@@ -70,7 +70,9 @@ command as it should have been typed. `helpTopics` in `help.go` is the single so
 command's usage line, its group and summary in the overview, `fdf help <command>` and `-h`;
 `help_test.go` checks that every dispatcher command has one topic and every flag it defines
 is documented. A command that works on a bundle stops with `fdfroot.NoBundle` when the root
-holds no `INDEX.md`. Every command but `validate`, `migrate` and `serve` works on spec 1.x
+holds no `INDEX.md`, which sends a root that holds Markdown nonetheless to `fdf migrate`,
+not `fdf init` (`fdfroot.Unindexed`: a v0.1 bundle's `index.md` as it is, any other once
+it has an `INDEX.md`). Every command but `validate`, `migrate` and `serve` works on spec 1.x
 bundles only: `scaffold.RequireSupported` stops it on a bundle that pins 0.x, which it
 points at `fdf migrate`, or no version, which is to be pinned, or migrated; a pin that is
 not a `MAJOR.MINOR` version is to be corrected in `INDEX.md`, and a root inside a pinned
@@ -137,7 +139,9 @@ bundle is sent to that bundle.
   (`HoldsMarkdown`). `Bundle.File` gives a Markdown file's `Position` (`Kind`, `Register`,
   the `ID` of the document it is or belongs to, a trail's `Role`), or a `Stray` with the
   path at fault (`Where`) and its `Problem`; `Bundle.Dir` does the same for a directory,
-  and `Bundle.Place` says why a new document cannot be filed at an ID. No document is
+  `Bundle.Place` says why a new document cannot be filed at an ID, and
+  `Bundle.PlaceGroup` why a group cannot be made there (one may be called `index` or
+  `log`, which no document may). No document is
   named `index.md` or `log.md`, which a disk that ignores case reads as the `INDEX.md` or
   `LOG.md` beside it (`CaseTwin` says so). `Bundle.Exists` reads a name exactly, as
   `os.Stat` does not on such a disk. The validator and every command read positions here.
@@ -209,8 +213,10 @@ bundle is sent to that bundle.
   writes the new document with `O_EXCL`, never over a file; `IsFeature` and
   `FeatureHint` check a feature ID, suggesting the full one for an ID written the 0.7
   way, and `IDHint` does the same for a feature group's; `pin.go` is the commands' one
-  gate, `RequireSupported`, a pin among `Supported()`, which `fdf init` asks too;
-  `listing.go` keeps the indexes: `EnsureIndex` for a register's, `ListEntry`/`Unlist`
+  gate, `RequireSupported`, a pin among `Supported()`, which `fdf init` asks too; `Init`
+  starts a bundle only where there is none, and refuses a directory that holds Markdown
+  but no `INDEX.md` (`fdfroot.Unindexed`), such as a bundle from before 1.0 that never
+  had one, which is `fdf migrate`'s; `listing.go` keeps the indexes: `EnsureIndex` for a register's, `ListEntry`/`Unlist`
   for a document, listing each new group on the way in its parent's index, `ListGroup`
   for a group, and `ListRegister` for a register in the root `INDEX.md`, over
   `WithRegisterListing`; `IndexText`, `ContextStub`, `SpecDoc`, `RegisterLine` and
@@ -301,7 +307,8 @@ bundle is sent to that bundle.
   links, edges, declaration headings and ID mentions in every document, with
   `IDMentions`, which `fdf migrate` shares — an ID where it ends, as the ID, one of its
   documents or its task directory, never `<id>/handler.go`, a route's template, or,
-  for the 0.x IDs migrate passes it (`routes`), a bare `/<id>` — move index listings,
+  for the 0.x IDs migrate passes it (`routes`), a bare `/<id>`, and never in a
+  `resource` or `applies-to` path, which names code (`FieldPaths`) — move index listings,
   log, and report references outside the bundle) and `Lexicon`
   (`fdf lexicon`, and `--fix` one `--term` at a time: plurals, capitals and a/an kept,
   scenario names renamed across their joins; italic mentions, quoted Gherkin labels,

@@ -494,6 +494,64 @@ func tree(t *testing.T, root string) string {
 	return b.String()
 }
 
+// fdf init starts a bundle only where there is none. A directory that holds
+// Markdown but no INDEX.md, such as a bundle from before 1.0 that never had
+// one, keeps every file, its LOG.md among them, and is sent to fdf migrate.
+// A README.md, which the root may hold, is no reason to refuse, nor is what
+// is hidden.
+func TestInitRefusesADirectoryThatHoldsMarkdown(t *testing.T) {
+	root := t.TempDir()
+	log := "# Log\n\n## 2026-01-01\n* Kept.\n"
+	for rel, text := range map[string]string{"LOG.md": log, "wdise/example.md": "# Example\n"} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, rel)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, rel), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := tree(t, root)
+	var out bytes.Buffer
+	if code := Init(root, &out); code != 1 || !strings.Contains(out.String(), "but no INDEX.md") || !strings.Contains(out.String(), "`fdf migrate --root "+root+"`") {
+		t.Errorf("init refuses and names fdf migrate: exit %d\n%s", code, out.String())
+	}
+	if tree(t, root) != before {
+		t.Error("a refused init writes nothing")
+	}
+	for _, rel := range []string{"README.md", ".notes/draft.md"} {
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, rel)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, rel), []byte("# Docs\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		out.Reset()
+		if code := Init(dir, &out); code != 0 {
+			t.Errorf("init beside %s: exit %d\n%s", rel, code, out.String())
+		}
+	}
+}
+
+// A bundle's spec copy is the spec its pin names, which a later minor makes
+// older than the current one: EnsureSpec writes the version it is given,
+// and init gives it the pin, and writes nothing over a copy that is there.
+func TestEnsureSpecWritesTheVersionItIsGiven(t *testing.T) {
+	root := t.TempDir()
+	var out bytes.Buffer
+	if code := EnsureSpec(root, "0.7", &out); code != 0 {
+		t.Fatalf("EnsureSpec: exit %d\n%s", code, out.String())
+	}
+	spec, err := os.ReadFile(filepath.Join(root, "SPEC.md"))
+	if err != nil || !strings.Contains(string(spec), "The FDF v0.7 specification this bundle conforms to.") || !strings.Contains(out.String(), "wrote SPEC.md (FDF v0.7 spec copy)") {
+		t.Errorf("SPEC.md is the 0.7 spec: %v\n%s", err, out.String())
+	}
+	out.Reset()
+	if code := EnsureSpec(root, CurrentVersion(), &out); code != 0 || out.String() != "" {
+		t.Errorf("a copy that is there is kept: exit %d\n%s", code, out.String())
+	}
+}
+
 // Re-running init on a current bundle adds back what is missing — the
 // reserved directories' indexes included — and overwrites nothing.
 func TestInitBackfillsMissingIndexes(t *testing.T) {

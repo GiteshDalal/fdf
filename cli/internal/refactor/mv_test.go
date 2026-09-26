@@ -341,6 +341,34 @@ func TestMovePointsA0xBundleAtMigrate(t *testing.T) {
 	read(t, root, "features/venues/opening-hours.md")
 }
 
+// A group may be called index or log, which no document may be: a disk that
+// ignores case reads index.md as INDEX.md, but no directory as either. The
+// INDEX.md beside the group's new place does not stand in its way.
+func TestMoveTakesAGroupNamedIndexOrLog(t *testing.T) {
+	root := fixture(t, "valid-bugs")
+	move(t, root, "features/venues", "features/index")
+	read(t, root, "features/index/opening-hours.md")
+	move(t, root, "features/index", "features/log")
+	read(t, root, "features/log/opening-hours.md")
+	validates(t, root)
+}
+
+// A `resource` or `applies-to` path names code, not a document, even where
+// it spells a feature's ID, as code that shares its layout may: fdf mv leaves
+// it as it is, as fdf migrate does, and rewrites the ID everywhere else.
+func TestMoveLeavesAResourcePathAsItIs(t *testing.T) {
+	root := fixture(t, "valid-bugs")
+	task := "features/venues/opening-hours/01-build.md"
+	write(t, root, task, strings.Replace(read(t, root, task), "status: done\n", "status: done\nresource: features/venues/opening-hours\n", 1))
+	move(t, root, "features/venues/opening-hours", "features/venues/trading-hours")
+	if got := read(t, root, "features/venues/trading-hours/01-build.md"); !strings.Contains(got, "\nresource: features/venues/opening-hours\n") {
+		t.Errorf("the resource path is left as it is:\n%s", got)
+	}
+	if got := read(t, root, "changes/closed-hours-fix.md"); !strings.Contains(got, "affects: features/venues/trading-hours\n") {
+		t.Errorf("the ID is rewritten everywhere else:\n%s", got)
+	}
+}
+
 // No name is reserved inside a register: a feature group called bugs/ moves,
 // and takes features, like any other.
 func TestMoveTreatsAGroupCalledBugsAsAnyOther(t *testing.T) {

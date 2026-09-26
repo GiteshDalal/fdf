@@ -772,7 +772,7 @@ func (p *plan) repair() {
 		if isLog(shaped) {
 			p.logIDs += len(refactor.IDMentions(text, p.ids, "", skip, true))
 		} else {
-			for k := range fieldPaths(text) {
+			for k := range refactor.FieldPaths(text) {
 				skip[k] = true
 			}
 			if ids := refactor.IDMentions(text, p.ids, "", skip, true); len(ids) > 0 {
@@ -952,38 +952,6 @@ func linkTargets(text string) map[int]bool {
 	for _, l := range links.Find(text) {
 		for i := l.Start; i < l.End; i++ {
 			out[i] = true
-		}
-	}
-	return out
-}
-
-// fieldPaths marks the bytes of the resource and applies-to values in text's
-// frontmatter, inline or as a list: paths in the project, which name code,
-// never a feature.
-func fieldPaths(text string) map[int]bool {
-	out := map[int]bool{}
-	if !strings.HasPrefix(text, "---") {
-		return out
-	}
-	in, pos := false, 0
-	for i, line := range strings.SplitAfter(text, "\n") {
-		start := pos
-		pos += len(line)
-		t := strings.TrimSpace(line)
-		switch {
-		case i > 0 && t == "---":
-			return out
-		case strings.HasPrefix(line, "resource:") || strings.HasPrefix(line, "applies-to:"):
-			in = true
-		case in && strings.HasPrefix(t, "-"):
-			// an item of the field's list
-		default:
-			in = false
-		}
-		if in {
-			for k := start; k < pos; k++ {
-				out[k] = true
-			}
 		}
 	}
 	return out

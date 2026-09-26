@@ -232,6 +232,37 @@ func TestUnclosedTellsFrontmatterThatNeverCloses(t *testing.T) {
 	}
 }
 
+// A root with no INDEX.md that holds Markdown nonetheless is a bundle from
+// before 1.0, or none of FDF's: every command sends it to fdf migrate, not
+// to fdf init, which refuses it, and a v0.1 bundle's index.md needs no
+// INDEX.md beside it. A README.md, or what is hidden, is no such Markdown.
+func TestNoBundleSendsMarkdownToMigrate(t *testing.T) {
+	for files, says := range map[string]string{
+		"":                          "",
+		"README.md":                 "",
+		".notes/x.md":               "",
+		"wdise/example.md":          "though it holds wdise/example.md — a bundle from before 1.0 needs an INDEX.md, which need not pin a version, committed where git tracks it, and then `fdf migrate --root ROOT`; or point --root at the bundle",
+		"index.md wdise/example.md": "though it holds index.md — run `fdf migrate --root ROOT`, which renames a v0.1 bundle's index.md; or point --root at the bundle",
+	} {
+		root := t.TempDir()
+		for _, f := range strings.Fields(files) {
+			if err := os.MkdirAll(filepath.Dir(filepath.Join(root, f)), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, f), []byte("# Doc\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		want := "no bundle at " + root + " (no INDEX.md) — run `fdf init` first, or point --root at the bundle"
+		if says != "" {
+			want = "no bundle at " + root + " (no INDEX.md), " + strings.ReplaceAll(says, "ROOT", root)
+		}
+		if got := NoBundle(root).Error(); got != want {
+			t.Errorf("with %q:\n got %s\nwant %s", files, got, want)
+		}
+	}
+}
+
 func TestNearestProjectRootPrefersInnerRepo(t *testing.T) {
 	dir := t.TempDir()
 	inner := filepath.Join(dir, "outer", "inner", "src")

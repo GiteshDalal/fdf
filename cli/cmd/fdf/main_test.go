@@ -382,3 +382,35 @@ func TestMigrateTakesSkipMoreThanOnce(t *testing.T) {
 		t.Errorf("fdf migrate --skip schema.sql --skip 'nope/**': exit %d\n%s", code, out)
 	}
 }
+
+// fdf log gates a bundle before it reads it: a lone argument that names a
+// document of a bundle the commands do not work on is refused with the
+// gate's words, not read as an ID written without its entry.
+func TestLogGatesTheBundleBeforeItReadsIt(t *testing.T) {
+	src := filepath.Join("..", "..", "..", "testdata", "valid-bugs", "bundle")
+	root := t.TempDir()
+	err := filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(src, p)
+		if d.IsDir() {
+			return os.MkdirAll(filepath.Join(root, rel), 0o755)
+		}
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(root, rel), raw, 0o644)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	index, _ := os.ReadFile(filepath.Join(root, "INDEX.md"))
+	os.WriteFile(filepath.Join(root, "INDEX.md"), []byte(strings.Replace(string(index), `fdf_version: "1.0"`, `fdf_version: "0.7"`, 1)), 0o644)
+	var out bytes.Buffer
+	if code := runLog([]string{"--root", root, "features/venues/opening-hours"}, &out); code != 1 ||
+		!strings.HasSuffix(out.String(), "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0 bundles — run `fdf migrate` to upgrade it first\n") {
+		t.Errorf("fdf log on a 0.7 bundle: exit %d\n%s", code, out.String())
+	}
+}
