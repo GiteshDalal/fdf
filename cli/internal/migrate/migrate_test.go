@@ -446,16 +446,29 @@ func TestMigrateKeepsTheFormOfWhatItRewrites(t *testing.T) {
 // every command reads it, and migrate rewrites that line alone: one in a
 // sample in the body is no pin, and keeps its words.
 func TestMigratePinsTheFrontmatterAlone(t *testing.T) {
-	root := copyFixture(t, "valid-bugs-v07")
 	sample := "\nA bundle pins its version so:\n\n```yaml\nfdf_version: \"0.7\"\n```\n"
-	write(t, root, "INDEX.md", string(mustRead(t, filepath.Join(root, "INDEX.md")))+sample)
-	var out bytes.Buffer
-	if code := Run(Options{Root: root}, &out); code != 0 {
-		t.Fatalf("migrate exit %d\n%s", code, out.String())
-	}
-	idx := string(mustRead(t, filepath.Join(root, "INDEX.md")))
-	if !strings.HasPrefix(idx, "---\nfdf_version: \""+target+"\"\n---\n") || !strings.HasSuffix(idx, sample) {
-		t.Errorf("the frontmatter's pin moves, and the sample keeps its words:\n%s", idx)
+	// fdfroot.Pin reads a `---` line with the spaces around it, as the
+	// validator does, and the pin migrate writes goes where Pin read the old
+	// one.
+	for _, c := range []struct{ name, open, close string }{
+		{"plain", "---\n", "---\n"},
+		{"opening line ends in a space", "--- \n", "---\n"},
+		{"closing line ends in a tab", "---\n", "---\t\n"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			root := copyFixture(t, "valid-bugs-v07")
+			idx := string(mustRead(t, filepath.Join(root, "INDEX.md")))
+			idx = c.open + "fdf_version: \"0.7\"\n" + c.close + strings.TrimPrefix(idx, "---\nfdf_version: \"0.7\"\n---\n")
+			write(t, root, "INDEX.md", idx+sample)
+			var out bytes.Buffer
+			if code := Run(Options{Root: root}, &out); code != 0 {
+				t.Fatalf("migrate exit %d\n%s", code, out.String())
+			}
+			got := string(mustRead(t, filepath.Join(root, "INDEX.md")))
+			if !strings.HasPrefix(got, c.open+"fdf_version: \""+target+"\"\n"+c.close) || !strings.HasSuffix(got, sample) || strings.Count(got, "fdf_version") != 2 {
+				t.Errorf("the frontmatter's pin moves, and the sample keeps its words:\n%s", got)
+			}
+		})
 	}
 }
 

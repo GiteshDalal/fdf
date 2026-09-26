@@ -1026,7 +1026,8 @@ func stripStatusTags(text string) (string, int) {
 
 // withPin returns the root INDEX.md's text pinned to version: the
 // fdf_version line of its frontmatter rewritten, where fdfroot.Pin reads the
-// pin, or the pin added to the frontmatter the text has, or to a frontmatter
+// pin, between `---` lines read as Pin reads them, spaces around them and
+// all, or the pin added to the frontmatter the text has, or to a frontmatter
 // block of its own. A line keeps its ending, and a line added ends as the
 // text's lines do. An fdf_version line anywhere else, such as in a sample in
 // the body, is no pin, and keeps its words.
@@ -1041,9 +1042,9 @@ func withPin(text, version string) string {
 		bom, text = text[:3], text[3:]
 	}
 	lines := strings.SplitAfter(text, "\n")
-	if strings.TrimRight(lines[0], "\r\n") == "---" {
+	if strings.TrimSpace(lines[0]) == "---" {
 		for i, l := range lines[1:] {
-			if strings.TrimRight(l, "\r\n") != "---" {
+			if strings.TrimSpace(l) != "---" {
 				continue
 			}
 			for j := 1; j <= i; j++ {
