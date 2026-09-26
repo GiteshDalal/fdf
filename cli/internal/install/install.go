@@ -30,7 +30,7 @@ import (
 
 // Version is stamped by the CLI (main.version) at dispatch time; this default
 // only shows when the package is driven directly, and must track main.version.
-var Version = "1.0.0"
+var Version = "1.0.1"
 
 // defaultRoot is the bundle root the skill texts are written against; a
 // different install root rewrites every occurrence in the skill bodies.
