@@ -1,3 +1,0 @@
-exit: 1
-contains: no/such/handler.go
-contains: (R1)

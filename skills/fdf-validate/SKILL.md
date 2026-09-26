@@ -1,6 +1,6 @@
 ---
 name: fdf-validate
-description: Use after any edit to a file under an FDF bundle (docs/features/), and whenever `fdf validate` exits non-zero or prints FAIL lines — turns rule codes (F1–F14, R1) into the correct fix, and never silences a rule by weakening content.
+description: Use after any edit to a file under an FDF bundle (docs/fdf/), and whenever `fdf validate` exits non-zero or prints FAIL lines — turns rule codes (F1–F14, R1) into the correct fix, and never silences a rule by weakening content.
 ---
 
 # FDF Validate
@@ -9,7 +9,7 @@ description: Use after any edit to a file under an FDF bundle (docs/features/), 
 how you clear it honestly.
 
 New to FDF? Run `fdf spec` for the format rules (also vendored in the bundle
-at `docs/features/SPEC.md`) and `fdf help` for the CLI. The fdf-help skill
+at `docs/fdf/SPEC.md`) and `fdf help` for the CLI. The fdf-help skill
 explains how the fdf skills fit together.
 
 ## When to run
@@ -35,7 +35,7 @@ FAIL: ARCHITECTURE.md: still an unfilled stub; ... (F9)
 warn: <advisory>
 
 6 document(s), 1 feature(s), 0 release(s) checked; 4 error(s), 0 warning(s).
-Bundle is NOT conformant with FDF v0.7.
+Bundle is NOT conformant with FDF v1.0.
 ```
 
 - Every FAIL line ends with its **rule code** — that code, not the prose, is
@@ -55,20 +55,20 @@ Bundle is NOT conformant with FDF v0.7.
 
 | Code | Broke | Usual fix |
 |---|---|---|
-| **F1** | Frontmatter missing/unterminated, missing `type`, a `timestamp` that is neither a date nor an RFC 3339 time with `Z` or an offset (v0.7), bad log date, unsupported `fdf_version` | Restore the `---` block and required fields. A timestamp with no zone gets the `Z` or offset it was written in; when that is unknown, keep only the date — never invent a time. An unsupported pin means run `fdf migrate` — never hand-edit the pin. |
+| **F1** | Frontmatter missing/unterminated, missing `type`, a `timestamp` that is neither a date nor an RFC 3339 time with `Z` or an offset, bad log date, a missing or unsupported `fdf_version` pin | Restore the `---` block and required fields. A timestamp with no zone gets the `Z` or offset it was written in; when that is unknown, keep only the date — never invent a time. A 0.x pin means the bundle predates 1.0: upgrade it (fdf-help, *A bundle from before 1.0*) — never hand-edit the pin. A pin newer than this fdf validates means upgrading fdf. A pin that is not a `MAJOR.MINOR` version (`1.0.0`, `v1.0`), or is a 0.x version FDF never had (after 0.7), is a typo: correct it in `INDEX.md`. A missing pin gets the version the bundle was written for: `"1.0"` when its features are under `features/`; an older bundle's 0.x version, and then the upgrade. |
 | **F2** | `status` is not a legal value for that `type` | Use a real status: Feature `draft→specified→planned→implementing→done→retired`, or `adopted→retired` for code that predates its document; Debt and Bug `open`, then `accepted` or `resolved`; Change/Fix `draft→specified→planned→implementing→done`; Task `pending→in-progress→done`; Release `planned→shipped`. Set it to what is **true**, not what clears the error. |
-| **F3** | Wrong `type`, wrong position, bad casing, illegal file in a task directory | Move the file to its FDF position. Directories and filenames are lowercase; uppercase is reserved. Task dirs hold **only** `NN-slug.md` — a trail doc nested there belongs at `<group>/<slug>.<role>.md`. Roles are only `spec`, `plan`, `test`, `surface`, `log` under a group — and only `spec`, `plan`, `log` under `changes/`, because `test` and `surface` belong to the affected feature. |
+| **F3** | Wrong `type`, wrong position, bad casing, a file or directory the closed root has no place for, a directory beside a practice, debt or bug, illegal file in a task directory | Move the file to its FDF position. The root holds only `INDEX.md`, `LOG.md`, `SPEC.md`, `README.md`, the five Context documents and the six registers: a document of an FDF type goes in its register — a feature in `features/`, flat or in groups — and free-form documentation goes out of the bundle, into the rest of `docs/`. A practice, debt or bug owns no directory: rename the one beside it. Directories and filenames are lowercase; uppercase is reserved, and no document is named `index.md` or `log.md`. Task dirs hold **only** `NN-slug.md` — a trail doc nested there belongs beside its feature, at `features/…/<slug>.<role>.md`. Roles are only `spec`, `plan`, `test`, `surface`, `log` beside a feature — and only `spec`, `plan`, `log` under `changes/`, because `test` and `surface` belong to the affected feature. |
 | **F4** | Status ↔ artifact mismatch | The status claims work the trail does not show, or vice versa. A `draft` may have a log and nothing else. `surface` takes only the value `none`, and a feature that says `surface: none` has no `slug.surface.md`: keep whichever is true. See "Which way to fix" below. An `adopted` feature is the exception that runs the other way: it must have **no** spec, plan or task directory and must name its code in `resource` — never write a build trail to satisfy F4 for existing code; if work is being done on it, that work is a Change (fdf-adopt). |
 | **F5** | Feature Gherkin malformed | One ```gherkin fence with exactly one `Feature:`, at least one `Scenario:` — an `adopted` feature may have none yet (a map entry), and so may a `retired` one that was never built. A retired feature that was built keeps the scenarios it had. |
 | **F6** | Plan ↔ task drift: unlinked task, dead link, missing plan, bad or cyclic `depends-on` | Make `# Tasks` in `slug.plan.md` list exactly the task files that exist. `depends-on` must name sibling tasks and must not cycle. |
 | **F7** | Release ↔ `version` linkage, for features **and** changes | Reconcile `releases/*.md` with the `version:` fields the documents carry. `fdf release <version>` derives both lists for you; a shipped release may list only `done` documents, and features retired since they shipped. |
-| **F8** | `slug.test.md` missing, or a Gherkin scenario has no test case | Add the case: a `## <scenario name>` heading under `# Test Cases`, the name matched **exactly** (from v0.7, a bullet or table row naming the scenario no longer counts; convert such cases to headings by hand). Fix the test file to match the scenario, not the scenario to match the test. A case that names no scenario is a warning: drop it, or give it the scenario's exact name. |
+| **F8** | `slug.test.md` missing, or a Gherkin scenario has no test case | Add the case: a `## <scenario name>` heading under `# Test Cases`, the name matched **exactly** (a bullet or a table row naming the scenario does not count; a bundle upgraded from before 0.7 may still have them — convert such cases to headings by hand). Fix the test file to match the scenario, not the scenario to match the test. A case that names no scenario is a warning: drop it, or give it the scenario's exact name. |
 | **F9** | A Context doc is missing or still an unfilled stub | Stop. Run the **fdf-init** interview. Do not invent STACK/ARCHITECTURE/SURFACES/INFRA/DOMAIN content to clear this. |
 | **F10** | A Change/Fix under `changes/` does not match reality | See "F10" below. |
 | **F11** | A practice under `practices/` is malformed | A practice needs a non-empty `# Rules` section and carries no Gherkin. A `superseded` one must name an existing replacement in `superseded-by`; an `active` one must not carry that field. Its only legal sibling is `<slug>.log.md` — there is no practice spec, plan, test or task directory. |
 | **F12** | The domain lexicon is inconsistent, or a banned word reached a document or a name the bundle chose | See "F12" below. |
 | **F13** | A debt under `debts/` is malformed | A debt needs a non-empty `# Gap`, concrete enough that someone else could confirm it, and carries no Gherkin. `accepted` requires a `# Rationale` (keeping a gap is a decision); `resolved` requires a `# Resolution` (what closed it). A debt owns no spec, plan, test or tasks — only `<slug>.log.md`. |
-| **F14** | A bug under `bugs/` is malformed, or cites a scenario that is not there | A bug needs a non-empty `# Symptom` (the reproduction, or the code path found by reading) and `# Expected`, and carries no Gherkin. Every `# Violates` heading is in `affects`, and while the bug is open every name under it exists **verbatim** — cite the scenario exactly, or drop `# Violates` when no scenario covers the case (the repair is then a Change). `accepted` requires `# Rationale` and forbids `# Violates`: a scenario the project knowingly keeps contradicting makes its feature lie — repair the code (Fix) or change the scenario (Change). `resolved` requires `# Resolution`, and a resolved bug still citing `# Violates` needs the done Fix or Change that `resolves` it: a bug is never repaired in place. While the bug is open, every feature under `# Violates` is delivered (`done` or `adopted`): in a feature still being built the defect is its tasks' to repair, so drop `# Violates` and keep the scenario's name in `# Expected`. |
+| **F14** | A bug under `bugs/` is malformed, or cites a scenario that is not there | A bug needs a non-empty `# Symptom` (the reproduction, or the code path found by reading) and `# Expected`, and carries no Gherkin. Every `# Violates` heading is in `affects`, and while the bug is open every name under it exists **verbatim** — cite the scenario exactly, or drop `# Violates` when no scenario covers the case (the repair is then a Change). `accepted` requires `# Rationale` and forbids `# Violates`: a scenario the project knowingly keeps contradicting makes its feature lie — repair the code (Fix) or change the scenario (Change). `resolved` requires `# Resolution`, and a resolved bug still citing `# Violates` needs the done Fix or Change that `resolves` it: a bug is never repaired in place. While the bug is open, every feature under `# Violates` is delivered (`done` or `adopted`): in a feature still being built the defect is its tasks' to repair, so drop `# Violates` and keep the scenario's name in `# Expected`. A feature named the 0.7 way, in `affects` or a `## <feature-id>` heading, gets a hint, `did you mean features/…?`: write the full ID it gives. |
 | **R1** | A `resource:` (task/change/fix/debt/bug, or an adopted feature) or `applies-to:` (practice) path does not exist in the repo | The document points at a path that isn't there. **A task that will create the file:** the path does not belong in `resource:` yet — list the existing directory it goes into, and never create a placeholder file to satisfy R1. **A path that moved under a refactor:** update it to where that code lives now, even on a `done` task — a path is bookkeeping, not the record an episodic document keeps — and note the move in the log. **A path whose code was deleted:** on a done task, Change or Fix, remove the path and log what was removed (a path repair: the record keeps the fact in its log); on a living document the document is out of date — amend it. **A debt:** a vanished path usually means the gap is gone; check, and if so flip it to `resolved` with a `# Resolution`, then `fdf debt --cleanup` — a resolved debt is still checked until cleanup retires it. |
 
 ## Which way to fix
@@ -101,9 +101,10 @@ landed**. The declaration is the contract; the features are the evidence.
 | `... a fix proves scenarios that already exist` | A `Fix` names a scenario the feature does not have | The document was silent on this case, so this is a **Change**, not a Fix. Convert it. |
 | `<feature>.test.md has no case for "X"` | The regression case never reached the feature's living test doc | Add it there. That case is the whole point of the Fix. |
 | `affects names <feature> with status '<s>'` | The feature is not delivered | Edit it directly through the normal workflow; a change request is for `done`/`adopted`/`retired` features. |
+| `` `affects` names unknown feature "…" — did you mean features/…? `` | A feature ID written the 0.7 way: every 1.0 ID starts with its register | Write the full ID the hint gives — in `affects`, `retires`, `replaced-by`, `depends-on` and the `## <feature-id>` headings alike. |
 | `requires a # Scenario changes section` (or `# Regression cases`) | Wrong declaration section for the type | A `Change` declares scenario changes; a `Fix` declares regression cases. Never both. |
 | `done, but the bug it resolves, bugs/<id>, is still 'open'` | The repair landed and the register still says the defect is there | Flip the bug to `resolved` with a `# Resolution` naming this document. Never drop `resolves` to clear it. |
-| `resolves names "…", which is not a bug` | A typo, or the bug was never filed | Point at the real bug ID (`bugs/<slug>` or `bugs/<group>/<slug>`). A bug already cleared into `bugs/LOG.md` is fine once the document is done. |
+| `resolves names "…", which is not a bug` | A typo, or the bug was never filed | Point at the real bug ID (`bugs/<slug>`, or `bugs/<group>/<slug>` with its groups). A bug already cleared into `bugs/LOG.md` is fine once the document is done. |
 | `status 'retired' but no done Change ... retires it` | A capability went dark with no reason recorded | Write the retiring `Change` with a `# Rationale`. If it exists but is not `done` yet, land it: its `done` and the feature's `retired` go in one edit (fdf-change). |
 | `done, and retires names X whose status is 'done'` | The Change landed but the feature still reads as delivered | Flip the feature to `retired` in the same edit as the Change's `done`. |
 | `retires names X ... until this Change is done, the feature it retires is still delivered` | The feature was flipped to `retired` before its Change landed | Put it back to `done` (or `adopted`) until the Change is `done`; then flip both in one edit. |
@@ -128,8 +129,8 @@ banned words or is a banned word alone, a `strict:` that is not `true` or
 term owns the word, and say so. Do not resolve it by deleting the term someone
 will still use.
 
-**A banned word reached a document or a name the bundle chose.** From v0.7 F12
-reads every document except `SPEC.md`, `DOMAIN.md`, `slug.test.md` and
+**A banned word reached a document or a name the bundle chose.** F12 reads
+every document except `SPEC.md`, `DOMAIN.md`, `slug.test.md` and
 `slug.surface.md` — features, specs, plans, tasks, changes, practices, debts,
 bugs, logs, indexes, Context documents, finished work included — plus every
 group, slug and task name. It skips what quotes rather than chooses: code spans,
@@ -139,8 +140,8 @@ verifications. Findings are `warn:` lines, one per document, and FAIL once
 `DOMAIN.md` sets `strict: true` or `--strict-domain` is passed:
 
 ```
-warn: payments/refunds.spec.md: uses banned "store" ×3 → "Venue" (F12)
-warn: stores/: name uses banned "store" → "Venue" — rename it with `fdf mv` (F12)
+warn: features/payments/refunds.spec.md: uses banned "store" ×3 → "Venue" (F12)
+warn: features/stores/: name uses banned "store" → "Venue" — rename it with `fdf mv` (F12)
 warn: and 37 more document(s) or name(s) use banned words — `fdf lexicon` lists every occurrence (F12)
 ```
 
@@ -214,7 +215,8 @@ validate and all make the bundle lie:
 | Drop an existing path from a task's `resource:` to clear R1 | The task now has no verifiable target. (A path the task will *create* never belonged there — list its existing directory instead.) |
 | Create an empty placeholder file so a `resource:` path exists | The bundle now claims work that has not happened. |
 | Write plausible-sounding STACK.md text to clear F9 | Invented context is worse than no context — every later feature is designed against it. |
-| Hand-edit `fdf_version` to a supported value | Migration is mechanical; `fdf migrate` exists for this. |
+| Hand-edit `fdf_version` to a supported value | The pin says which rules the bundle follows. `fdf migrate` moves a bundle into the new layout and then pins it; a hand-edited pin claims a layout the bundle does not have. |
+| Give a free-form note an FDF type so the closed root stops rejecting it | It becomes a document the bundle vouches for — a feature whose scenarios nobody agreed to. Move free-form documentation out of the bundle. |
 | Delete the file the error names | The error was about the file's content, not its existence. |
 | Drop an `instead-of` word so an F12 warning goes away | The synonym drift is the thing the lexicon exists to catch; you deleted the detector, not the problem. |
 | Change a UI label, locale string or help text so a scenario stops tripping F12 | The lexicon covers internal language only; the surface may use that word on purpose. Reword the step around the concept, and keep the literal in the step definition or `slug.test.md`. |

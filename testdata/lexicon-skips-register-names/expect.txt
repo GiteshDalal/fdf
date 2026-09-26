@@ -1,0 +1,3 @@
+exit: 0
+contains: features/platform/front/shop-checkout/: name uses banned "shop" → "Venue" — rename it with `fdf mv` (F12)
+not-contains: features/: name uses banned

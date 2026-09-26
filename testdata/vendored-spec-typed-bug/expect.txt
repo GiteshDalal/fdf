@@ -1,0 +1,3 @@
+exit: 1
+contains: FAIL: SPEC.md: `type: Bug` has a position of its own, which is not the bundle root — the vendored spec is `type: Reference` (F3)
+contains: checked; 1 error(s),

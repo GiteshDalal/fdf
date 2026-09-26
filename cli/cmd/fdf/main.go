@@ -13,7 +13,7 @@ import (
 )
 
 // version is set by goreleaser via -ldflags "-X main.version=...".
-var version = "0.7.1"
+var version = "1.0.0"
 
 // banner is the product header both the overview and `fdf help` print.
 // The spec version is derived, never written out, so a spec bump cannot
@@ -89,9 +89,14 @@ func runVersion(args []string, stdout io.Writer) int {
 // which binary is running, and which bundle root it chose and why. A stale
 // version held in place by a shim (mise, asdf) and a root resolved somewhere
 // unexpected are the two failures that otherwise look like "the tool did
-// nothing", and neither is visible from the command's own output.
-func announce(cmd, root, source string, stdout io.Writer) {
-	fmt.Fprintf(stdout, "fdf %s · %s · root: %s (%s)\n\n", version, cmd, root, source)
+// nothing", and neither is visible from the command's own output. When the
+// default passed over a second bundle, a warning line says where it is.
+func announce(cmd string, r fdfroot.Resolution, stdout io.Writer) {
+	fmt.Fprintf(stdout, "fdf %s · %s · root: %s (%s)\n", version, cmd, r.Root, r.Source)
+	if r.Shadowed != "" {
+		fmt.Fprintf(stdout, "warning: %s holds a bundle too; docs/fdf comes first, so pass --root to work on the other\n", r.Shadowed)
+	}
+	fmt.Fprintln(stdout)
 }
 
 // requireBundle stops a command that works on a bundle when the root holds

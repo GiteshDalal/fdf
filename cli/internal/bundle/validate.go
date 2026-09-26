@@ -1,5 +1,7 @@
-// Package bundle validates an FDF bundle (spec v0.2 through v0.7). Rules
-// F1-F14 are format conformance; R1 is repo integrity. See SPEC.md.
+// Package bundle validates an FDF bundle against the spec version it pins,
+// which is 1.0: a bundle that pins none, or one this fdf does not validate,
+// fails F1 and is checked no further. Rules F1-F14 are format conformance;
+// R1 is repo integrity. See SPEC.md.
 package bundle
 
 import (
@@ -13,6 +15,8 @@ import (
 	"time"
 
 	"github.com/GiteshDalal/fdf/cli/internal/fdfroot"
+	"github.com/GiteshDalal/fdf/cli/internal/links"
+	"github.com/GiteshDalal/fdf/cli/internal/specver"
 )
 
 type Options struct {
@@ -27,8 +31,8 @@ type Options struct {
 	// StrictDomain promotes F12's banned-word warnings to errors. Off by
 	// default: the lexicon check is the one rule that matches natural
 	// language, so a young bundle adopting a lexicon would otherwise be
-	// unable to validate until every document had been reworded. From v0.7 a
-	// bundle can also turn it on for itself with `strict: true` in DOMAIN.md.
+	// unable to validate until every document had been reworded. A bundle
+	// can also turn it on for itself with `strict: true` in DOMAIN.md.
 	StrictDomain bool
 }
 
@@ -38,39 +42,17 @@ type Options struct {
 const domainReportCap = 20
 
 var (
-	reserved     = map[string]bool{"INDEX.md": true, "LOG.md": true}
-	trailNames   = map[string]string{"SPEC.md": "Spec", "PLAN.md": "Plan", "TEST.md": "Test"}
-	contextNames = map[string]bool{"STACK.md": true, "ARCHITECTURE.md": true, "INFRA.md": true, "SURFACES.md": true, "DOMAIN.md": true}
-	// structural types are rejected at the bundle root (position is fixed).
-	// Surface and Log exist only under v0.4 and are gated at the check site,
-	// so v0.2/v0.3 bundles keep accepting them as ordinary root doc types.
-	structural   = map[string]bool{"Feature": true, "Spec": true, "Plan": true, "Task": true, "Test": true, "Release": true}
-	structuralV4 = map[string]bool{"Surface": true, "Log": true}
-	structuralV5 = map[string]bool{"Change": true, "Fix": true}
-	structuralV6 = map[string]bool{"Practice": true, "Debt": true}
-	structuralV7 = map[string]bool{"Bug": true}
-	// changeTrailRoleRe: under changes/, only spec/plan/log are legal roles —
-	// test and surface are living documents owned by the affected feature.
-	changeTrailRoleRe = regexp.MustCompile(`^([a-z0-9][a-z0-9-]*)\.(spec|plan|log)\.md$`)
-	// logTrailRoleRe: under practices/ and debts/, `log` is the only legal
-	// role — both are living references with no episodic trail of their own.
-	logTrailRoleRe = regexp.MustCompile(`^([a-z0-9][a-z0-9-]*)\.(log)\.md$`)
-	recommended    = []string{"title", "description", "timestamp"}
-	linkRe         = regexp.MustCompile(`\[[^\]]*\]\(([^)]+)\)`)
-	// fenceOpenRe/inlineCodeRe strip code before links are harvested: a link
-	// written inside an example is sample text, not a cross-link.
-	fenceOpenRe  = regexp.MustCompile("^(`{3,})")
-	inlineCodeRe = regexp.MustCompile("`[^`\n]*`")
-	isoDateRe    = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
-	taskFileRe   = regexp.MustCompile(`^\d{2}-[a-z0-9][a-z0-9-]*\.md$`)
-	lowerFileRe  = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]*\.md$`)
-	lowerDirRe   = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
-	// trailRoleRe matches known v0.4 stem-qualified trail siblings.
-	trailRoleRe = regexp.MustCompile(`^([a-z0-9][a-z0-9-]*)\.(spec|plan|test|surface|log)\.md$`)
-	// anyTrailAttemptRe matches any group-level dotted basename (slug.something.md).
-	// Feature slugs are [a-z0-9-], so an extra dot implies a trail-role attempt.
-	anyTrailAttemptRe = regexp.MustCompile(`^([a-z0-9][a-z0-9-]*)\.(.+)\.md$`)
-	trailRoleType     = map[string]string{
+	// structural types are rejected at the bundle root: each has a position
+	// of its own in a register.
+	structural  = map[string]bool{"Feature": true, "Spec": true, "Plan": true, "Task": true, "Test": true, "Release": true, "Surface": true, "Log": true, "Change": true, "Fix": true, "Practice": true, "Debt": true, "Bug": true}
+	recommended = []string{"title", "description", "timestamp"}
+	// fenceOpenRe/inlineCodeRe strip code from a text whose markers and
+	// headings are read (linkScanText): an example quotes them.
+	fenceOpenRe   = regexp.MustCompile("^(`{3,})")
+	inlineCodeRe  = regexp.MustCompile("`[^`\n]*`")
+	isoDateRe     = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+	taskFileRe    = regexp.MustCompile(`^\d{2}-[a-z0-9][a-z0-9-]*\.md$`)
+	trailRoleType = map[string]string{
 		"spec":    "Spec",
 		"plan":    "Plan",
 		"test":    "Test",
@@ -85,11 +67,7 @@ var (
 	logDateRe     = regexp.MustCompile(`^##\s+(.*\S)\s*$`)
 )
 
-// featureStatuses: "retired" is v0.5 onward and "adopted" v0.7 onward, both
-// gated at the check site.
-var featureStatuses = []string{"draft", "specified", "planned", "implementing", "done"}
-var featureStatusesV5 = []string{"draft", "specified", "planned", "implementing", "done", "retired"}
-var featureStatusesV7 = []string{"draft", "specified", "planned", "implementing", "done", "adopted", "retired"}
+var featureStatuses = []string{"draft", "specified", "planned", "implementing", "done", "adopted", "retired"}
 
 // changeStatuses is the Change/Fix vocabulary (v0.5); it mirrors the feature
 // lifecycle minus "retired" — a change is work, not a capability.
@@ -102,22 +80,9 @@ var practiceStatuses = []string{"active", "superseded"}
 var debtStatuses = []string{"open", "accepted", "resolved"}
 var releaseStatuses = []string{"planned", "shipped"}
 
-// supportedVersions are the spec versions this validator understands; a pin
-// outside this set is an F1 error directing the user to `fdf migrate`.
-var supportedVersions = map[string]bool{"0.2": true, "0.3": true, "0.4": true, "0.5": true, "0.6": true, "0.7": true}
-
-// pinAtLeast reports whether a supported pin is spec 0.<minor> or later. An
-// empty or unsupported pin validates under v0.2 rules (F1 reports the latter).
-func pinAtLeast(pin string, minor int) bool {
-	if !supportedVersions[pin] {
-		return false
-	}
-	var n int
-	if _, err := fmt.Sscanf(pin, "0.%d", &n); err != nil {
-		return false
-	}
-	return n >= minor
-}
+// supportedVersions are the spec versions this validator checks: those of
+// spec 1. A bundle pinned to any other is not validated (pinProblem).
+var supportedVersions = map[string]bool{"1.0": true}
 
 // supportedList renders supportedVersions for error messages, so adding a
 // version never leaves a stale literal behind.
@@ -126,19 +91,51 @@ func supportedList() string {
 	for v := range supportedVersions {
 		vs = append(vs, v)
 	}
-	sort.Strings(vs)
+	specver.Sort(vs)
 	return strings.Join(vs, ", ")
+}
+
+// pinProblem is F1's error for a root INDEX.md whose pin this validator
+// cannot check a bundle against, naming the fix, or "" for a supported pin:
+// a missing pin is written in, one that is not a MAJOR.MINOR version is
+// corrected, a version newer than every one this fdf validates takes a newer
+// fdf, and an older one, a 0.x bundle, `fdf migrate`.
+func pinProblem(pin string) string {
+	if supportedVersions[pin] {
+		return ""
+	}
+	v, ok := specver.Parse(pin)
+	switch {
+	case pin == "":
+		return fmt.Sprintf("INDEX.md: pins no fdf_version — the version of the spec a bundle follows is pinned in its frontmatter, as fdf_version: \"%s\"; %s (F1)", newestSupported(), fdfroot.Upgrading("a bundle from before 1.0", ""))
+	case !ok:
+		return fmt.Sprintf("INDEX.md: fdf_version %q is not a MAJOR.MINOR version such as %q — correct the pin (F1)", pin, newestSupported())
+	case v.Major == 0 && !specver.Known0x(pin):
+		return fmt.Sprintf("INDEX.md: fdf_version %q is no 0.x version this fdf knows (0.1 to 0.7) — correct the pin (F1)", pin)
+	}
+	for s := range supportedVersions {
+		if w, _ := specver.Parse(s); !w.Less(v) {
+			return fmt.Sprintf("INDEX.md: fdf_version %q is not a supported version (%s) — %s (F1)", pin, supportedList(), fdfroot.Upgrading("the bundle", ""))
+		}
+	}
+	return fmt.Sprintf("INDEX.md: fdf_version %q is newer than any version this fdf validates (%s) — upgrade fdf (F1)", pin, supportedList())
+}
+
+// newestSupported is the newest version this validator checks.
+func newestSupported() string {
+	vs := strings.Split(supportedList(), ", ")
+	return vs[len(vs)-1]
 }
 
 // isStub reports whether a Context document still carries the stub marker
 // outside code — a filled document may quote the marker in a code span.
 func isStub(text string) bool { return strings.Contains(linkScanText(text), stubSentinel) }
 
-// checkLogBody validates ISO-8601 ## date headings and newest-first order
-// for reserved LOG.md and v0.4 slug.log.md files. A `##` line inside a fenced
-// block is an example an entry quotes, not a heading. From v0.7 a heading is
-// a real calendar date, as a `timestamp` is.
-func checkLogBody(rel, text string, v7 bool, errs, warns *[]string) {
+// checkLogBody validates the `## <date>` headings of a LOG.md or a
+// slug.log.md: each an ISO-8601 date, a real one, as a `timestamp` is, and
+// newest first. A `##` line inside a fenced block is an example an entry
+// quotes, not a heading.
+func checkLogBody(rel, text string, errs, warns *[]string) {
 	var dates []string
 	for _, line := range strings.Split(linkScanText(text), "\n") {
 		if m := logDateRe.FindStringSubmatch(line); m != nil {
@@ -147,7 +144,7 @@ func checkLogBody(rel, text string, v7 bool, errs, warns *[]string) {
 			switch {
 			case !isoDateRe.MatchString(h):
 				*errs = append(*errs, fmt.Sprintf("%s: log date heading '## %s' is not ISO-8601 (F1)", rel, h))
-			case v7 && perr != nil:
+			case perr != nil:
 				*errs = append(*errs, fmt.Sprintf("%s: log date heading '## %s' is not a real date (F1)", rel, h))
 			default:
 				dates = append(dates, h)
@@ -194,32 +191,11 @@ const stubSentinel = "<!-- fdf:stub -->"
 // still reading "- TODO". It runs on the text with code
 // stripped (linkScanText), so an example that quotes a placeholder is not one.
 // gherkinPlaceholderRe finds the scaffold's "As a <role>", which lives inside a
-// Gherkin fence and so is matched on the raw text. A v0.7 advisory: a scaffold
+// Gherkin fence and so is matched on the raw text. An advisory: a scaffold
 // passes every structural rule, and without this an untouched one reads as
 // done.
 var placeholderRe = regexp.MustCompile(`(?m)^\s*(?:[-*]\s+)?(?:\d+\.\s+)?(?:[a-z-]+:\s*)?TODO —|\) - TODO\.|\s(?:—|–|--)\s+TODO\b`)
 var gherkinPlaceholderRe = regexp.MustCompile(`(?m)^\s*As an? <role>\s*$`)
-
-// readPin returns the fdf_version pinned by the bundle's root INDEX.md, or ""
-// if absent/unreadable. It runs before the walk because version-gated rules
-// (Context documents, feature-directory LOG.md) must be known for every file,
-// and WalkDir visits files lexically — ARCHITECTURE.md sorts before INDEX.md.
-func readPin(rootAbs string) string {
-	raw, err := os.ReadFile(filepath.Join(rootAbs, "INDEX.md"))
-	if err != nil {
-		return ""
-	}
-	block, delimited, _ := splitFrontmatter(strings.TrimPrefix(string(raw), "\uFEFF"))
-	if !delimited {
-		return ""
-	}
-	data, _ := parseFrontmatter(block)
-	if data == nil {
-		return ""
-	}
-	v, _ := data["fdf_version"].(string)
-	return v
-}
 
 func in(list []string, s string) bool {
 	for _, v := range list {
@@ -232,9 +208,9 @@ func in(list []string, s string) bool {
 
 type featureInfo struct {
 	rel, status, version, body string
-	resource                   []string // v0.7: the code an adopted feature documents
+	resource                   []string // the code an adopted feature documents
 	replacedBy                 []string // the feature that replaces a retired one
-	surface                    string   // v0.7: `none` when the feature has no interface
+	surface                    string   // `none` when the feature has no interface
 }
 type pairInfo struct {
 	spec, plan, test  bool
@@ -248,24 +224,36 @@ type pairInfo struct {
 }
 type releaseInfo struct{ rel, status, body string }
 
-// Validate checks the bundle rooted at root and returns 0 or 1.
+// Validate checks the bundle rooted at root and returns 0 or 1. A directory
+// with no INDEX.md is no bundle. A bundle whose pin this fdf does not
+// validate fails F1 and is checked no further: its rules are another
+// version's, or it has none.
 func Validate(root string, opts Options) int {
 	out := opts.Out
 	if out == nil {
 		out = os.Stdout
 	}
 	rootAbs, err := filepath.Abs(root)
-	if err != nil || !isDir(rootAbs) {
-		// A directory without INDEX.md is still validated: under v0.2 rules,
-		// with a warning that names the missing pin.
+	if err != nil || !isDir(rootAbs) || !exists(filepath.Join(rootAbs, "INDEX.md")) {
 		fmt.Fprintln(out, "error:", fdfroot.NoBundle(root))
+		return 1
+	}
+	// The pin decides whether the bundle is checked at all, so it is read
+	// first, as every command reads it.
+	pinnedVer := fdfroot.PinOf(rootAbs)
+	problem := pinProblem(pinnedVer)
+	if fdfroot.Unclosed(rootAbs) {
+		// Its pin line may be there, and a missing pin would not say why.
+		problem = "INDEX.md: its frontmatter has no closing `---` line, so it pins no fdf_version — end the block with one (F1)"
+	}
+	if problem != "" {
+		fmt.Fprintf(out, "FAIL: %s\n\nBundle not validated: fdf checks a bundle against the version its INDEX.md pins, and validates %s.\n", problem, supportedList())
 		return 1
 	}
 
 	var errs, repoErrs, warns []string
-	type link struct{ src, target string }
-	var links []link
-	var resources []struct{ rel, field, path string }
+	var crossLinks []crossLink
+	var resources []resourceRef
 	features := map[string]*featureInfo{}
 	pairs := map[string]*pairInfo{}
 	releases := map[string]*releaseInfo{}
@@ -276,521 +264,20 @@ func Validate(root string, opts Options) int {
 	debtTrails := map[string]string{} // debt ID -> rel of its .log.md
 	bugs := map[string]*bugInfo{}
 	bugTrails := map[string]string{} // bug ID -> rel of its .log.md
-	texts := map[string]string{}     // v0.7: every .md file's text, for F12's scan
+	texts := map[string]string{}     // every .md file's text, for F12's scan
 	featureDeps := map[string][]string{}
 	documents := 0
-
-	// Version gate: Context docs / F9 apply on v0.3+; stem-trail layout and
-	// SURFACES.md on v0.4+. Anything else validates under v0.2 rules.
-	pinnedVer := readPin(rootAbs)
-	// specStem: the stem-qualified trail layout (v0.4 onward).
-	specStem := pinAtLeast(pinnedVer, 4)
-	// specV5: v0.5 and later — changes/, Change/Fix, `retired`, feature
-	// depends-on, F10. specV6 adds practices/, debts/, DOMAIN.md, F11-F13.
-	// specV7 adds bugs/ and F14, the `adopted` feature status, and F12's
-	// reach into every document and name.
-	specV5 := pinAtLeast(pinnedVer, 5)
-	specV6 := pinAtLeast(pinnedVer, 6)
-	specV7 := pinAtLeast(pinnedVer, 7)
-	specHasContext := pinAtLeast(pinnedVer, 3)
 	// contextDocs[name] records a seen root Context document and whether it is
 	// still an unfilled stub, for F9.
 	contextDocs := map[string]bool{} // name -> isStub
 
-	pair := func(fid string) *pairInfo {
-		if pairs[fid] == nil {
-			pairs[fid] = &pairInfo{tasks: map[string]string{}, deps: map[string][]string{}, depRels: map[string]string{}}
-		}
-		return pairs[fid]
+	c := &collection{
+		errs: &errs, warns: &warns, crossLinks: &crossLinks, resources: &resources, documents: &documents,
+		features: features, featureDeps: featureDeps, pairs: pairs, releases: releases, changes: changes,
+		practices: practices, practiceTrails: practiceTrails, debts: debts, debtTrails: debtTrails,
+		bugs: bugs, bugTrails: bugTrails, texts: texts, contextDocs: contextDocs,
 	}
-
-	filepath.WalkDir(rootAbs, func(path string, d os.DirEntry, err error) error {
-		// A hidden directory (.git, .obsidian) holds a tool's state, not FDF's.
-		if err == nil && d.IsDir() && path != rootAbs && strings.HasPrefix(d.Name(), ".") {
-			return filepath.SkipDir
-		}
-		if err != nil || d.IsDir() {
-			if d != nil && d.IsDir() && path != rootAbs {
-				base := filepath.Base(path)
-				if base != "releases" && !lowerDirRe.MatchString(base) {
-					errs = append(errs, fmt.Sprintf("%s/: directory names must be lowercase [a-z0-9-] (F3)", relTo(rootAbs, path)))
-				}
-			}
-			return nil
-		}
-		name := d.Name()
-		if !strings.HasSuffix(name, ".md") || strings.HasPrefix(name, ".") {
-			return nil // non-markdown and hidden files are outside FDF's rules
-		}
-		rel := relTo(rootAbs, path)
-		parts := strings.Split(filepath.ToSlash(rel), "/")
-		raw, rerr := os.ReadFile(path)
-		if rerr != nil {
-			warns = append(warns, fmt.Sprintf("%s: could not read file (%v)", rel, rerr))
-			return nil
-		}
-		// README.md at bundle root: legal, ignored.
-		if rel == "README.md" {
-			return nil
-		}
-		text := strings.TrimPrefix(string(raw), "\uFEFF")
-		if specV7 {
-			texts[filepath.ToSlash(rel)] = string(raw) // F12 reads it again, from here
-			if rel != "SPEC.md" && (placeholderRe.MatchString(linkScanText(text)) || gherkinPlaceholderRe.MatchString(text)) {
-				warns = append(warns, fmt.Sprintf("%s: still holds a scaffold's placeholder text (`TODO —`, `<role>`) — fill it in, or delete what does not apply", rel))
-			}
-		}
-		for _, m := range linkRe.FindAllStringSubmatch(linkScanText(text), -1) {
-			links = append(links, link{rel, m[1]})
-		}
-
-		if reserved[name] {
-			// A changes/ group carries INDEX.md like any group; only a task
-			// directory (one with a sibling <name>.md) forbids it.
-			inChangeGroup := specV5 && len(parts) == 3 && parts[0] == "changes" &&
-				!exists(filepath.Join(rootAbs, "changes", parts[1]+".md"))
-			// Every directory under practices/ is a group: a practice owns no
-			// task directory, so there is no ambiguity to resolve. The same
-			// holds for the debts/ and (v0.7) bugs/ registers.
-			inPracticeGroup := specV6 && len(parts) == 3 &&
-				(parts[0] == "practices" || parts[0] == "debts" || (specV7 && parts[0] == "bugs"))
-			inChangeGroup = inChangeGroup || inPracticeGroup
-			// Trap 12: v0.4 task directories may contain only NN-slug.md tasks —
-			// reject INDEX.md/LOG.md here (reserved returns before len==3 case).
-			if specStem && len(parts) == 3 && !inChangeGroup {
-				errs = append(errs, fmt.Sprintf("%s: task directories may contain only NN-slug.md tasks (F3)", rel))
-				return nil
-			}
-			// Deeper still is a changes/ group's task directory, or nesting no
-			// FDF position allows (v0.7 closes both).
-			if specV7 && len(parts) >= 4 {
-				if parts[0] == "changes" && len(parts) == 4 && exists(filepath.Join(rootAbs, "changes", parts[1], parts[2]+".md")) {
-					errs = append(errs, fmt.Sprintf("%s: task directories may contain only NN-slug.md tasks (F3)", rel))
-				} else {
-					errs = append(errs, fmt.Sprintf("%s: nested deeper than FDF structure allows (F3)", rel))
-				}
-				return nil
-			}
-			block, delimited, _ := splitFrontmatter(text)
-			if name == "INDEX.md" {
-				if delimited {
-					data, _ := parseFrontmatter(block)
-					if rel != "INDEX.md" || data == nil || data["fdf_version"] == nil {
-						warns = append(warns, fmt.Sprintf("%s: index file should not carry frontmatter", rel))
-					} else if v, _ := data["fdf_version"].(string); !supportedVersions[v] {
-						errs = append(errs, fmt.Sprintf("INDEX.md: fdf_version %q is not a supported version (%s) — run `fdf migrate` (F1)", v, supportedList()))
-					}
-				} else if rel == "INDEX.md" {
-					warns = append(warns, "INDEX.md: root index should pin fdf_version")
-				}
-				if !regexp.MustCompile(`(?m)^\s*[-*]\s+\[.*\]\(.*\)`).MatchString(text) {
-					warns = append(warns, fmt.Sprintf("%s: index file has no bulleted listing", rel))
-				}
-			} else { // LOG.md
-				checkLogBody(rel, text, specV7, &errs, &warns)
-			}
-			return nil
-		}
-
-		// isContext: bundle-root Context docs. SURFACES.md is v0.4-only;
-		// STACK/ARCHITECTURE/INFRA are recognized under any Context pin.
-		isContext := false
-		if len(parts) == 1 && contextNames[name] {
-			if name == "SURFACES.md" {
-				isContext = specStem
-			} else if name == "DOMAIN.md" {
-				isContext = specV6
-			} else {
-				isContext = specHasContext
-			}
-		}
-
-		// Casing gate for everything non-reserved. Root SPEC.md is always
-		// legal (type: Reference). Nested SPEC/PLAN/TEST.md uppercase trail
-		// names remain legal only under pre-v0.4 (trap 13).
-		_, isLegacyTrail := trailNames[name]
-		isRootSpec := rel == "SPEC.md"
-		if !isRootSpec && !isContext && !(!specStem && isLegacyTrail) {
-			if !lowerFileRe.MatchString(name) && !taskFileRe.MatchString(name) {
-				allowed := "INDEX/LOG/SPEC/PLAN/TEST.md"
-				switch {
-				case specV6:
-					allowed = "INDEX/LOG/SPEC/STACK/ARCHITECTURE/SURFACES/INFRA/DOMAIN.md"
-				case specStem:
-					allowed = "INDEX/LOG/SPEC/STACK/ARCHITECTURE/SURFACES/INFRA.md"
-				case specHasContext:
-					allowed = "INDEX/LOG/SPEC/PLAN/TEST/STACK/ARCHITECTURE/INFRA.md"
-				}
-				errs = append(errs, fmt.Sprintf("%s: filenames are lowercase; uppercase is reserved for %s (F3)", rel, allowed))
-				return nil
-			}
-		}
-
-		documents++
-		block, delimited, body := splitFrontmatter(text)
-		if !delimited {
-			errs = append(errs, fmt.Sprintf("%s: missing or unterminated frontmatter block (F1)", rel))
-			return nil
-		}
-		data, perr := parseFrontmatter(block)
-		if perr != nil {
-			errs = append(errs, fmt.Sprintf("%s: frontmatter is not parseable (F1): %v", rel, perr))
-			return nil
-		}
-		docType, _ := data["type"].(string)
-		if docType == "" {
-			errs = append(errs, fmt.Sprintf("%s: missing required non-empty `type` (F1)", rel))
-		}
-		for _, f := range recommended {
-			if data[f] == nil {
-				warns = append(warns, fmt.Sprintf("%s: missing recommended `%s`", rel, f))
-			}
-		}
-		if specV7 {
-			checkTimestamp(rel, data["timestamp"], &errs, &warns)
-		}
-		status, _ := data["status"].(string)
-
-		switch {
-		case specV5 && parts[0] == "changes" && len(parts) > 1:
-			// Positions under changes/: <slug>.md, <slug>.<role>.md,
-			// <group>/<slug>.md, <group>/<slug>.<role>.md, and tasks one level
-			// below a change document. A directory is a task directory when a
-			// sibling <name>.md exists and a group otherwise.
-			rest := parts[1:]
-			dir := "changes"
-			if len(rest) > 1 && !exists(filepath.Join(rootAbs, "changes", rest[0]+".md")) {
-				// rest[0] is a group; shift into it.
-				if !lowerDirRe.MatchString(rest[0]) {
-					errs = append(errs, fmt.Sprintf("%s: changes/ group names are lowercase [a-z0-9-] (F3)", rel))
-					return nil
-				}
-				dir, rest = "changes/"+rest[0], rest[1:]
-			}
-			switch {
-			case len(rest) == 1:
-				base := rest[0]
-				if m := changeTrailRoleRe.FindStringSubmatch(base); m != nil {
-					want := trailRoleType[m[2]]
-					if docType != want {
-						errs = append(errs, fmt.Sprintf("%s: expected `type: %s`, got %q (F3)", rel, want, docType))
-					}
-					cid := dir + "/" + m[1]
-					p := pair(cid)
-					switch m[2] {
-					case "spec":
-						p.spec = true
-					case "plan":
-						p.plan, p.planRel, p.planBody = true, rel, body
-					case "log":
-						checkLogBody(rel, text, specV7, &errs, &warns)
-					}
-					return nil
-				}
-				if m := anyTrailAttemptRe.FindStringSubmatch(base); m != nil {
-					errs = append(errs, fmt.Sprintf("%s: unknown trail role %q under changes/ — allowed roles are spec, plan, log (test and surface belong to the affected feature) (F3)", rel, m[2]))
-					return nil
-				}
-				if docType != "Change" && docType != "Fix" {
-					errs = append(errs, fmt.Sprintf("%s: expected `type: Change` or `type: Fix`, got %q (F3)", rel, docType))
-					return nil
-				}
-				if !in(changeStatuses, status) {
-					errs = append(errs, fmt.Sprintf("%s: %s `status` must be one of %s, got %q (F2)", rel, docType, strings.Join(changeStatuses, "|"), status))
-				}
-				version, _ := data["version"].(string)
-				cid := dir + "/" + strings.TrimSuffix(base, ".md")
-				changes[cid] = &changeInfo{
-					rel: rel, id: cid, docType: docType, status: status, version: version, body: body,
-					affects: asList(data["affects"]), retires: asList(data["retires"]),
-					resolves: asList(data["resolves"]), timestamp: stamp(data["timestamp"]),
-				}
-				if len(fenceRe.FindAllStringSubmatch(body, -1)) > 0 {
-					errs = append(errs, fmt.Sprintf("%s: %s documents carry no Gherkin — behavior statements belong in the features they amend (F5)", rel, docType))
-				}
-				for _, res := range asList(data["resource"]) {
-					resources = append(resources, struct{ rel, field, path string }{rel, "resource", res})
-				}
-			case len(rest) == 2 && taskFileRe.MatchString(rest[1]):
-				if docType != "Task" {
-					errs = append(errs, fmt.Sprintf("%s: expected `type: Task`, got %q (F3)", rel, docType))
-				}
-				if !in(taskStatuses, status) {
-					errs = append(errs, fmt.Sprintf("%s: Task `status` must be one of %s, got %q (F2)", rel, strings.Join(taskStatuses, "|"), status))
-				}
-				p := pair(dir + "/" + rest[0])
-				p.tasks[rest[1]] = status
-				p.deps[rest[1]] = asList(data["depends-on"])
-				p.depRels[rest[1]] = rel
-				for _, res := range asList(data["resource"]) {
-					resources = append(resources, struct{ rel, field, path string }{rel, "resource", res})
-				}
-			case len(rest) == 2:
-				errs = append(errs, fmt.Sprintf("%s: task directories may contain only NN-slug.md tasks (F3)", rel))
-			default:
-				errs = append(errs, fmt.Sprintf("%s: nested deeper than FDF structure allows (F3)", rel))
-			}
-		case specV6 && (parts[0] == "debts" || (specV7 && parts[0] == "bugs")) && len(parts) > 1:
-			// Positions under the two registers mirror practices/: <slug>.md,
-			// its optional <slug>.log.md, and one level of groups. No tasks.
-			// debts/ holds Debt documents; bugs/ (v0.7) holds Bug documents.
-			register := parts[0]
-			wantType, noun := "Debt", "debt"
-			if register == "bugs" {
-				wantType, noun = "Bug", "bug"
-			}
-			rest := parts[1:]
-			dir := register
-			if len(rest) > 1 {
-				if !lowerDirRe.MatchString(rest[0]) {
-					errs = append(errs, fmt.Sprintf("%s: %s/ group names are lowercase [a-z0-9-] (F3)", rel, register))
-					return nil
-				}
-				dir, rest = register+"/"+rest[0], rest[1:]
-			}
-			if len(rest) != 1 {
-				errs = append(errs, fmt.Sprintf("%s: %s/ holds a %s, its optional <slug>.log.md, and one level of groups — nothing nests deeper (F3)", rel, register, noun))
-				return nil
-			}
-			base := rest[0]
-			if m := logTrailRoleRe.FindStringSubmatch(base); m != nil {
-				if docType != "Log" {
-					errs = append(errs, fmt.Sprintf("%s: expected `type: Log`, got %q (F3)", rel, docType))
-				}
-				checkLogBody(rel, text, specV7, &errs, &warns)
-				if register == "bugs" {
-					bugTrails[dir+"/"+m[1]] = rel
-				} else {
-					debtTrails[dir+"/"+m[1]] = rel
-				}
-				return nil
-			}
-			if m := anyTrailAttemptRe.FindStringSubmatch(base); m != nil {
-				errs = append(errs, fmt.Sprintf("%s: unknown trail role %q under %s/ — a %s is a register entry, not a unit of work; `log` is the only role (F3)", rel, m[2], register, noun))
-				return nil
-			}
-			if docType != wantType {
-				errs = append(errs, fmt.Sprintf("%s: expected `type: %s`, got %q (F3)", rel, wantType, docType))
-				return nil
-			}
-			if !in(debtStatuses, status) {
-				errs = append(errs, fmt.Sprintf("%s: %s `status` must be one of %s, got %q (F2)", rel, wantType, strings.Join(debtStatuses, "|"), status))
-			}
-			id := dir + "/" + strings.TrimSuffix(base, ".md")
-			title, _ := data["title"].(string)
-			timestamp, _ := data["timestamp"].(string)
-			if register == "bugs" {
-				bugs[id] = &bugInfo{
-					rel: rel, id: id, status: status, body: body,
-					affects: asList(data["affects"]), resource: asList(data["resource"]),
-				}
-			} else {
-				debts[id] = &debtInfo{
-					rel: rel, id: id, status: status, body: body,
-					title: title, timestamp: timestamp, resource: asList(data["resource"]),
-				}
-			}
-			for _, res := range asList(data["resource"]) {
-				resources = append(resources, struct{ rel, field, path string }{rel, "resource", res})
-			}
-		case specV6 && parts[0] == "practices" && len(parts) > 1:
-			// Positions under practices/: <slug>.md, <slug>.log.md, and the
-			// same two inside one level of groups. No task directories.
-			rest := parts[1:]
-			dir := "practices"
-			if len(rest) > 1 {
-				if !lowerDirRe.MatchString(rest[0]) {
-					errs = append(errs, fmt.Sprintf("%s: practices/ group names are lowercase [a-z0-9-] (F3)", rel))
-					return nil
-				}
-				dir, rest = "practices/"+rest[0], rest[1:]
-			}
-			if len(rest) != 1 {
-				errs = append(errs, fmt.Sprintf("%s: practices/ holds a practice, its optional <slug>.log.md, and one level of groups — nothing nests deeper (F3)", rel))
-				return nil
-			}
-			base := rest[0]
-			if m := logTrailRoleRe.FindStringSubmatch(base); m != nil {
-				if docType != "Log" {
-					errs = append(errs, fmt.Sprintf("%s: expected `type: Log`, got %q (F3)", rel, docType))
-				}
-				checkLogBody(rel, text, specV7, &errs, &warns)
-				practiceTrails[dir+"/"+m[1]] = rel
-				return nil
-			}
-			if m := anyTrailAttemptRe.FindStringSubmatch(base); m != nil {
-				errs = append(errs, fmt.Sprintf("%s: unknown trail role %q under practices/ — a practice owns no spec, plan, test or surface; `log` is the only role (F3)", rel, m[2]))
-				return nil
-			}
-			if docType != "Practice" {
-				errs = append(errs, fmt.Sprintf("%s: expected `type: Practice`, got %q (F3)", rel, docType))
-				return nil
-			}
-			if !in(practiceStatuses, status) {
-				errs = append(errs, fmt.Sprintf("%s: Practice `status` must be one of %s, got %q (F2)", rel, strings.Join(practiceStatuses, "|"), status))
-			}
-			pid := dir + "/" + strings.TrimSuffix(base, ".md")
-			supersededBy, _ := data["superseded-by"].(string)
-			practices[pid] = &practiceInfo{
-				rel: rel, id: pid, status: status, body: body,
-				supersededBy: supersededBy, appliesTo: asList(data["applies-to"]),
-			}
-			for _, res := range asList(data["applies-to"]) {
-				resources = append(resources, struct{ rel, field, path string }{rel, "applies-to", res})
-			}
-		case len(parts) == 1: // bundle root
-			contextList := "STACK/ARCHITECTURE/INFRA.md"
-			switch {
-			case specV6:
-				contextList = "STACK/ARCHITECTURE/SURFACES/INFRA/DOMAIN.md"
-			case specStem:
-				contextList = "STACK/ARCHITECTURE/SURFACES/INFRA.md"
-			}
-			switch {
-			case isContext:
-				if docType != "Context" {
-					errs = append(errs, fmt.Sprintf("%s: expected `type: Context`, got %q (F3)", rel, docType))
-				}
-				contextDocs[name] = isStub(text)
-			case docType == "Context":
-				errs = append(errs, fmt.Sprintf("%s: `type: Context` is reserved for %s at the bundle root (F3)", rel, contextList))
-			case structural[docType] || (specStem && structuralV4[docType]) || (specV5 && structuralV5[docType]) || (specV6 && structuralV6[docType]) || (specV7 && structuralV7[docType]):
-				errs = append(errs, fmt.Sprintf("%s: `type: %s` documents cannot live at the bundle root — move it to its FDF position (F3)", rel, docType))
-			}
-		case parts[0] == "releases" && len(parts) == 2:
-			if docType != "Release" {
-				errs = append(errs, fmt.Sprintf("%s: expected `type: Release`, got %q (F3)", rel, docType))
-			}
-			if !in(releaseStatuses, status) {
-				errs = append(errs, fmt.Sprintf("%s: Release `status` must be one of %s, got %q (F2)", rel, strings.Join(releaseStatuses, "|"), status))
-			}
-			if data["date"] == nil {
-				warns = append(warns, fmt.Sprintf("%s: missing recommended `date`", rel))
-			}
-			releaseBody := body
-			if specV7 {
-				releaseBody = linkScanText(body) // a link in code is a sample, not a listing
-			}
-			releases[strings.TrimSuffix(parts[1], ".md")] = &releaseInfo{rel, status, releaseBody}
-		case len(parts) == 2:
-			// v0.4 group-level dotted basenames are stem-qualified trail files.
-			// Trap 14: detect any dotted basename before the feature checks so
-			// unknown roles don't fall through as features named "slug.notes".
-			if specStem {
-				if m := anyTrailAttemptRe.FindStringSubmatch(name); m != nil {
-					stem, rolePart := m[1], m[2]
-					if rm := trailRoleRe.FindStringSubmatch(name); rm != nil {
-						role := rm[2]
-						want := trailRoleType[role]
-						if docType != want {
-							errs = append(errs, fmt.Sprintf("%s: expected `type: %s`, got %q (F3)", rel, want, docType))
-						}
-						fid := parts[0] + "/" + stem
-						p := pair(fid)
-						switch role {
-						case "spec":
-							p.spec = true
-						case "plan":
-							p.plan, p.planRel, p.planBody = true, rel, body
-						case "test":
-							p.test, p.testBody = true, body
-							p.testTimestamp = stamp(data["timestamp"])
-						case "log":
-							// Trap 17: same ISO-date / newest-first rules as LOG.md.
-							p.log = true
-							checkLogBody(rel, text, specV7, &errs, &warns)
-						case "surface":
-							p.surface = true
-						}
-					} else {
-						errs = append(errs, fmt.Sprintf("%s: unknown trail role %q — allowed roles are spec, plan, test, surface, log (F3)", rel, rolePart))
-					}
-					return nil
-				}
-			}
-			// Feature: group/slug.md (all versions; v0.4 slugs carry no dots).
-			if docType != "Feature" {
-				errs = append(errs, fmt.Sprintf("%s: expected `type: Feature`, got %q (F3)", rel, docType))
-			}
-			vocab := featureStatuses
-			switch {
-			case specV7:
-				vocab = featureStatusesV7
-			case specV5:
-				vocab = featureStatusesV5
-			}
-			if !in(vocab, status) {
-				errs = append(errs, fmt.Sprintf("%s: Feature `status` must be one of %s, got %q (F2)", rel, strings.Join(vocab, "|"), status))
-			}
-			version, _ := data["version"].(string)
-			fid := strings.TrimSuffix(filepath.ToSlash(rel), ".md")
-			f := &featureInfo{rel: rel, status: status, version: version, body: body}
-			f.replacedBy = asList(data["replaced-by"])
-			f.surface, _ = data["surface"].(string)
-			if specV7 {
-				// A feature's own `resource` is v0.7: required on an adopted
-				// feature, which has no tasks to reach its code through.
-				f.resource = asList(data["resource"])
-				for _, res := range f.resource {
-					resources = append(resources, struct{ rel, field, path string }{rel, "resource", res})
-				}
-			}
-			features[fid] = f
-			if specV5 {
-				featureDeps[fid] = asList(data["depends-on"])
-			}
-			// An adopted feature may be a map entry: a Feature: block and no
-			// scenarios yet.
-			// A retired one may be too, when it was adopted and never backfilled;
-			// whether it was built is known only after the walk (F4 below).
-			checkFeatureBody(rel, body, specV7 && (status == "adopted" || status == "retired"), &errs)
-		case len(parts) == 3:
-			fid := parts[0] + "/" + parts[1]
-			switch {
-			case taskFileRe.MatchString(parts[2]): // tasks: all versions
-				if docType != "Task" {
-					errs = append(errs, fmt.Sprintf("%s: expected `type: Task`, got %q (F3)", rel, docType))
-				}
-				if !in(taskStatuses, status) {
-					errs = append(errs, fmt.Sprintf("%s: Task `status` must be one of %s, got %q (F2)", rel, strings.Join(taskStatuses, "|"), status))
-				}
-				p := pair(fid)
-				p.tasks[parts[2]] = status
-				p.deps[parts[2]] = asList(data["depends-on"])
-				p.depRels[parts[2]] = rel
-				for _, res := range asList(data["resource"]) {
-					resources = append(resources, struct{ rel, field, path string }{rel, "resource", res})
-				}
-			case !specStem && trailNames[parts[2]] != "": // nested trail: pre-v0.4 only
-				want := trailNames[parts[2]]
-				if docType != want {
-					errs = append(errs, fmt.Sprintf("%s: expected `type: %s`, got %q (F3)", rel, want, docType))
-				}
-				p := pair(fid)
-				switch parts[2] {
-				case "SPEC.md":
-					p.spec = true
-				case "PLAN.md":
-					p.plan, p.planRel, p.planBody = true, rel, body
-				case "TEST.md":
-					p.test, p.testBody = true, body
-				}
-			case specStem: // v0.4 task dir: only NN-slug.md tasks (no nested trail docs)
-				errs = append(errs, fmt.Sprintf("%s: task directories may contain only NN-slug.md tasks (F3)", rel))
-			default:
-				errs = append(errs, fmt.Sprintf("%s: paired directories may contain only SPEC.md, PLAN.md, TEST.md, and NN-slug.md tasks (F3)", rel))
-			}
-		default:
-			errs = append(errs, fmt.Sprintf("%s: nested deeper than FDF structure allows (F3)", rel))
-		}
-		return nil
-	})
-
-	// No root INDEX.md means no pin: the bundle was just validated under v0.2
-	// rules, which is worth saying — it explains a wall of unexpected errors.
-	if !exists(filepath.Join(rootAbs, "INDEX.md")) {
-		warns = append(warns, "INDEX.md: missing — with no `fdf_version` pin the bundle is validated under v0.2 rules; run `fdf init` or `fdf migrate`")
-	}
+	c.walk(rootAbs)
 
 	// F3: every pair entry has a sibling feature (or, under changes/, a
 	// sibling Change/Fix) document.
@@ -802,12 +289,7 @@ func Validate(root string, opts Options) int {
 			continue
 		}
 		if features[fid] == nil {
-			if specStem {
-				// Trap 15: trail-file wording (pairs may come from slug.spec.md alone).
-				errs = append(errs, fmt.Sprintf("%s: trail file or task directory has no sibling feature document %s.md (F3)", fid, fid))
-			} else {
-				errs = append(errs, fmt.Sprintf("%s/: paired directory has no sibling feature document %s.md (F3)", fid, fid))
-			}
+			errs = append(errs, fmt.Sprintf("%s: trail file or task directory has no sibling feature document %s.md (F3)", fid, fid))
 		}
 	}
 
@@ -816,56 +298,40 @@ func Validate(root string, opts Options) int {
 		p := pairs[fid]
 		switch {
 		case f.status == "draft":
-			// From v0.7 a draft may have a log: what happened to a feature is
-			// worth recording before its design is approved. Nothing else.
-			if p != nil && !(specV7 && !p.spec && !p.plan && !p.test && !p.surface && len(p.tasks) == 0) {
-				if specStem {
-					errs = append(errs, fmt.Sprintf("%s: status 'draft' but trail siblings or task directory %s/ exist (F4)", f.rel, fid))
-				} else {
-					errs = append(errs, fmt.Sprintf("%s: status 'draft' but paired directory %s/ exists (F4)", f.rel, fid))
-				}
+			// A draft may have a log: what happened to a feature is worth
+			// recording before its design is approved. Nothing else.
+			if p != nil && (p.spec || p.plan || p.test || p.surface || len(p.tasks) > 0) {
+				errs = append(errs, fmt.Sprintf("%s: status 'draft' but trail siblings or task directory %s/ exist (F4)", f.rel, fid))
 			}
 			continue
-		case specV7 && f.status == "adopted":
+		case f.status == "adopted":
 			checkAdopted(fid, f, p, &errs, &warns)
 			continue
 		case f.status == "retired":
-			// The behavior is gone; the document stays as the record. Its
-			// build trail must still be there, but F8 live-test coverage no
-			// longer applies — that is the point of retiring. From v0.7 a
-			// retired feature keeps the trail it had: one that was adopted
-			// never had a spec, so only a built one (plan or tasks) needs it.
-			if specV7 {
-				built := p != nil && (p.plan || len(p.tasks) > 0)
-				if built && !p.spec {
-					errs = append(errs, fmt.Sprintf("%s: status 'retired' with a build trail requires %s.spec.md — the record of what was built (F4)", f.rel, fid))
-				}
-				// A retired map entry may have no scenarios (F5 let it off);
-				// a feature that was built keeps the scenarios it had.
-				if built && len(scenarioRe.FindAllString(f.body, -1)) == 0 {
-					errs = append(errs, fmt.Sprintf("%s: no `Scenario:` in any gherkin fence — a retired feature that was built keeps the scenarios it had (F5)", f.rel))
-				}
-				continue
+			// The behavior is gone; the document stays as the record, and F8
+			// live-test coverage no longer applies — that is the point of
+			// retiring. A retired feature keeps the trail it had: one that was
+			// adopted never had a spec, so only a built one (plan or tasks)
+			// needs it.
+			built := p != nil && (p.plan || len(p.tasks) > 0)
+			if built && !p.spec {
+				errs = append(errs, fmt.Sprintf("%s: status 'retired' with a build trail requires %s.spec.md — the record of what was built (F4)", f.rel, fid))
 			}
-			if p == nil || !p.spec {
-				errs = append(errs, fmt.Sprintf("%s: status 'retired' requires %s.spec.md — the record of what was built (F4)", f.rel, fid))
+			// A retired map entry may have no scenarios (F5 let it off); a
+			// feature that was built keeps the scenarios it had.
+			if built && len(scenarioRe.FindAllString(f.body, -1)) == 0 {
+				errs = append(errs, fmt.Sprintf("%s: no `Scenario:` in any gherkin fence — a retired feature that was built keeps the scenarios it had (F5)", f.rel))
 			}
 			continue
-		case !in(featureStatusesV5, f.status):
+		case !in(featureStatuses, f.status):
 			continue // already reported (F2)
 		case p == nil:
-			// No paired directory at all: fall through to the per-artifact
-			// checks below (against an empty pairInfo) so the error names
-			// the specific missing file(s) (SPEC.md/PLAN.md/TEST.md/tasks)
-			// per the F4 rule catalog, instead of a generic directory-only
-			// message that names nothing.
+			// No trail at all: fall through to the per-artifact checks below
+			// (against an empty pairInfo) so the error names the specific
+			// missing file(s) per the F4 rule catalog.
 			p = &pairInfo{tasks: map[string]string{}, deps: map[string][]string{}, depRels: map[string]string{}}
 		}
-		// Artifact path messages: nested trail (v0.2/0.3) vs stem trail (v0.4).
-		specPath, planPath, testPath := fid+"/SPEC.md", fid+"/PLAN.md", fid+"/TEST.md"
-		if specStem {
-			specPath, planPath, testPath = fid+".spec.md", fid+".plan.md", fid+".test.md"
-		}
+		specPath, planPath, testPath := fid+".spec.md", fid+".plan.md", fid+".test.md"
 		if !p.spec {
 			errs = append(errs, fmt.Sprintf("%s: status '%s' requires %s (F4)", f.rel, f.status, specPath))
 		}
@@ -876,15 +342,8 @@ func Validate(root string, opts Options) int {
 		if planned { // F8
 			if !p.test {
 				errs = append(errs, fmt.Sprintf("%s: status '%s' requires %s (F8)", f.rel, f.status, testPath))
-			} else if specV7 {
-				checkTestCases(testPath, fid, featureScenarioNames(f.body), p.testBody, &errs, &warns)
 			} else {
-				for _, m := range scenarioRe.FindAllStringSubmatch(f.body, -1) {
-					name := strings.TrimSpace(m[1])
-					if !strings.Contains(p.testBody, name) {
-						errs = append(errs, fmt.Sprintf("%s: scenario %q has no test case (F8)", testPath, name))
-					}
-				}
+				checkTestCases(testPath, fid, featureScenarioNames(f.body), p.testBody, &errs, &warns)
 			}
 		}
 		nTasks, nDone := len(p.tasks), 0
@@ -911,64 +370,45 @@ func Validate(root string, opts Options) int {
 		}
 	}
 
-	if specV5 {
-		checkChangeLifecycle(changes, pairs, &errs)
-		checkChangeIntegrity(changes, features, pairs, specV6, specV7, &errs)
-		if specV7 {
-			checkRegressionLanded(changes, pairs, &warns)
-			checkSurfaces(features, pairs, &errs, &warns)
-		}
-		// Feature depends-on: existing IDs, acyclic. A separate graph from the
-		// task one — these are bundle-relative feature IDs, not siblings.
-		for fid, deps := range featureDeps {
-			for _, d := range deps {
-				if features[d] == nil {
-					errs = append(errs, fmt.Sprintf("%s: depends-on %q is not a known feature (F10)", features[fid].rel, d))
-				}
+	checkChangeLifecycle(changes, pairs, &errs)
+	checkChangeIntegrity(changes, features, pairs, &errs)
+	checkRegressionLanded(changes, pairs, &warns)
+	checkSurfaces(features, pairs, &errs, &warns)
+	// Feature depends-on: existing IDs, acyclic. A separate graph from the
+	// task one — these are feature IDs, not siblings.
+	for fid, deps := range featureDeps {
+		for _, d := range deps {
+			if features[d] == nil {
+				errs = append(errs, fmt.Sprintf("%s: depends-on %q is not a known feature%s (F10)", features[fid].rel, d, featureHint(d, features)))
 			}
 		}
-		if cyc := findCycleIDs(featureDeps); cyc != "" {
-			errs = append(errs, fmt.Sprintf("feature depends-on cycle: %s (F10)", cyc))
-		}
+	}
+	if cyc := findCycleIDs(featureDeps); cyc != "" {
+		errs = append(errs, fmt.Sprintf("feature depends-on cycle: %s (F10)", cyc))
 	}
 
-	if specV6 {
-		checkPracticeIntegrity(practices, practiceTrails, &errs, &warns)
-		checkDebtIntegrity(debts, debtTrails, &errs, &warns)
-		if specV7 {
-			resolvedBy := checkResolves(changes, bugs, clearedBugs(rootAbs), &errs)
-			checkBugIntegrity(bugs, bugTrails, features, resolvedBy, &errs, &warns)
-			checkDomainV7(rootAbs, opts.StrictDomain, texts, &errs, &warns)
-		} else {
-			checkDomain(rootAbs, features, changes, opts.StrictDomain, &errs, &warns)
-		}
-	}
+	checkPracticeIntegrity(practices, practiceTrails, &errs, &warns)
+	checkDebtIntegrity(debts, debtTrails, &errs, &warns)
+	resolvedBy := checkResolves(changes, bugs, clearedBugs(rootAbs), &errs)
+	checkBugIntegrity(bugs, bugTrails, features, resolvedBy, &errs, &warns)
+	checkDomain(rootAbs, opts.StrictDomain, texts, &errs, &warns)
 
-	// F9: from the first feature onward, Context documents must exist and be
-	// past their stub state. Before any feature exists a missing-or-stub
-	// context doc is only a nudge (warning). Three docs on v0.3; four on v0.4.
-	if specHasContext {
-		contextRequired := []string{"STACK.md", "ARCHITECTURE.md", "INFRA.md"}
+	// F9: from the first feature onward, the five Context documents must
+	// exist and be past their stub state. Before any feature exists a
+	// missing-or-stub context doc is only a nudge (warning).
+	for _, name := range []string{"STACK.md", "ARCHITECTURE.md", "SURFACES.md", "INFRA.md", "DOMAIN.md"} {
+		stub, present := contextDocs[name]
 		switch {
-		case specV6:
-			contextRequired = []string{"STACK.md", "ARCHITECTURE.md", "SURFACES.md", "INFRA.md", "DOMAIN.md"}
-		case specStem:
-			contextRequired = []string{"STACK.md", "ARCHITECTURE.md", "SURFACES.md", "INFRA.md"}
-		}
-		for _, name := range contextRequired {
-			stub, present := contextDocs[name]
-			switch {
-			case !present && len(features) > 0:
-				errs = append(errs, fmt.Sprintf("%s: required once the bundle has features — run the fdf-init interview to create it (F9)", name))
-			case stub && len(features) > 0 && opts.FreshStubsAdvisory:
-				warns = append(warns, fmt.Sprintf("%s: freshly scaffolded stub — run the fdf-init interview to populate it (F9)", name))
-			case stub && len(features) > 0:
-				errs = append(errs, fmt.Sprintf("%s: still an unfilled stub; the fdf-init interview must populate it before feature work (F9)", name))
-			case !present:
-				warns = append(warns, fmt.Sprintf("%s: recommended context document is missing — run the fdf-init interview", name))
-			case stub:
-				warns = append(warns, fmt.Sprintf("%s: still an unfilled stub — run the fdf-init interview to populate it", name))
-			}
+		case !present && len(features) > 0:
+			errs = append(errs, fmt.Sprintf("%s: required once the bundle has features — run the fdf-init interview to create it (F9)", name))
+		case stub && len(features) > 0 && opts.FreshStubsAdvisory:
+			warns = append(warns, fmt.Sprintf("%s: freshly scaffolded stub — run the fdf-init interview to populate it (F9)", name))
+		case stub && len(features) > 0:
+			errs = append(errs, fmt.Sprintf("%s: still an unfilled stub; the fdf-init interview must populate it before feature work (F9)", name))
+		case !present:
+			warns = append(warns, fmt.Sprintf("%s: recommended context document is missing — run the fdf-init interview", name))
+		case stub:
+			warns = append(warns, fmt.Sprintf("%s: still an unfilled stub — run the fdf-init interview to populate it", name))
 		}
 	}
 
@@ -977,20 +417,12 @@ func Validate(root string, opts Options) int {
 		if p.plan {
 			listed := map[string]bool{}
 			taskDir := filepath.Join(rootAbs, filepath.FromSlash(fid))
-			planBody := p.planBody
-			if specV7 {
-				planBody = linkScanText(planBody) // a link in code is a sample, not a listing
-			}
-			for _, t := range sectionLinks(planBody, "Tasks") {
-				if specV7 {
-					// A link lists a task only if it reaches this plan's task
-					// directory: a same-named task elsewhere is not this one.
-					if resolved := resolveLink(rootAbs, p.planRel, t); resolved != "" && filepath.Dir(resolved) == taskDir {
-						listed[filepath.Base(resolved)] = true
-					}
-					continue
+			for _, t := range sectionTargets(p.planBody, "Tasks") {
+				// A link lists a task only if it reaches this plan's task
+				// directory: a same-named task elsewhere is not this one.
+				if resolved := resolveLink(rootAbs, p.planRel, t); resolved != "" && filepath.Dir(resolved) == taskDir {
+					listed[filepath.Base(resolved)] = true
 				}
-				listed[filepath.Base(strings.SplitN(strings.SplitN(t, "#", 2)[0], "?", 2)[0])] = true
 			}
 			for name := range p.tasks {
 				if !listed[name] {
@@ -1003,11 +435,7 @@ func Validate(root string, opts Options) int {
 				}
 			}
 		} else if len(p.tasks) > 0 {
-			if specStem {
-				errs = append(errs, fmt.Sprintf("tasks exist under %s/ but %s.plan.md is missing (F6)", fid, fid))
-			} else {
-				errs = append(errs, fmt.Sprintf("%s/: tasks exist but PLAN.md is missing (F6)", fid))
-			}
+			errs = append(errs, fmt.Sprintf("tasks exist under %s/ but %s.plan.md is missing (F6)", fid, fid))
 		}
 		for name, deps := range p.deps {
 			for _, dep := range deps {
@@ -1023,7 +451,7 @@ func Validate(root string, opts Options) int {
 
 	// F7: release <-> version bidirectional consistency.
 	for version, r := range releases {
-		for _, t := range sectionLinks(r.body, "Features") {
+		for _, t := range sectionTargets(r.body, "Features") {
 			resolved := resolveLink(rootAbs, r.rel, t)
 			if resolved == "" {
 				continue
@@ -1041,15 +469,13 @@ func Validate(root string, opts Options) int {
 				}
 				errs = append(errs, fmt.Sprintf("%s: lists %s whose `version` is %s, expected %q (F7)", r.rel, fid, got, version))
 			}
-			// A feature retired after it shipped still shipped (v0.7).
-			if r.status == "shipped" && f.status != "done" && !(specV7 && f.status == "retired") {
+			// A feature retired after it shipped still shipped.
+			if r.status == "shipped" && f.status != "done" && f.status != "retired" {
 				errs = append(errs, fmt.Sprintf("%s: shipped release lists %s with status '%s' (F7)", r.rel, fid, f.status))
 			}
 		}
 	}
-	if specV5 {
-		checkReleaseChanges(rootAbs, releases, changes, &errs)
-	}
+	checkReleaseChanges(rootAbs, releases, changes, &errs)
 	for fid, f := range features {
 		if f.version == "" {
 			continue
@@ -1060,7 +486,7 @@ func Validate(root string, opts Options) int {
 			continue
 		}
 		found := false
-		for _, t := range sectionLinks(r.body, "Features") {
+		for _, t := range sectionTargets(r.body, "Features") {
 			if resolved := resolveLink(rootAbs, r.rel, t); resolved != "" &&
 				strings.TrimSuffix(filepath.ToSlash(relTo(rootAbs, resolved)), ".md") == fid {
 				found = true
@@ -1072,7 +498,7 @@ func Validate(root string, opts Options) int {
 	}
 
 	// Soft: broken cross-links.
-	for _, l := range links {
+	for _, l := range crossLinks {
 		resolved := resolveLink(rootAbs, l.src, l.target)
 		if resolved == "" {
 			continue
@@ -1107,12 +533,8 @@ func Validate(root string, opts Options) int {
 	}
 	fmt.Fprintf(out, "\n%d document(s), %d feature(s), %d release(s) checked; %d error(s), %d warning(s).\n",
 		documents, len(features), len(releases), len(errs)+len(repoErrs), len(warns))
-	verLabel := pinnedVer
-	if verLabel == "" {
-		verLabel = "0.2"
-	}
 	if len(errs) > 0 {
-		fmt.Fprintf(out, "Bundle is NOT conformant with FDF v%s.\n", verLabel)
+		fmt.Fprintf(out, "Bundle is NOT conformant with FDF v%s.\n", pinnedVer)
 		return 1
 	}
 	if len(repoErrs) > 0 {
@@ -1120,15 +542,15 @@ func Validate(root string, opts Options) int {
 		return 1
 	}
 	if opts.RepoRoot == "" {
-		fmt.Fprintf(out, "Bundle is conformant with FDF v%s (R1 skipped: no project root).\n", verLabel)
+		fmt.Fprintf(out, "Bundle is conformant with FDF v%s (R1 skipped: no project root).\n", pinnedVer)
 		return 0
 	}
-	fmt.Fprintf(out, "Bundle is conformant with FDF v%s; repo integrity (R1) verified.\n", verLabel)
+	fmt.Fprintf(out, "Bundle is conformant with FDF v%s; repo integrity (R1) verified.\n", pinnedVer)
 	return 0
 }
 
 // checkFeatureBody is F5. mapEntry allows a feature with no scenarios, which
-// is legal only for an adopted feature (v0.7).
+// is legal only for an adopted feature.
 func checkFeatureBody(rel, body string, mapEntry bool, errs *[]string) {
 	fences := fenceRe.FindAllStringSubmatch(body, -1)
 	if len(fences) == 0 {
@@ -1206,37 +628,57 @@ func findCycle(deps map[string][]string) string {
 	return ""
 }
 
-func sectionLinks(body, heading string) []string {
-	var out []string
-	inSection := false
-	for _, line := range strings.Split(body, "\n") {
-		if m := headingRe.FindStringSubmatch(line); m != nil {
-			inSection = strings.EqualFold(strings.TrimSpace(m[1]), heading)
-			continue
+// sectionTargets returns the targets of the links in each `# <heading>`
+// section of a body that a reader follows (links.Rendered), outside code: a
+// reference counts where it is, whatever section its definition sits in,
+// and a definition, which renders nothing, lists nothing. A title after a
+// target and a destination in angle brackets read as they do everywhere
+// else. It reads the body as written, so a heading line that starts in
+// code, such as one a fenced sample quotes, neither opens a section nor
+// closes one.
+func sectionTargets(body, heading string) []string {
+	code := links.Code(body)
+	inCode := func(at int) bool {
+		for _, s := range code {
+			if s.Start <= at && at < s.End {
+				return true
+			}
 		}
-		if inSection {
-			for _, l := range linkRe.FindAllStringSubmatch(line, -1) {
-				out = append(out, l[1])
+		return false
+	}
+	var sections [][2]int // byte ranges; an end of -1 runs to the end of body
+	pos := 0
+	for _, line := range strings.SplitAfter(body, "\n") {
+		if m := headingRe.FindStringSubmatch(strings.TrimRight(line, "\r\n")); m != nil && !inCode(pos) {
+			if n := len(sections); n > 0 && sections[n-1][1] < 0 {
+				sections[n-1][1] = pos
+			}
+			if strings.EqualFold(strings.TrimSpace(m[1]), heading) {
+				sections = append(sections, [2]int{pos + len(line), -1})
+			}
+		}
+		pos += len(line)
+	}
+	var out []string
+	for _, l := range links.Rendered(body) {
+		for _, s := range sections {
+			if l.Start >= s[0] && (s[1] < 0 || l.Start < s[1]) {
+				out = append(out, l.Target)
 			}
 		}
 	}
 	return out
 }
 
+// resolveLink returns the absolute path a link written in srcRel names, or
+// "" when its target is not a path. The links engine reads the target, as it
+// does the links it repairs.
 func resolveLink(root, srcRel, target string) string {
-	t := strings.TrimSpace(target)
-	if t == "" || strings.HasPrefix(t, "#") || strings.Contains(t, "://") ||
-		strings.HasPrefix(t, "mailto:") || strings.HasPrefix(t, "tel:") {
+	d, ok := links.Resolve(target, filepath.ToSlash(srcRel), "")
+	if !ok {
 		return ""
 	}
-	t = strings.SplitN(strings.SplitN(t, "#", 2)[0], "?", 2)[0]
-	if t == "" {
-		return ""
-	}
-	if strings.HasPrefix(t, "/") {
-		return filepath.Join(root, filepath.FromSlash(strings.TrimPrefix(t, "/")))
-	}
-	return filepath.Clean(filepath.Join(root, filepath.Dir(filepath.FromSlash(srcRel)), filepath.FromSlash(t)))
+	return filepath.Join(root, filepath.FromSlash(d.Path))
 }
 
 func relTo(root, path string) string {

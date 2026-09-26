@@ -1,2 +1,0 @@
-exit: 1
-contains: FAIL: changes/refund-window.md: done, but payments/instant-refunds still has scenario "Refund completes within 10 seconds" (F10)

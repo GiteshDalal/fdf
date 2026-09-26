@@ -11,7 +11,7 @@ import (
 )
 
 // bundleRoot returns a temp bundle root pinning fdf_version pin, or the
-// current version when none is given: both registers exist from v0.7.
+// current version when none is given.
 func bundleRoot(t *testing.T, pin ...string) string {
 	t.Helper()
 	root := t.TempDir()
@@ -185,6 +185,59 @@ func TestCleanupNoLogSkipsTheLog(t *testing.T) {
 	}
 }
 
+// A disk that ignores case reads index.md as INDEX.md and log.md as LOG.md,
+// so neither is an entry's name: `fdf bug log` would write over the log
+// that records the cleared bugs.
+func TestNewRefusesTheNamesOfTheReservedFiles(t *testing.T) {
+	root := bundleRoot(t)
+	var out bytes.Buffer
+	if code := Bug.New(root, "first", nil, nil, &out); code != 0 {
+		t.Fatalf("fdf bug first: exit %d\n%s", code, out.String())
+	}
+	log := "# Bug Log\n\n## 2026-09-01\n* **bugs/old-one** — Old one. Fixed by changes/x.\n"
+	os.WriteFile(filepath.Join(root, "bugs", "LOG.md"), []byte(log), 0o644)
+	for _, tc := range []struct {
+		kind       Kind
+		name, says string
+	}{
+		{Bug, "log", "log is not a slug: a disk that ignores case reads log.md as the LOG.md beside it (F3)"},
+		{Bug, "index", "index is not a slug"},
+		{Debt, "platform/log", "log is not a slug"},
+	} {
+		out.Reset()
+		if code := tc.kind.New(root, tc.name, nil, nil, &out); code != 1 || !strings.Contains(out.String(), tc.says) {
+			t.Errorf("fdf %s %s: exit %d, want a refusal saying %q:\n%s", strings.ToLower(tc.kind.Type), tc.name, code, tc.says, out.String())
+		}
+	}
+	if raw, _ := os.ReadFile(filepath.Join(root, "bugs", "LOG.md")); string(raw) != log {
+		t.Errorf("bugs/LOG.md is untouched:\n%s", raw)
+	}
+}
+
+// An entry is a document layout files in the register. A file in a hidden
+// directory, or in a directory beside an entry, has no place in the bundle:
+// it is neither listed nor cleared.
+func TestTheRegisterIsWhatLayoutFilesThere(t *testing.T) {
+	root := bundleRoot(t)
+	seed(t, root, "rounding", "resolved", "\n# Resolution\n\nRounded in changes/x.\n")
+	seed(t, root, ".archive/old", "resolved", "\n# Resolution\n\nLong gone.\n")
+	seed(t, root, "rounding/worked-example", "resolved", "\n# Resolution\n\nAn example.\n")
+	var out bytes.Buffer
+	if code := Debt.List(root, "", &out); code != 0 || !strings.Contains(out.String(), "debts/rounding ") ||
+		strings.Contains(out.String(), "archive") || strings.Contains(out.String(), "worked-example") {
+		t.Errorf("only debts/rounding is an entry: exit %d\n%s", code, out.String())
+	}
+	out.Reset()
+	if code := Debt.Cleanup(root, false, true, &out); code != 0 {
+		t.Fatalf("cleanup: exit %d\n%s", code, out.String())
+	}
+	for _, rel := range []string{".archive/old.md", "rounding/worked-example.md"} {
+		if _, err := os.Stat(filepath.Join(root, "debts", filepath.FromSlash(rel))); err != nil {
+			t.Errorf("debts/%s is not the register's to clear:\n%s", rel, out.String())
+		}
+	}
+}
+
 func TestNewRejectsStatusWordAsSlug(t *testing.T) {
 	root := bundleRoot(t)
 	var out bytes.Buffer
@@ -261,19 +314,24 @@ func TestBugRegisterListsAndClearsBugsOnly(t *testing.T) {
 
 func TestNewBugScaffoldsAffectsAndChecksThem(t *testing.T) {
 	root := bundleRoot(t)
-	os.MkdirAll(filepath.Join(root, "venues"), 0o755)
-	os.WriteFile(filepath.Join(root, "venues", "hours.md"), []byte("---\ntype: Feature\n---\n"), 0o644)
+	os.MkdirAll(filepath.Join(root, "features", "venues"), 0o755)
+	os.WriteFile(filepath.Join(root, "features", "venues", "hours.md"), []byte("---\ntype: Feature\n---\n"), 0o644)
 
 	var out bytes.Buffer
-	if code := Bug.New(root, "late-close", []string{"venues/ghost"}, nil, &out); code != 1 {
+	if code := Bug.New(root, "late-close", []string{"features/venues/ghost"}, nil, &out); code != 1 {
 		t.Fatalf("an unknown feature in --affects must be refused:\n%s", out.String())
 	}
 	out.Reset()
-	if code := Bug.New(root, "late-close", []string{"venues/hours"}, []string{"internal/hours.go"}, &out); code != 0 {
+	if code := Bug.New(root, "late-close", []string{"venues/hours"}, nil, &out); code != 1 ||
+		out.String() != "error: --affects names venues/hours, which is not a feature in this bundle — did you mean features/venues/hours?\n" {
+		t.Fatalf("a feature ID written the 0.7 way gets its full ID suggested: exit %d\n%s", code, out.String())
+	}
+	out.Reset()
+	if code := Bug.New(root, "late-close", []string{"features/venues/hours"}, []string{"internal/hours.go"}, &out); code != 0 {
 		t.Fatalf("new bug: %d\n%s", code, out.String())
 	}
 	raw, _ := os.ReadFile(filepath.Join(root, "bugs", "late-close.md"))
-	for _, want := range []string{"type: Bug", "status: open", "affects: [venues/hours]", "resource: [internal/hours.go]", "# Symptom", "# Expected"} {
+	for _, want := range []string{"type: Bug", "status: open", "affects: [features/venues/hours]", "resource: [internal/hours.go]", "# Symptom", "# Expected"} {
 		if !strings.Contains(string(raw), want) {
 			t.Fatalf("scaffold missing %q:\n%s", want, raw)
 		}
@@ -415,6 +473,8 @@ func TestCleanupRemovesAGroupItEmpties(t *testing.T) {
 	seed(t, root, "platform/slow-boot", "resolved", "\n# Resolution\n\nCached in changes/x.\n")
 	seed(t, root, "venues/slow-hours", "resolved", "\n# Resolution\n\nIndexed in changes/y.\n")
 	os.WriteFile(filepath.Join(root, "debts", "platform", "slow-boot.log.md"), []byte("---\ntype: Log\n---\n\n## 2026-09-16\n\n* note\n"), 0o644)
+	// macOS Finder leaves one in any directory it has shown.
+	os.WriteFile(filepath.Join(root, "debts", "platform", ".DS_Store"), []byte("finder"), 0o644)
 	read := func(rel string) string {
 		raw, _ := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
 		return string(raw)
@@ -470,17 +530,15 @@ func TestCleanupRemovesAGroupItEmpties(t *testing.T) {
 	}
 }
 
-// A register exists from the version that introduced it. Under an older pin
-// its directory is a feature group: a Bug filed in a v0.6 bundle's bugs/
-// fails validation (F3), so the command refuses and points at `fdf migrate` —
-// for filing, listing and clearing alike.
-func TestRegistersRefuseAnOlderPin(t *testing.T) {
+// The commands work on spec 1.0 bundles: a 0.x bundle is upgraded with
+// `fdf migrate` before its registers are filed, listed or cleared.
+func TestRegistersPointA0xBundleAtMigrate(t *testing.T) {
 	for _, tc := range []struct {
 		k   Kind
 		pin string
 	}{
-		{Bug, "0.6"},
-		{Debt, "0.5"},
+		{Bug, "0.7"},
+		{Debt, "0.6"},
 	} {
 		root := bundleRoot(t, tc.pin)
 		for name, run := range map[string]func(*bytes.Buffer) int{
@@ -489,19 +547,68 @@ func TestRegistersRefuseAnOlderPin(t *testing.T) {
 			"cleanup": func(out *bytes.Buffer) int { return tc.k.Cleanup(root, false, false, out) },
 		} {
 			var out bytes.Buffer
-			want := "error: the " + tc.k.noun + " register arrived in spec v0." + map[string]string{"Bug": "7", "Debt": "6"}[tc.k.Type] +
-				", and this bundle pins fdf_version " + tc.pin + ": under that pin " + tc.k.Dir + "/ is a feature group"
-			if code := run(&out); code != 1 || !strings.HasPrefix(out.String(), want) || !strings.Contains(out.String(), "run `fdf migrate`") {
-				t.Errorf("%s %s on a %s bundle: exit %d, want a refusal starting %q:\n%s", tc.k.noun, name, tc.pin, code, want, out.String())
+			want := "error: this bundle pins fdf_version " + tc.pin + "; fdf's commands work on spec 1.0 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n"
+			if code := run(&out); code != 1 || out.String() != want {
+				t.Errorf("%s %s on a %s bundle: exit %d\n got: %q\nwant: %q", tc.k.noun, name, tc.pin, code, out.String(), want)
 			}
 		}
 		if _, err := os.Stat(filepath.Join(root, tc.k.Dir)); err == nil {
 			t.Errorf("a refused %s must write nothing, %s/ included", tc.k.noun, tc.k.Dir)
 		}
 	}
-	// The debt register is there from v0.6.
+}
+
+// Entries file in groups nested to any depth, each new group listed in its
+// parent's index; a cleanup that empties a nested group removes it, and a
+// parent it empties in turn, listings and all. A group that holds anything
+// more stays.
+func TestNestedGroupsAreFiledAndClearedAtAnyDepth(t *testing.T) {
+	root := bundleRoot(t)
 	var out bytes.Buffer
-	if code := Debt.New(bundleRoot(t, "0.6"), "late-close", nil, nil, &out); code != 0 {
-		t.Fatalf("fdf debt on a v0.6 bundle: exit %d\n%s", code, out.String())
+	for _, id := range []string{"platform/payments/rounding", "platform/payments/refunds/partial", "venues/slow-hours"} {
+		if code := Debt.New(root, id, nil, nil, &out); code != 0 {
+			t.Fatalf("fdf debt %s: exit %d\n%s", id, code, out.String())
+		}
+	}
+	read := func(rel string) string {
+		raw, _ := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+		return string(raw)
+	}
+	for rel, want := range map[string]string{
+		"debts/INDEX.md":                           "* [Platform](/debts/platform/INDEX.md) - debts in platform.\n",
+		"debts/platform/INDEX.md":                  "# Platform\n\n* [Payments](/debts/platform/payments/INDEX.md) - debts in payments.\n",
+		"debts/platform/payments/INDEX.md":         "* [Refunds](/debts/platform/payments/refunds/INDEX.md) - debts in refunds.\n",
+		"debts/platform/payments/refunds/INDEX.md": "# Refunds\n\n* [Partial](/debts/platform/payments/refunds/partial.md) - debt.\n",
+	} {
+		if !strings.Contains(read(rel), want) {
+			t.Errorf("%s should hold %q:\n%s", rel, want, read(rel))
+		}
+	}
+
+	seed(t, root, "platform/payments/rounding", "resolved", "\n# Resolution\n\nRounded in changes/x.\n")
+	seed(t, root, "platform/payments/refunds/partial", "resolved", "\n# Resolution\n\nRefunded in changes/y.\n")
+	out.Reset()
+	if code := Debt.Cleanup(root, true, false, &out); code != 0 {
+		t.Fatalf("dry run: exit %d\n%s", code, out.String())
+	}
+	want := "would remove debts/platform/payments/refunds/INDEX.md and debts/platform/payments/refunds/: the group would hold no entry\n" +
+		"would remove debts/platform/payments/INDEX.md and debts/platform/payments/: the group would hold no entry\n" +
+		"would remove debts/platform/INDEX.md and debts/platform/: the group would hold no entry\n" +
+		"  would unlist debts/platform/ from debts/INDEX.md\n"
+	if !strings.Contains(out.String(), want) {
+		t.Errorf("the dry run names every group it would empty, deepest first:\n%s\nwant:\n%s", out.String(), want)
+	}
+	out.Reset()
+	if code := Debt.Cleanup(root, false, false, &out); code != 0 {
+		t.Fatalf("cleanup: exit %d\n%s", code, out.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, "debts", "platform")); err == nil {
+		t.Errorf("debts/platform/ holds no entry once both are cleared:\n%s", out.String())
+	}
+	if top := read("debts/INDEX.md"); strings.Contains(top, "platform") || !strings.Contains(top, "/debts/venues/INDEX.md") {
+		t.Errorf("debts/INDEX.md unlists the emptied group, and only it:\n%s", top)
+	}
+	if strings.Contains(out.String(), "unlisted debts/platform/payments/") {
+		t.Errorf("a group whose parent goes too is not unlisted from it:\n%s", out.String())
 	}
 }

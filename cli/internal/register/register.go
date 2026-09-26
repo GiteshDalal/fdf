@@ -10,6 +10,7 @@ package register
 import (
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -18,19 +19,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/GiteshDalal/fdf/cli/internal/layout"
 	"github.com/GiteshDalal/fdf/cli/internal/logs"
 	"github.com/GiteshDalal/fdf/cli/internal/scaffold"
 )
 
 var (
-	slugRe    = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
-	groupedRe = regexp.MustCompile(`^([a-z0-9][a-z0-9-]*)/([a-z0-9][a-z0-9-]*)$`)
-	featureRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*$`)
-	typeRe    = regexp.MustCompile(`(?m)^type:\s*(\S+)`)
-	statusRe  = regexp.MustCompile(`(?m)^status:\s*(\S+)`)
-	titleRe   = regexp.MustCompile(`(?m)^title:\s*(.+)$`)
-	stampRe   = regexp.MustCompile(`(?m)^timestamp:\s*(\S+)`)
-	trailRe   = regexp.MustCompile(`\.[a-z]+\.md$`)
+	typeRe   = regexp.MustCompile(`(?m)^type:\s*(\S+)`)
+	statusRe = regexp.MustCompile(`(?m)^status:\s*(\S+)`)
+	titleRe  = regexp.MustCompile(`(?m)^title:\s*(.+)$`)
+	stampRe  = regexp.MustCompile(`(?m)^timestamp:\s*(\S+)`)
 )
 
 // Statuses is the vocabulary both registers share, in lifecycle order.
@@ -42,16 +40,14 @@ type Kind struct {
 	Dir      string // "debts" or "bugs"
 	Type     string // the document type: "Debt" or "Bug"
 	noun     string
-	since    int // the spec minor version that introduced the register
 	logTitle string
 	template func(title, now string, affects, resources []string) string
 	next     func(id string, affects, resources []string) string
-	index    func(root string, out io.Writer) int
 }
 
-// Debt is the debt register (v0.6).
+// Debt is the debt register.
 var Debt = Kind{
-	Dir: "debts", Type: "Debt", noun: "debt", since: 6,
+	Dir: "debts", Type: "Debt", noun: "debt",
 	logTitle: "# Debt Log\n\nDebts retired from the register by `fdf debt --cleanup`.\nThe register itself is the files beside this one; this is what they became.\n",
 	template: func(title, now string, _, resources []string) string {
 		return fmt.Sprintf(`---
@@ -78,15 +74,14 @@ TODO — what carrying this costs, and what it risks. Optional, but it is what l
 		}
 		return "next: fill `# Gap` and set `resource` to the paths that carry it — that is how work finds this debt."
 	},
-	index: scaffold.EnsureDebtsIndex,
 }
 
-// Bug is the bug register (v0.7).
+// Bug is the bug register.
 var Bug = Kind{
-	Dir: "bugs", Type: "Bug", noun: "bug", since: 7,
+	Dir: "bugs", Type: "Bug", noun: "bug",
 	logTitle: "# Bug Log\n\nBugs retired from the register by `fdf bug --cleanup`.\nThe register itself is the files beside this one; the Fix or Change that\nrepaired each one is its permanent record.\n",
 	template: func(title, now string, affects, resources []string) string {
-		affectsLine := "# affects: [group/slug]              # the features it shows up in (each must exist)"
+		affectsLine := "# affects: [features/group/slug]     # the features it shows up in (each must exist)"
 		if len(affects) > 0 {
 			affectsLine = "affects: [" + strings.Join(affects, ", ") + "]"
 		}
@@ -111,7 +106,7 @@ TODO — what should happen instead. When a scenario already promises it, cite i
 <!-- # Violates — when a scenario already promises the expected behavior. Its
      presence makes the repair a Fix. One heading per feature in `+"`affects`"+`:
 
-## group/slug
+## features/group/slug
 
 - The scenario's name, verbatim
 -->
@@ -138,10 +133,9 @@ TODO — what the defect costs while it stays. Optional, but it is what lets the
 			set = ", and set " + strings.Join(missing, " and ")
 		}
 		return "next: fill `# Symptom` and `# Expected`" + set + ". When a scenario already promises the expected\n" +
-			"      behavior, cite it under `# Violates` and the repair is `fdf fix --from bugs/" + id + " …`; when no\n" +
-			"      scenario covers it, the repair is `fdf change --from bugs/" + id + " …`, and someone decides first."
+			"      behavior, cite it under `# Violates` and the repair is `fdf fix --from " + id + " …`; when no\n" +
+			"      scenario covers it, the repair is `fdf change --from " + id + " …`, and someone decides first."
 	},
-	index: scaffold.EnsureBugsIndex,
 }
 
 type entry struct {
@@ -149,32 +143,38 @@ type entry struct {
 	resolution                         string
 }
 
-// pinned reports whether the bundle's pin has this register, and says why not
-// when it does not: under an older pin the validator reads the register's
-// directory as a feature group, so an entry filed there fails validation and
-// there is no register to list or clear.
+// pinned reports whether the commands work on the bundle's pin, and says why
+// not when they do not: a 0.x bundle is upgraded with `fdf migrate` first.
 func (k Kind) pinned(root string, out io.Writer) bool {
-	return scaffold.RequirePin(root, k.since, "the "+k.noun+" register",
-		k.Dir+"/ is a feature group, and a "+k.Type+" filed there fails validation (F3)", out)
+	return scaffold.RequireSupported(root, out)
 }
 
-// scan reads every entry of the register. Trail siblings (<slug>.log.md) and
-// INDEX/LOG files are skipped: only the register entries themselves.
+// scan reads every entry of the register: each document layout files in it,
+// at any depth, whose type is the register's. Trails, indexes and logs are
+// not entries, nor is anything with no place in a 1.0 bundle, such as a file
+// in a hidden directory or in a directory beside an entry.
 func (k Kind) scan(root string) ([]entry, error) {
 	dir := filepath.Join(root, k.Dir)
 	if _, err := os.Stat(dir); err != nil {
 		return nil, err
 	}
+	b := layout.New(os.DirFS(root))
 	var out []entry
-	err := filepath.Walk(dir, func(path string, fi os.FileInfo, err error) error {
-		if err != nil || fi.IsDir() || !strings.HasSuffix(path, ".md") {
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		switch {
+		case err != nil:
+			return nil
+		case d.IsDir() && p != dir && strings.HasPrefix(d.Name(), "."):
+			return filepath.SkipDir // a tool's state, not the bundle's
+		case d.IsDir() || !strings.HasSuffix(p, ".md"):
 			return nil
 		}
-		name := filepath.Base(path)
-		if name == "INDEX.md" || name == "LOG.md" || trailRe.MatchString(name) {
+		rel, _ := filepath.Rel(root, p)
+		rel = filepath.ToSlash(rel)
+		if pos := b.File(rel); pos.Kind != layout.Document || pos.Register != k.Dir {
 			return nil
 		}
-		raw, rerr := os.ReadFile(path)
+		raw, rerr := os.ReadFile(p)
 		if rerr != nil {
 			return nil
 		}
@@ -182,8 +182,7 @@ func (k Kind) scan(root string) ([]entry, error) {
 		if m := typeRe.FindStringSubmatch(s); m == nil || strings.Trim(m[1], `"'`) != k.Type {
 			return nil
 		}
-		rel, _ := filepath.Rel(root, path)
-		e := entry{id: strings.TrimSuffix(filepath.ToSlash(rel), ".md"), path: path}
+		e := entry{id: strings.TrimSuffix(rel, ".md"), path: p}
 		if m := statusRe.FindStringSubmatch(s); m != nil {
 			e.status = strings.Trim(m[1], `"'`)
 		}
@@ -347,10 +346,14 @@ func (k Kind) Cleanup(root string, dryRun, noLog bool, out io.Writer) int {
 		}
 	}
 	gone, kept := k.emptied(root, done)
+	goneSet := map[string]bool{}
+	for _, g := range gone {
+		goneSet[g] = true
+	}
 	if dryRun {
 		for _, g := range gone {
 			fmt.Fprintf(out, "would remove %s: the group would hold no entry\n", groupFiles(root, g))
-			if idx := scaffold.GroupListedIn(root, g); idx != "" {
+			if idx := scaffold.GroupListedIn(root, g); idx != "" && !goneSet[path.Dir(g)] {
 				fmt.Fprintf(out, "  would unlist %s/ from %s\n", g, idx)
 			}
 		}
@@ -394,15 +397,20 @@ func (k Kind) Cleanup(root string, dryRun, noLog bool, out io.Writer) int {
 	for _, g := range gone {
 		dir := filepath.Join(root, filepath.FromSlash(g))
 		what := groupFiles(root, g)
-		if err := os.Remove(filepath.Join(dir, "INDEX.md")); err != nil && !os.IsNotExist(err) {
-			fmt.Fprintln(out, "error:", err)
-			return 1
+		for _, f := range []string{"INDEX.md", ".DS_Store"} {
+			if err := os.Remove(filepath.Join(dir, f)); err != nil && !os.IsNotExist(err) {
+				fmt.Fprintln(out, "error:", err)
+				return 1
+			}
 		}
 		if err := os.Remove(dir); err != nil {
 			fmt.Fprintln(out, "error:", err)
 			return 1
 		}
 		fmt.Fprintf(out, "removed %s: the group holds no entry\n", what)
+		if goneSet[path.Dir(g)] {
+			continue // its parent goes too, index and all
+		}
 		// A listing of the group would link to nothing.
 		if idx, err := scaffold.UnlistGroup(root, g); err != nil {
 			fmt.Fprintln(out, "error:", err)
@@ -422,15 +430,19 @@ func (k Kind) Cleanup(root string, dryRun, noLog bool, out io.Writer) int {
 	return 0
 }
 
-// emptied sorts out the groups a cleanup takes the last entries from. A group
-// whose directory then holds nothing but an index listing nothing is gone:
-// the index, the directory and the group's own listing go too, or validation
-// would warn of an index with no listing, linked from its register's. A group
-// whose index lists nothing but which holds anything else — its LOG.md, an
-// entry the index never listed — is kept, and named so a person can decide.
+// emptied sorts out the groups a cleanup takes the last entries from, at any
+// depth. A group whose directory then holds nothing but an index listing
+// nothing is gone: the index, the directory and the group's own listing go
+// too, or validation would warn of an index with no listing, linked from its
+// parent's. The .DS_Store macOS Finder leaves in a directory it has shown is
+// not the group's, and goes with it. A group that goes can empty its parent in turn, so groups are
+// decided deepest first, and gone lists them in the order they are removed. A
+// group whose index lists nothing but which holds anything else — its LOG.md,
+// an entry the index never listed — is kept, and named so a person can
+// decide.
 func (k Kind) emptied(root string, done []entry) (gone, kept []string) {
 	removed := map[string]bool{} // bundle-relative paths the cleanup removes
-	groups := map[string]bool{}
+	pending := map[string]bool{} // groups to decide
 	for _, e := range done {
 		rel, _ := filepath.Rel(root, e.path)
 		rel = filepath.ToSlash(rel)
@@ -439,15 +451,12 @@ func (k Kind) emptied(root string, done []entry) (gone, kept []string) {
 			removed[strings.TrimSuffix(rel, ".md")+".log.md"] = true
 		}
 		if g := path.Dir(rel); g != k.Dir {
-			groups[g] = true
+			pending[g] = true
 		}
 	}
-	names := make([]string, 0, len(groups))
-	for g := range groups {
-		names = append(names, g)
-	}
-	sort.Strings(names)
-	for _, g := range names {
+	for len(pending) > 0 {
+		g := deepest(pending)
+		delete(pending, g)
 		lists := false
 		for _, t := range scaffold.Listed(root, g+"/INDEX.md") {
 			lists = lists || !removed[t]
@@ -458,16 +467,32 @@ func (k Kind) emptied(root string, done []entry) (gone, kept []string) {
 		files, _ := os.ReadDir(filepath.Join(root, filepath.FromSlash(g)))
 		alone := true
 		for _, f := range files {
-			alone = alone && (f.Name() == "INDEX.md" || removed[g+"/"+f.Name()])
+			alone = alone && (f.Name() == "INDEX.md" || f.Name() == ".DS_Store" || removed[g+"/"+f.Name()])
 		}
 		switch {
 		case alone:
 			gone = append(gone, g)
+			removed[g], removed[g+"/INDEX.md"] = true, true
+			if parent := path.Dir(g); parent != k.Dir {
+				pending[parent] = true
+			}
 		case fileExists(filepath.Join(root, filepath.FromSlash(g), "INDEX.md")):
 			kept = append(kept, g)
 		}
 	}
 	return gone, kept
+}
+
+// deepest is the group in groups with the most levels, and of those the
+// first by name.
+func deepest(groups map[string]bool) string {
+	best := ""
+	for g := range groups {
+		if d, bd := strings.Count(g, "/"), strings.Count(best, "/"); best == "" || d > bd || d == bd && g < best {
+			best = g
+		}
+	}
+	return best
 }
 
 // groupFiles names what removing an emptied group removes: its directory,
@@ -516,60 +541,47 @@ func resourceLine(resources []string, what string) string {
 	return "resource: [" + strings.Join(resources, ", ") + "]"
 }
 
-// New scaffolds <dir>/<id>.md, where id is "<slug>" or "<group>/<slug>" — or
-// the full ID, which log, mv and --from take: typing it here files the entry
-// where the ID says, not a level deeper. affects (bugs only) names the
-// features the defect shows up in; each must exist. resources are the
-// project-relative paths carrying the entry.
-func (k Kind) New(root, id string, affects, resources []string, out io.Writer) int {
+// New scaffolds an entry at <dir>/[<group>/…]<slug>.md, groups nested to any
+// depth — or at the full ID, which log, mv and --from take: typing it here
+// files the entry where the ID says, not a level deeper. affects (bugs only)
+// names the features the defect shows up in, by their full IDs; each must
+// exist. resources are the project-relative paths carrying the entry.
+func (k Kind) New(root, name string, affects, resources []string, out io.Writer) int {
 	if !k.pinned(root, out) {
 		return 1
 	}
-	id = strings.TrimPrefix(id, k.Dir+"/")
 	for _, s := range Statuses {
-		if id == s {
-			fmt.Fprintf(out, "error: %q is a status, not a slug — did you mean `fdf %s --%s`?\n", id, k.noun, s)
+		if strings.TrimPrefix(name, k.Dir+"/") == s {
+			fmt.Fprintf(out, "error: %q is a status, not a slug — did you mean `fdf %s --%s`?\n", s, k.noun, s)
 			return 1
 		}
-	}
-	if !slugRe.MatchString(id) && !groupedRe.MatchString(id) {
-		fmt.Fprintf(out, "error: id must be <slug> or <group>/<slug>, lowercase [a-z0-9-]; got %q\n", id)
-		return 1
 	}
 	for _, f := range affects {
-		if !featureRe.MatchString(f) {
-			fmt.Fprintf(out, "error: --affects takes feature IDs of the form <group>/<slug>; got %q\n", f)
-			return 1
-		}
-		if !fileExists(filepath.Join(root, filepath.FromSlash(f)+".md")) {
-			fmt.Fprintf(out, "error: --affects names %s, which is not a feature in this bundle\n", f)
+		if !scaffold.IsFeature(root, f) {
+			fmt.Fprintf(out, "error: --affects names %s, which is not a feature in this bundle%s\n", f, scaffold.FeatureHint(root, f))
 			return 1
 		}
 	}
-	path := filepath.Join(root, k.Dir, filepath.FromSlash(id)+".md")
-	if fileExists(path) {
-		fmt.Fprintf(out, "error: %s/%s.md already exists\n", k.Dir, id)
+	id := scaffold.NewID(root, k.Dir, name, out)
+	if id == "" {
 		return 1
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	file := filepath.Join(root, filepath.FromSlash(id)+".md")
+	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
 		fmt.Fprintln(out, "error:", err)
 		return 1
 	}
-	slug := id
-	if m := groupedRe.FindStringSubmatch(id); m != nil {
-		slug = m[2]
-	}
-	title := strings.ToUpper(slug[:1]) + strings.ReplaceAll(slug[1:], "-", " ")
+	title := scaffold.Title(path.Base(id))
 	body := k.template(title, time.Now().UTC().Format("2006-01-02T15:04:05Z"), affects, resources)
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+	if err := scaffold.WriteNew(root, id, body); err != nil {
 		fmt.Fprintln(out, "error:", err)
 		return 1
 	}
-	if code := k.index(root, out); code != 0 {
+	if code := scaffold.EnsureIndex(root, k.Dir, out); code != 0 {
 		return code
 	}
-	fmt.Fprintf(out, "wrote %s/%s.md (type: %s, status: open)\n", k.Dir, id, k.Type)
-	if code := scaffold.ListEntry(root, k.Dir, id, title, k.noun, out); code != 0 {
+	fmt.Fprintf(out, "wrote %s.md (type: %s, status: open)\n", id, k.Type)
+	if code := scaffold.ListEntry(root, k.Dir, strings.TrimPrefix(id, k.Dir+"/"), title, k.noun, out); code != 0 {
 		return code
 	}
 	fmt.Fprintln(out, k.next(id, affects, resources))

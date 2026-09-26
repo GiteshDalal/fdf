@@ -1,0 +1,2 @@
+exit: 1
+contains: features/venues/opening-hours.md: `replaced-by` names unknown feature "features/venues/nowhere" (F10)

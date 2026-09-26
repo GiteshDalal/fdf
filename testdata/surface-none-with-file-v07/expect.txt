@@ -1,2 +1,0 @@
-exit: 1
-contains: venues/opening-hours.md: says `surface: none` but venues/opening-hours.surface.md exists

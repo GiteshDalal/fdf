@@ -1,0 +1,2 @@
+exit: 1
+contains: features/venues/opening-hours.md: `surface` is `none` or absent, got "yes" (F4)

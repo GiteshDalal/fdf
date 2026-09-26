@@ -1,0 +1,4 @@
+exit: 1
+contains: FAIL: INDEX.md: its frontmatter has no closing `---` line, so it pins no fdf_version — end the block with one (F1)
+not-contains: notes.md
+not-contains: fdf migrate

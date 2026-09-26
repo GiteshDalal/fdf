@@ -1,2 +1,0 @@
-exit: 1
-contains: tasks exist under wdise/example/ but wdise/example.plan.md is missing (F6)

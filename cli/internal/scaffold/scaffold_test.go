@@ -31,7 +31,7 @@ func fillContext(t *testing.T, root string) {
 
 func TestInitWritesSurfacesStub(t *testing.T) {
 	dir := t.TempDir()
-	root := filepath.Join(dir, "docs", "features")
+	root := filepath.Join(dir, "docs", "fdf")
 	var buf bytes.Buffer
 	if code := Init(root, &buf); code != 0 {
 		t.Fatalf("init exit %d: %s", code, buf.String())
@@ -51,20 +51,26 @@ func TestInitWritesSurfacesStub(t *testing.T) {
 }
 
 func TestInitScaffoldsConformingBundle(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "docs", "features")
+	root := filepath.Join(t.TempDir(), "docs", "fdf")
 	var out bytes.Buffer
 	if code := Init(root, &out); code != 0 {
 		t.Fatalf("init: %d\n%s", code, out.String())
 	}
-	for _, f := range []string{"INDEX.md", "LOG.md", "STACK.md", "ARCHITECTURE.md", "SURFACES.md", "INFRA.md", "DOMAIN.md"} {
-		if _, err := os.Stat(filepath.Join(root, f)); err != nil {
+	for _, f := range []string{"INDEX.md", "LOG.md", "STACK.md", "ARCHITECTURE.md", "SURFACES.md", "INFRA.md", "DOMAIN.md",
+		"features/INDEX.md", "changes/INDEX.md", "practices/INDEX.md", "debts/INDEX.md", "bugs/INDEX.md"} {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(f))); err != nil {
 			t.Fatalf("missing %s", f)
 		}
 	}
+	if _, err := os.Stat(filepath.Join(root, "releases")); err == nil {
+		t.Error("releases/ is written with the first release, not by init")
+	}
 	raw, _ := os.ReadFile(filepath.Join(root, "INDEX.md"))
-	if !strings.Contains(string(raw), `fdf_version: "`+currentVersion+`"`) ||
-		!strings.Contains(string(raw), "/SPEC.md") {
-		t.Fatalf("INDEX.md missing pin or spec link:\n%s", raw)
+	for _, want := range []string{`fdf_version: "` + currentVersion + `"`, "/SPEC.md", "* [Features](/features/INDEX.md) - what the software does.\n",
+		"* [Bugs](/bugs/INDEX.md) - known defects not repaired yet.\n", "[Domain](/DOMAIN.md) - the project's context.\n"} {
+		if !strings.Contains(string(raw), want) {
+			t.Fatalf("INDEX.md should hold %q:\n%s", want, raw)
+		}
 	}
 	// Zero features: unfilled stubs are warnings only, so init is conformant.
 	var vout bytes.Buffer
@@ -74,40 +80,55 @@ func TestInitScaffoldsConformingBundle(t *testing.T) {
 }
 
 func TestInitIdempotentAndMigrateHint(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "docs", "features")
+	root := filepath.Join(t.TempDir(), "docs", "fdf")
 	var out bytes.Buffer
 	Init(root, &out)
 	out.Reset()
 	if code := Init(root, &out); code != 0 || !strings.Contains(out.String(), "up to date") {
 		t.Fatalf("re-init: code %d out %q", code, out.String())
 	}
-	// Simulate an older bundle: rewrite the pin.
+	// The pin is read as every command reads it, quoted either way or not
+	// at all, and a bundle the commands cannot work on is refused as they
+	// refuse it.
 	idx := filepath.Join(root, "INDEX.md")
 	raw, _ := os.ReadFile(idx)
-	os.WriteFile(idx, bytes.Replace(raw, []byte(`"`+currentVersion+`"`), []byte(`"0.1"`), 1), 0o644)
-	out.Reset()
-	if code := Init(root, &out); code != 1 || !strings.Contains(out.String(), "fdf migrate") {
-		t.Fatalf("older pin: code %d out %q", code, out.String())
+	for _, tc := range []struct {
+		pin, says string
+		code      int
+	}{
+		{"'" + currentVersion + "'", "up to date (fdf_version " + currentVersion + ")", 0},
+		{currentVersion, "up to date (fdf_version " + currentVersion + ")", 0},
+		{`"0.1"`, "pins fdf_version 0.1; fdf's commands work on spec 1.0 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan", 1},
+		{`"1.3"`, "pins fdf_version 1.3, newer than any spec this fdf knows (1.0) — upgrade fdf", 1},
+	} {
+		os.WriteFile(idx, bytes.Replace(raw, []byte(`"`+currentVersion+`"`), []byte(tc.pin), 1), 0o644)
+		out.Reset()
+		if code := Init(root, &out); code != tc.code || !strings.Contains(out.String(), tc.says) {
+			t.Errorf("pin %s: exit %d, want %d saying %q:\n%s", tc.pin, code, tc.code, tc.says, out.String())
+		}
 	}
 }
 
 func TestNewScaffoldsDraftFeature(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "docs", "features")
+	root := filepath.Join(t.TempDir(), "docs", "fdf")
 	var out bytes.Buffer
 	Init(root, &out)
 	fillContext(t, root) // F9: a feature-bearing bundle needs filled Context docs
 	if code := New(root, "payments/instant-refunds", &out); code != 0 {
 		t.Fatalf("new: %d\n%s", code, out.String())
 	}
-	raw, _ := os.ReadFile(filepath.Join(root, "payments", "instant-refunds.md"))
+	raw, _ := os.ReadFile(filepath.Join(root, "features", "payments", "instant-refunds.md"))
 	for _, want := range []string{"type: Feature", "status: draft", "Feature: Instant refunds", "Scenario:"} {
 		if !strings.Contains(string(raw), want) {
 			t.Fatalf("feature missing %q:\n%s", want, raw)
 		}
 	}
-	gidx, _ := os.ReadFile(filepath.Join(root, "payments", "INDEX.md"))
-	if !strings.Contains(string(gidx), "/payments/instant-refunds.md") {
+	gidx, _ := os.ReadFile(filepath.Join(root, "features", "payments", "INDEX.md"))
+	if !strings.Contains(string(gidx), "* [Instant refunds](/features/payments/instant-refunds.md) - TODO.\n") {
 		t.Fatalf("group index not linking feature:\n%s", gidx)
+	}
+	if !strings.Contains(out.String(), "done: feature features/payments/instant-refunds is a draft") {
+		t.Errorf("the feature is named by its full ID:\n%s", out.String())
 	}
 	var vout bytes.Buffer
 	if exit := bundle.Validate(root, bundle.Options{Out: &vout}); exit != 0 {
@@ -116,41 +137,49 @@ func TestNewScaffoldsDraftFeature(t *testing.T) {
 	if code := New(root, "payments/instant-refunds", &out); code != 1 {
 		t.Fatal("re-new same id must fail")
 	}
+	if code := New(root, "features/payments/instant-refunds", &out); code != 1 {
+		t.Fatal("the full ID names the same feature, which exists")
+	}
 	if code := New(root, "Payments/Bad", &out); code != 1 {
 		t.Fatal("uppercase id must fail")
 	}
 }
 
-// The root INDEX.md lists the groups (spec, *Reserved files*): a feature or
-// adoption that starts a group lists it there, once, with the other groups —
-// under `# Overview` in the index `fdf init` writes.
-func TestNewGroupsAreListedInTheRootIndex(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "docs", "features")
+// Features are filed flat or in groups nested to any depth (spec 1.0). Each
+// new group is listed once, in its parent's index; the root INDEX.md lists
+// the registers, and no group.
+func TestNewListsEveryNewGroupInItsParent(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "docs", "fdf")
 	var out bytes.Buffer
 	Init(root, &out)
 	fillContext(t, root)
+	before, _ := os.ReadFile(filepath.Join(root, "INDEX.md"))
 	out.Reset()
-	for _, id := range []string{"payments/instant-refunds", "payments/refund-status", "venue-admin/opening-hours"} {
+	for _, id := range []string{"onboarding", "payments/instant-refunds", "payments/refund-status", "platform/payouts/weekly-payouts"} {
 		if code := New(root, id, &out); code != 0 {
 			t.Fatalf("fdf new %s: exit %d\n%s", id, code, out.String())
 		}
 	}
-	if code := Adopt(root, "", "card/payments", []string{"main.go"}, &out); code != 0 {
+	if code := Adopt(root, "", "platform/payouts/card-payouts", []string{"main.go"}, &out); code != 0 {
 		t.Fatalf("fdf adopt: exit %d\n%s", code, out.String())
 	}
-	idx, _ := os.ReadFile(filepath.Join(root, "INDEX.md"))
-	want := "# Overview\n\n* [FDF spec](/SPEC.md) - the format this bundle pins ([upstream](" + specURL + ")).\n" +
-		"* [Payments](/payments/INDEX.md) - payments features.\n" +
-		"* [Venue-admin](/venue-admin/INDEX.md) - venue-admin features.\n" +
-		"* [Card](/card/INDEX.md) - card features.\n\n# Conventions\n"
-	if !strings.Contains(string(idx), want) {
-		t.Errorf("INDEX.md should list each new group once, under # Overview:\n%s\nwant:\n%s", idx, want)
+	for rel, want := range map[string]string{
+		"features/INDEX.md": "* [Format reference](/SPEC.md) - how features are structured.\n" +
+			"* [Onboarding](/features/onboarding.md) - TODO.\n" +
+			"* [Payments](/features/payments/INDEX.md) - features in payments.\n" +
+			"* [Platform](/features/platform/INDEX.md) - features in platform.\n",
+		"features/platform/INDEX.md":         "# Platform\n\n* [Payouts](/features/platform/payouts/INDEX.md) - features in payouts.\n",
+		"features/platform/payouts/INDEX.md": "# Payouts\n\n* [Weekly payouts](/features/platform/payouts/weekly-payouts.md) - TODO.\n* [Card payouts](/features/platform/payouts/card-payouts.md) - TODO.\n",
+	} {
+		if raw, _ := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel))); !strings.Contains(string(raw), want) {
+			t.Errorf("%s should hold:\n%s\ngot:\n%s", rel, want, raw)
+		}
 	}
-	if n := strings.Count(out.String(), `updated INDEX.md (now lists "Payments")`); n != 1 {
-		t.Errorf("the root listing is reported once, got %d:\n%s", n, out.String())
+	if n := strings.Count(out.String(), `updated features/INDEX.md (now lists "Payments")`); n != 1 {
+		t.Errorf("a group is listed once, got %d:\n%s", n, out.String())
 	}
-	if gidx, _ := os.ReadFile(filepath.Join(root, "venue-admin", "INDEX.md")); !strings.HasPrefix(string(gidx), "# Venue-admin features\n") {
-		t.Errorf("a group index is headed as before:\n%s", gidx)
+	if after, _ := os.ReadFile(filepath.Join(root, "INDEX.md")); string(after) != string(before) {
+		t.Errorf("the root INDEX.md lists registers, not groups:\n%s", after)
 	}
 	var vout bytes.Buffer
 	if exit := bundle.Validate(root, bundle.Options{Out: &vout}); exit != 0 {
@@ -163,22 +192,19 @@ func TestNewGroupsAreListedInTheRootIndex(t *testing.T) {
 func TestWithGroupListingPlacesTheGroup(t *testing.T) {
 	for _, tc := range []struct{ name, text, want string }{
 		{"after the last group",
-			"# Bundle\n\n* [Payments](/payments/INDEX.md) - payments.\n* [Format reference](/SPEC.md) - the spec.\n",
-			"# Bundle\n\n* [Payments](/payments/INDEX.md) - payments.\n* [Venues](/venues/INDEX.md) - venues features.\n* [Format reference](/SPEC.md) - the spec.\n"},
-		{"a # Overview with no list",
-			"# Bundle\n\n# Overview\nIntro.\n\n# Conventions\n",
-			"# Bundle\n\n# Overview\nIntro.\n\n* [Venues](/venues/INDEX.md) - venues features.\n\n# Conventions\n"},
-		{"an empty # Overview",
-			"# Bundle\n\n# Overview\n# Conventions\n",
-			"# Bundle\n\n# Overview\n\n* [Venues](/venues/INDEX.md) - venues features.\n\n# Conventions\n"},
+			"# Features\n\n* [Payments](/features/payments/INDEX.md) - payments.\n* [Onboarding](/features/onboarding.md) - feature.\n",
+			"# Features\n\n* [Payments](/features/payments/INDEX.md) - payments.\n* [Venues](/features/venues/INDEX.md) - features in venues.\n* [Onboarding](/features/onboarding.md) - feature.\n"},
+		{"a subgroup is not a sibling",
+			"# Features\n\n* [Deep](/features/a/deep/INDEX.md) - a subgroup's.\n",
+			"# Features\n\n* [Deep](/features/a/deep/INDEX.md) - a subgroup's.\n* [Venues](/features/venues/INDEX.md) - features in venues.\n"},
 		{"at the end",
-			"# Bundle\n\nNo list yet.\n",
-			"# Bundle\n\nNo list yet.\n\n* [Venues](/venues/INDEX.md) - venues features.\n"},
+			"# Features\n\nNo list yet.\n",
+			"# Features\n\nNo list yet.\n\n* [Venues](/features/venues/INDEX.md) - features in venues.\n"},
 		{"listed by its directory",
-			"# Bundle\n\n* [Venues](venues/) - venues.\n",
-			"# Bundle\n\n* [Venues](venues/) - venues.\n"},
+			"# Features\n\n* [Venues](venues/) - venues.\n",
+			"# Features\n\n* [Venues](venues/) - venues.\n"},
 	} {
-		got, _ := WithGroupListing(tc.text, "", "venues")
+		got, _ := WithGroupListing(tc.text, "features", "venues")
 		if got != tc.want {
 			t.Errorf("%s:\n got: %q\nwant: %q", tc.name, got, tc.want)
 		}
@@ -270,165 +296,310 @@ func pinned(t *testing.T, pin string) string {
 	return root
 }
 
-// A reserved directory holds one kind of document; a feature there would be
-// filed where validation and every other command look for something else.
-func TestFeaturesRefuseAReservedGroup(t *testing.T) {
+// No name is reserved inside a register (spec 1.0): a feature group may be
+// called bugs/ or changes/, and a new register never renames one again.
+func TestNoNameIsReservedInsideFeatures(t *testing.T) {
 	root := pinned(t, currentVersion)
-	for _, tc := range []struct{ id, names string }{
-		{"debts/x", "fdf debt <slug>"},
-		{"bugs/x", "fdf bug <slug>"},
-		{"practices/x", "fdf practice <slug>"},
-		{"changes/x", "fdf change or fdf fix"},
-		{"releases/x", "fdf release <version>"},
-	} {
+	for _, id := range []string{"debts/crash-report", "bugs/triage", "practices/audit", "changes/review", "releases/notes", "features"} {
 		var out bytes.Buffer
-		if code := New(root, tc.id, &out); code != 1 {
-			t.Errorf("fdf new %s: exit %d, want 1\n%s", tc.id, code, out.String())
+		if code := New(root, id, &out); code != 0 {
+			t.Errorf("fdf new %s: exit %d\n%s", id, code, out.String())
 		}
-		if code := Adopt(root, "", tc.id, []string{"main.go"}, &out); code != 1 {
-			t.Errorf("fdf adopt %s: exit %d, want 1\n%s", tc.id, code, out.String())
-		}
-		if !strings.Contains(out.String(), tc.names) || !strings.Contains(out.String(), "a feature's group is any other name") {
-			t.Errorf("%s: the refusal names %q:\n%s", tc.id, tc.names, out.String())
-		}
-		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(tc.id)+".md")); err == nil {
-			t.Errorf("%s.md must not be written", tc.id)
+		if _, err := os.Stat(filepath.Join(root, "features", filepath.FromSlash(id)+".md")); err != nil {
+			t.Errorf("fdf new %s writes features/%s.md: %v", id, id, err)
 		}
 	}
 }
 
-// A name is reserved only from the version that reserved it: under v0.6,
-// bugs/ is a feature group, and `fdf migrate` itself asks for one there to be
-// moved — so fdf new must be able to write one.
-func TestReservedGroupsFollowThePin(t *testing.T) {
-	for _, tc := range []struct {
-		pin     string
-		allowed []string
-		refused []string
-	}{
-		{"0.6", []string{"bugs"}, []string{"debts", "practices", "changes", "releases"}},
-		{"0.5", []string{"bugs", "debts", "practices"}, []string{"changes", "releases"}},
-		{"0.4", []string{"bugs", "debts", "practices", "changes"}, []string{"releases"}},
-		{"", []string{"bugs", "debts", "practices", "changes"}, []string{"releases"}},
-	} {
-		root := pinned(t, tc.pin)
-		for _, group := range tc.allowed {
-			var out bytes.Buffer
-			if code := New(root, group+"/crash-report", &out); code != 0 {
-				t.Errorf("pin %q: fdf new %s/crash-report: exit %d\n%s", tc.pin, group, code, out.String())
-			}
-		}
-		for _, group := range tc.refused {
-			var out bytes.Buffer
-			if code := New(root, group+"/crash-report", &out); code != 1 || !strings.Contains(out.String(), "a feature's group is any other name") {
-				t.Errorf("pin %q: fdf new %s/crash-report: exit %d, want a refusal\n%s", tc.pin, group, code, out.String())
-			}
-		}
-	}
-}
-
-// The gates are the validator's own: under every version it checks, a
-// feature in a directory the pin reserves fails validation, and one in any
-// other directory passes. This holds ReservedDirs to bundle.Validate.
-func TestReservedDirsMirrorTheValidator(t *testing.T) {
-	context := map[string][]string{
-		"0.2": nil,
-		"0.3": {"STACK.md", "ARCHITECTURE.md", "INFRA.md"},
-		"0.4": {"STACK.md", "ARCHITECTURE.md", "SURFACES.md", "INFRA.md"},
-		"0.5": {"STACK.md", "ARCHITECTURE.md", "SURFACES.md", "INFRA.md"},
-		"0.6": {"STACK.md", "ARCHITECTURE.md", "SURFACES.md", "INFRA.md", "DOMAIN.md"},
-		"0.7": {"STACK.md", "ARCHITECTURE.md", "SURFACES.md", "INFRA.md", "DOMAIN.md"},
-	}
-	if len(context) != len(SpecVersions()) {
-		t.Fatalf("this test knows the Context documents of %d spec versions; the binary embeds %v", len(context), SpecVersions())
-	}
-	feature := "---\ntype: Feature\nstatus: draft\ntitle: X\ndescription: d.\ntimestamp: 2026-09-24T00:00:00Z\n---\n\n" +
+// fdf new refuses exactly what the validator would reject: each place it
+// refuses, a feature written there by hand fails F3. The commands and the
+// validator read positions from one place, layout.
+func TestNewRefusesWhatTheValidatorRejects(t *testing.T) {
+	feature := "---\ntype: Feature\nstatus: draft\ntitle: X\ndescription: d.\ntimestamp: 2026-09-25T00:00:00Z\n---\n\n" +
 		"```gherkin\nFeature: X\n  As a user\n  I want x\n  So that y\n```\n\n```gherkin\nScenario: It works\n  Given x\n  When y\n  Then z\n```\n"
-	for pin, docs := range context {
-		for dir := range reservedSince {
-			root := pinned(t, pin)
-			for _, name := range docs {
-				body := "Filled.\n"
-				if name == "DOMAIN.md" {
-					body = "# Terms\n\n## Venue\nA physical location where a merchant sells.\n- instead-of: shopfront\n"
-				}
-				os.WriteFile(filepath.Join(root, name), []byte("---\ntype: Context\ntitle: T\ndescription: d.\ntimestamp: 2026-09-24T00:00:00Z\n---\n\n"+body), 0o644)
-			}
-			os.MkdirAll(filepath.Join(root, dir), 0o755)
-			os.WriteFile(filepath.Join(root, dir, "x.md"), []byte(feature), 0o644)
-			var out bytes.Buffer
-			passes := bundle.Validate(root, bundle.Options{Out: &out}) == 0
-			if reserved := ReservedDirs(root)[dir]; passes == reserved {
-				t.Errorf("pin %s: ReservedDirs says %s/ reserved=%v, but a feature there validates=%v:\n%s", pin, dir, reserved, passes, out.String())
-			}
-		}
-	}
-}
-
-// A command whose document an older pin rejects refuses to write it and
-// points at `fdf migrate`: a Practice in a v0.5 bundle's practices/ fails F3,
-// and `status: adopted` in a v0.6 bundle fails F2.
-func TestScaffoldsRefuseAnOlderPin(t *testing.T) {
-	root := pinned(t, "0.5")
-	var out bytes.Buffer
-	if code := Practice(root, "permission-checks", &out); code != 1 ||
-		!strings.HasPrefix(out.String(), "error: practices arrived in spec v0.6, and this bundle pins fdf_version 0.5: under that pin practices/ is a feature group") ||
-		!strings.Contains(out.String(), "run `fdf migrate` to bring the bundle to v"+currentVersion+" first") {
-		t.Errorf("fdf practice on a v0.5 bundle: exit %d\n%s", code, out.String())
-	}
-	if _, err := os.Stat(filepath.Join(root, "practices")); err == nil {
-		t.Error("a refused practice writes nothing")
-	}
-	root = pinned(t, "0.6")
-	out.Reset()
-	if code := Adopt(root, "", "venues/card-payments", []string{"main.go"}, &out); code != 1 ||
-		!strings.HasPrefix(out.String(), "error: adopted features arrived in spec v0.7, and this bundle pins fdf_version 0.6") {
-		t.Errorf("fdf adopt on a v0.6 bundle: exit %d\n%s", code, out.String())
-	}
-	if _, err := os.Stat(filepath.Join(root, "venues")); err == nil {
-		t.Error("a refused adoption writes nothing")
-	}
-	out.Reset()
-	if code := Practice(pinned(t, ""), "permission-checks", &out); code != 1 || !strings.Contains(out.String(), "this bundle pins no fdf_version") {
-		t.Errorf("fdf practice on an unpinned bundle: exit %d\n%s", code, out.String())
-	}
-	out.Reset()
-	if code := Practice(pinned(t, "0.6"), "permission-checks", &out); code != 0 {
-		t.Errorf("fdf practice on a v0.6 bundle: exit %d\n%s", code, out.String())
-	}
-}
-
-func TestPinReadsTheFrontmatterAsTheValidatorDoes(t *testing.T) {
-	for index, want := range map[string]string{
-		"---\nfdf_version: \"0.6\"\n---\n# B\n":             "0.6",
-		"---\nfdf_version: 0.5\n---\n":                      "0.5",
-		"\uFEFF---\r\nfdf_version: '0.7'\r\n---\r\n# B\r\n": "0.7",
-		"# B\n\nfdf_version: \"0.6\"\n":                     "", // not frontmatter
-		"---\nfdf_version: \"0.6\"\n# B\n":                  "", // unterminated
+	for _, tc := range []struct{ name, refusal string }{
+		{"onboarding/welcome", "features/onboarding/ is the task directory of features/onboarding"},
+		{"payments", "features/payments/ is a group, and a feature named payments would make it its task directory (F3)"},
+		{"Billing/refunds", `"Billing" in features/Billing/refunds is not a name`},
+		{"billing/index", "index is not a slug: a disk that ignores case reads index.md as the INDEX.md beside it (F3)"},
+		{"platform/log", "log is not a slug: a disk that ignores case reads log.md as the LOG.md beside it (F3)"},
 	} {
-		root := t.TempDir()
-		os.WriteFile(filepath.Join(root, "INDEX.md"), []byte(index), 0o644)
-		if got := Pin(root); got != want {
-			t.Errorf("Pin(%q) = %q, want %q", index, got, want)
+		root := filepath.Join(t.TempDir(), "docs", "fdf")
+		var out bytes.Buffer
+		Init(root, &out)
+		fillContext(t, root)
+		for _, id := range []string{"onboarding", "payments/instant-refunds"} {
+			if code := New(root, id, &out); code != 0 {
+				t.Fatalf("fdf new %s: exit %d\n%s", id, code, out.String())
+			}
+		}
+		out.Reset()
+		if code := New(root, tc.name, &out); code != 1 || !strings.Contains(out.String(), tc.refusal) {
+			t.Errorf("fdf new %s: exit %d, want a refusal saying %q:\n%s", tc.name, code, tc.refusal, out.String())
+		}
+		p := filepath.Join(root, "features", filepath.FromSlash(tc.name)+".md")
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		os.WriteFile(p, []byte(feature), 0o644)
+		var vout bytes.Buffer
+		if bundle.Validate(root, bundle.Options{Out: &vout}) == 0 || !strings.Contains(vout.String(), "(F3)") {
+			t.Errorf("features/%s.md written by hand should fail F3:\n%s", tc.name, vout.String())
 		}
 	}
-	if PinAtLeast(pinned(t, "0.9"), 5) {
-		t.Error("a pin this fdf does not support is below every gate, as the validator treats it")
+}
+
+// A group directory spelled in capitals that holds no Markdown, one of
+// images, is outside FDF; but on a disk that ignores case it is where fdf new
+// would file features/payments/refunds.md, and the bundle would then fail
+// F3. fdf new refuses it, naming the directory as it is spelled, and writes
+// nothing.
+func TestNewRefusesAGroupSpelledInAnotherCase(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "docs", "fdf")
+	var out bytes.Buffer
+	Init(root, &out)
+	fillContext(t, root)
+	os.MkdirAll(filepath.Join(root, "features", "Payments"), 0o755)
+	os.WriteFile(filepath.Join(root, "features", "Payments", "diagram.png"), []byte("PNG"), 0o644)
+	before := tree(t, root)
+	out.Reset()
+	want := "error: features/Payments/ is already there: a disk that ignores case would file features/payments/refunds in it, and directory names are lowercase (F3); rename that directory, or choose another name\n"
+	if code := New(root, "payments/refunds", &out); code != 1 || out.String() != want {
+		t.Errorf("fdf new payments/refunds: exit %d\n got: %q\nwant: %q", code, out.String(), want)
+	}
+	if after := tree(t, root); after != before {
+		t.Errorf("a refused feature writes nothing:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+// A command never writes a new document over a file that is there. Place
+// reads names exactly, and on a disk that ignores case a file whose name
+// differs only in case is where the new one would go: WriteNew leaves the
+// file system to refuse it.
+func TestWriteNewNeverOverwrites(t *testing.T) {
+	root := t.TempDir()
+	p := filepath.Join(root, "features", "refunds.md")
+	os.MkdirAll(filepath.Dir(p), 0o755)
+	os.WriteFile(p, []byte("kept\n"), 0o644)
+	if err := WriteNew(root, "features/refunds", "new\n"); err == nil || err.Error() != "a file is already at features/refunds.md; on a disk that ignores case, its name may differ in case" {
+		t.Errorf("WriteNew over a file: %v", err)
+	}
+	if raw, _ := os.ReadFile(p); string(raw) != "kept\n" {
+		t.Errorf("the file there is untouched, got %q", raw)
+	}
+	if err := WriteNew(root, "features/checkout", "new\n"); err != nil {
+		t.Fatal(err)
+	}
+	if raw, _ := os.ReadFile(filepath.Join(root, "features", "checkout.md")); string(raw) != "new\n" {
+		t.Errorf("a new document is written, got %q", raw)
+	}
+}
+
+// The commands write spec 1.x, so they refuse any other bundle before they
+// write anything, and name the fix: `fdf migrate`, the user's decision, for a
+// 0.x pin, the pin or `fdf migrate` for none, a newer fdf for a newer pin, the
+// pin itself when it is not a version or a 0.x version FDF never had, and
+// the frontmatter when no `---` line closes it.
+func TestScaffoldsPointA0xBundleAtMigrate(t *testing.T) {
+	for _, tc := range []struct{ pin, says string }{
+		{"0.7", "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n"},
+		{"0.5", "error: this bundle pins fdf_version 0.5; fdf's commands work on spec 1.0 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n"},
+		{"", "error: this bundle's INDEX.md pins no fdf_version; fdf's commands work on spec 1.0 bundles — pin the version it was written for, as fdf_version: \"" + currentVersion + "\"; upgrading a bundle from before 1.0 is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n"},
+		// A 0.x pin FDF never had is a mistake, and migrate refuses it too.
+		{"0.8", "error: this bundle pins fdf_version 0.8, which is no 0.x version this fdf knows (0.1 to 0.7) — correct the pin in INDEX.md\n"},
+		{"1.3", "error: this bundle pins fdf_version 1.3, newer than any spec this fdf knows (1.0) — upgrade fdf\n"},
+		// A pin that is almost 1.0 is no 0.x version to migrate.
+		{"1.0.0", "error: this bundle pins fdf_version 1.0.0, which is not a MAJOR.MINOR version such as " + currentVersion + " — correct the pin in INDEX.md\n"},
+		{"v1.0", "error: this bundle pins fdf_version v1.0, which is not a MAJOR.MINOR version such as " + currentVersion + " — correct the pin in INDEX.md\n"},
+	} {
+		for name, run := range map[string]func(root string, out *bytes.Buffer) int{
+			"new": func(root string, out *bytes.Buffer) int { return New(root, "payments/refunds", out) },
+			"adopt": func(root string, out *bytes.Buffer) int {
+				return Adopt(root, "", "payments/cards", []string{"main.go"}, out)
+			},
+			"practice": func(root string, out *bytes.Buffer) int { return Practice(root, "permission-checks", out) },
+		} {
+			root := pinned(t, tc.pin)
+			var out bytes.Buffer
+			if code := run(root, &out); code != 1 || out.String() != tc.says {
+				t.Errorf("fdf %s on pin %q: exit %d\n got: %q\nwant: %q", name, tc.pin, code, out.String(), tc.says)
+			}
+			if entries, _ := os.ReadDir(root); len(entries) != 1 {
+				t.Errorf("fdf %s on pin %q writes nothing, but the bundle holds %d entries", name, tc.pin, len(entries))
+			}
+		}
+	}
+	// Its pin line may be there, so a missing pin would not say why.
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "INDEX.md"), []byte("---\nfdf_version: \""+currentVersion+"\"\n\n# Bundle\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if code := New(root, "payments/refunds", &out); code != 1 || out.String() != "error: this bundle's INDEX.md frontmatter has no closing `---` line, so it pins no fdf_version — end the block with one\n" {
+		t.Errorf("fdf new on frontmatter that never closes: exit %d\n%s", code, out.String())
+	}
+}
+
+// A register's or a group's INDEX.md pins nothing, so a root pointed at one,
+// --root docs/fdf/features for docs/fdf, used to be sent to `fdf migrate`,
+// which built a second bundle inside the first. The commands, fdf init among
+// them, name the bundle instead, and write nothing. So does a directory in
+// the bundle that holds no INDEX.md, or does not exist yet, where fdf init
+// used to build a second bundle.
+func TestScaffoldsSendARootInsideABundleToIt(t *testing.T) {
+	bundle := filepath.Join(t.TempDir(), "docs", "fdf")
+	var out bytes.Buffer
+	Init(bundle, &out)
+	fillContext(t, bundle)
+	if code := New(bundle, "payments/refunds", &out); code != 0 {
+		t.Fatalf("fdf new: exit %d\n%s", code, out.String())
+	}
+	if err := os.MkdirAll(filepath.Join(bundle, "features", "payments", "diagrams"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	before := tree(t, bundle)
+	for _, root := range []string{
+		filepath.Join(bundle, "features"),
+		filepath.Join(bundle, "features", "payments"),
+		filepath.Join(bundle, "features", "payments", "diagrams"),
+		filepath.Join(bundle, "features", "cards"),
+	} {
+		want := "error: " + root + " is inside the bundle at " + bundle + ", not a bundle of its own — pass --root " + bundle + ", or leave --root out\n"
+		for name, run := range map[string]func(root string, out *bytes.Buffer) int{
+			"init": func(root string, out *bytes.Buffer) int { return Init(root, out) },
+			"new":  func(root string, out *bytes.Buffer) int { return New(root, "cards", out) },
+			"adopt": func(root string, out *bytes.Buffer) int {
+				return Adopt(root, "", "cards", []string{"main.go"}, out)
+			},
+			"practice": func(root string, out *bytes.Buffer) int { return Practice(root, "permission-checks", out) },
+		} {
+			out.Reset()
+			if code := run(root, &out); code != 1 || out.String() != want {
+				t.Errorf("fdf %s on %s: exit %d\n got: %q\nwant: %q", name, root, code, out.String(), want)
+			}
+		}
+	}
+	if after := tree(t, bundle); after != before {
+		t.Errorf("nothing is written inside the bundle:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+// tree lists every file under root with its content, in path order.
+func tree(t *testing.T, root string) string {
+	t.Helper()
+	var b strings.Builder
+	filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			raw, _ := os.ReadFile(p)
+			rel, _ := filepath.Rel(root, p)
+			b.WriteString("== " + filepath.ToSlash(rel) + "\n" + string(raw))
+		}
+		return nil
+	})
+	return b.String()
+}
+
+// fdf init starts a bundle only where there is none. A directory that holds
+// Markdown but no INDEX.md, such as a bundle from before 1.0 that never had
+// one, keeps every file, its LOG.md among them, and is sent to fdf migrate.
+// A README.md, which the root may hold, is no reason to refuse, nor is what
+// is hidden.
+func TestInitRefusesADirectoryThatHoldsMarkdown(t *testing.T) {
+	root := t.TempDir()
+	log := "# Log\n\n## 2026-01-01\n* Kept.\n"
+	for rel, text := range map[string]string{"LOG.md": log, "wdise/example.md": "# Example\n"} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, rel)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, rel), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := tree(t, root)
+	var out bytes.Buffer
+	if code := Init(root, &out); code != 1 || !strings.Contains(out.String(), "but no INDEX.md") || !strings.Contains(out.String(), "is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --root "+root+" --dry-run` shows the plan; move anything else out first\n") {
+		t.Errorf("init refuses and names fdf migrate: exit %d\n%s", code, out.String())
+	}
+	if tree(t, root) != before {
+		t.Error("a refused init writes nothing")
+	}
+	for _, rel := range []string{"README.md", ".notes/draft.md"} {
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, rel)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, rel), []byte("# Docs\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		out.Reset()
+		if code := Init(dir, &out); code != 0 {
+			t.Errorf("init beside %s: exit %d\n%s", rel, code, out.String())
+		}
+	}
+}
+
+// fdf migrate moves a bundle from before 1.0 at docs/features to docs/fdf,
+// so init starts none there while docs/features beside it holds an
+// INDEX.md that pins nothing, as such a bundle's may. A documentation
+// site's docs/features, with no INDEX.md spelled so, stops nothing.
+func TestInitRefusesDocsFdfBesideAnUnpinnedBundle(t *testing.T) {
+	docs := filepath.Join(t.TempDir(), "docs")
+	root, old := filepath.Join(docs, "fdf"), filepath.Join(docs, "features")
+	if err := os.MkdirAll(filepath.Join(old, "wdise"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for rel, text := range map[string]string{"INDEX.md": "# Features\n", "wdise/example.md": "# Example\n"} {
+		if err := os.WriteFile(filepath.Join(old, rel), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var out bytes.Buffer
+	want := "error: " + old + " beside " + root + " holds an INDEX.md that pins no version, as a bundle's from before 1.0 may, and fdf init starts no bundle where fdf migrate would move that one — upgrading it is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --root " + old + " --dry-run` shows the plan; if that is no bundle, rename its INDEX.md, and run fdf init again\n"
+	if code := Init(root, &out); code != 1 || out.String() != want {
+		t.Errorf("init beside an unpinned docs/features: exit %d\n got: %q\nwant: %q", code, out.String(), want)
+	}
+	if _, err := os.Stat(root); !os.IsNotExist(err) {
+		t.Errorf("a refused init writes nothing: %v", err)
+	}
+	if err := os.Remove(filepath.Join(old, "INDEX.md")); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if code := Init(root, &out); code != 0 {
+		t.Errorf("init beside a docs/features with no INDEX.md: exit %d\n%s", code, out.String())
+	}
+}
+
+// A bundle's spec copy is the spec its pin names, which a later minor makes
+// older than the current one: EnsureSpec writes the version it is given,
+// and init gives it the pin, and writes nothing over a copy that is there.
+func TestEnsureSpecWritesTheVersionItIsGiven(t *testing.T) {
+	root := t.TempDir()
+	var out bytes.Buffer
+	if code := EnsureSpec(root, "0.7", &out); code != 0 {
+		t.Fatalf("EnsureSpec: exit %d\n%s", code, out.String())
+	}
+	spec, err := os.ReadFile(filepath.Join(root, "SPEC.md"))
+	if err != nil || !strings.Contains(string(spec), "The FDF v0.7 specification this bundle conforms to.") || !strings.Contains(out.String(), "wrote SPEC.md (FDF v0.7 spec copy)") {
+		t.Errorf("SPEC.md is the 0.7 spec: %v\n%s", err, out.String())
+	}
+	out.Reset()
+	if code := EnsureSpec(root, CurrentVersion(), &out); code != 0 || out.String() != "" {
+		t.Errorf("a copy that is there is kept: exit %d\n%s", code, out.String())
 	}
 }
 
 // Re-running init on a current bundle adds back what is missing — the
 // reserved directories' indexes included — and overwrites nothing.
 func TestInitBackfillsMissingIndexes(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "docs", "features")
+	root := filepath.Join(t.TempDir(), "docs", "fdf")
 	var out bytes.Buffer
 	Init(root, &out)
 	if !strings.Contains(out.String(), "`fdf validate` warns about them now, and fails F9 once a feature exists") {
 		t.Errorf("init should say when F9 fails:\n%s", out.String())
 	}
 	os.Remove(filepath.Join(root, "bugs", "INDEX.md"))
+	os.Remove(filepath.Join(root, "features", "INDEX.md"))
 	out.Reset()
-	if code := Init(root, &out); code != 0 || !strings.Contains(out.String(), "wrote bugs/INDEX.md") {
-		t.Fatalf("re-init should restore bugs/INDEX.md: exit %d\n%s", code, out.String())
+	if code := Init(root, &out); code != 0 || !strings.Contains(out.String(), "wrote bugs/INDEX.md") || !strings.Contains(out.String(), "wrote features/INDEX.md") {
+		t.Fatalf("re-init should restore bugs/INDEX.md and features/INDEX.md: exit %d\n%s", code, out.String())
 	}
 }

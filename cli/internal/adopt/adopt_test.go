@@ -33,10 +33,13 @@ func TestMapCountsFeaturesAndListsUnclaimedCode(t *testing.T) {
 	for _, f := range []string{"a.go", "b.go", "c.go", "d.go"} {
 		write(t, repo, "src/api/"+f, "package api\n")
 	}
-	root := filepath.Join(repo, "docs", "features")
-	write(t, root, "payments/card-payments.md", "---\ntype: Feature\nstatus: adopted\nresource: [src/cards]\n---\n\n```gherkin\nFeature: Card payments\n```\n\n```gherkin\nScenario: A settled payment is marked settled\n  Given x\n```\n")
-	write(t, root, "payments/card-payments.test.md", "---\ntype: Test\n---\n\n# Test Cases\n\n## A settled payment is marked settled\n\n`go test`\n")
-	write(t, root, "payments/csv-export.md", "---\ntype: Feature\nstatus: adopted\nresource: src/export\n---\n\n```gherkin\nFeature: Export\n```\n")
+	root := filepath.Join(repo, "docs", "fdf")
+	write(t, root, "INDEX.md", "---\nfdf_version: \"1.0\"\n---\n\n# Bundle\n\n* [Features](/features/INDEX.md) - what the software does.\n")
+	write(t, root, "features/payments/card-payments.md", "---\ntype: Feature\nstatus: adopted\nresource: [src/cards]\n---\n\n```gherkin\nFeature: Card payments\n```\n\n```gherkin\nScenario: A settled payment is marked settled\n  Given x\n```\n")
+	write(t, root, "features/payments/card-payments.test.md", "---\ntype: Test\n---\n\n# Test Cases\n\n## A settled payment is marked settled\n\n`go test`\n")
+	write(t, root, "features/csv-export.md", "---\ntype: Feature\nstatus: adopted\nresource: src/export\n---\n\n```gherkin\nFeature: Export\n```\n")
+	// A task whose feature is gone sits where a feature goes, and is none.
+	write(t, root, "features/platform/refunds/01-api.md", "---\ntype: Task\nstatus: pending\n---\n\n# API\n")
 	cmd := exec.Command("git", "init", "-q")
 	cmd.Dir = repo
 	if err := cmd.Run(); err != nil {
@@ -54,7 +57,8 @@ func TestMapCountsFeaturesAndListsUnclaimedCode(t *testing.T) {
 	}
 	s := out.String()
 	for _, want := range []string{
-		"adopted       payments/card-payments          1       1",
+		"adopted       features/payments/card-payments          1       1",
+		"adopted       features/csv-export                      0       0",
 		"2 feature(s): 0 built, 0 in flight, 0 retired, 2 adopted (1 with scenarios, 1 map entry).",
 		"src/wallet/",
 	} {
@@ -64,6 +68,9 @@ func TestMapCountsFeaturesAndListsUnclaimedCode(t *testing.T) {
 	}
 	if strings.Contains(s, "src/cards/") {
 		t.Fatalf("claimed code is not listed as unclaimed:\n%s", s)
+	}
+	if strings.Contains(s, "01-api") {
+		t.Fatalf("an orphan task is not a feature:\n%s", s)
 	}
 	// A row of three or fewer unclaimed files names them; a bigger one only
 	// counts them.
@@ -79,7 +86,19 @@ func TestMapCountsFeaturesAndListsUnclaimedCode(t *testing.T) {
 	if !strings.HasSuffix(rows["src/api/"], "4  4") {
 		t.Fatalf("a row of four unclaimed files only counts them:\n%s", s)
 	}
-	if strings.Contains(s, "docs/features") {
+	if strings.Contains(s, "docs/fdf") {
 		t.Fatalf("the bundle itself is not code to claim:\n%s", s)
+	}
+}
+
+// The map works on spec 1.0 bundles: a 0.x bundle is upgraded with
+// `fdf migrate` first.
+func TestMapPointsA0xBundleAtMigrate(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "INDEX.md", "---\nfdf_version: \"0.7\"\n---\n\n# Bundle\n")
+	var out bytes.Buffer
+	if code := Map(root, "", 2, &out); code != 1 ||
+		out.String() != "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n" {
+		t.Fatalf("exit %d\n%s", code, out.String())
 	}
 }

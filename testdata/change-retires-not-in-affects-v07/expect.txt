@@ -1,2 +1,0 @@
-exit: 1
-contains: changes/drop-hours.md: `retires` names venues/opening-hours, which is not in `affects` (F10)

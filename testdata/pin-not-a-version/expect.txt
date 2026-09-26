@@ -1,0 +1,4 @@
+exit: 1
+contains: FAIL: INDEX.md: fdf_version "1.0.0" is not a MAJOR.MINOR version such as "1.0" — correct the pin (F1)
+not-contains: fdf migrate
+not-contains: (F3)

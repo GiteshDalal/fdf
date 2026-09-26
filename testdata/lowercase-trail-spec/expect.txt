@@ -1,4 +1,0 @@
-exit: 1
-contains: (F3)
-contains: SPEC.md
-contains: (F4)

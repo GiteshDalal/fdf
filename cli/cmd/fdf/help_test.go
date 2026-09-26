@@ -188,7 +188,7 @@ func TestWrapUsageBreaksBetweenParts(t *testing.T) {
 	got := wrapUsage("usage: ", mustTopic(t, "debt").usage)
 	want := "usage: fdf debt [--root <dir>] [--open|--accepted|--resolved]\n" +
 		"                [--cleanup [--dry-run] [--no-log]] [--resource <paths>]\n" +
-		"                [[<group>/]<slug>]"
+		"                [[<group>/…]<slug>]"
 	if got != want {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
 	}

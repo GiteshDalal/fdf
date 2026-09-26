@@ -1,0 +1,2 @@
+exit: 1
+contains: practices/permission-checks/: shares its name with the practice practices/permission-checks.md, and a practice owns no directory — rename one of them (F3)

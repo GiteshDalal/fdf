@@ -1,9 +1,8 @@
 package bundle
 
-// v0.7 test documents. A case in slug.test.md is a `## <scenario name>`
-// heading under `# Test Cases`, and F8 matches it exactly: before v0.7 the
-// file only had to contain the name somewhere, so a short name inside another
-// case's text counted as covered.
+// Test documents. A case in slug.test.md is a `## <scenario name>` heading
+// under `# Test Cases`, and F8 matches it exactly, so a short name inside
+// another case's text does not count as covered.
 
 import (
 	"fmt"
@@ -86,7 +85,7 @@ func checkSurfaces(features map[string]*featureInfo, pairs map[string]*pairInfo,
 	}
 }
 
-// checkTestCases is F8 on a v0.7 test document: every scenario has its
+// checkTestCases is F8 on a test document: every scenario has its
 // `## <scenario name>` case (an error when missing). A case that names no
 // scenario, or one repeated, is out of date and draws a warning.
 func checkTestCases(testPath, featureID string, names []string, body string, errs, warns *[]string) {

@@ -1,2 +1,0 @@
-exit: 0
-contains: venues/opening-hours.test.md: `timestamp` 2026-09-23 predates changes/hours-fix.md (done 2026-10-02)

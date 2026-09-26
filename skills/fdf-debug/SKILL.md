@@ -32,15 +32,16 @@ first.
 ## The bundle is evidence
 
 Elsewhere you infer the expected behavior. Here it is written down, and that
-shortens every phase:
+shortens every phase. Below, `<feature>` is a feature's ID, its path from the
+bundle root without `.md`, such as `features/payments/instant-refunds`:
 
 | Question | Where the bundle answers it |
 |---|---|
 | What is this supposed to do? | the feature's Gherkin `Scenario:` blocks |
-| How is it verified? | `<group>/<slug>.test.md` — run that case first |
-| Why was it built this way? | `<group>/<slug>.spec.md` (frozen: read it, never edit it) |
-| What was built, and where | `<group>/<slug>.plan.md` and the tasks under `<group>/<slug>/` — their `resource:` paths name the code |
-| What happened since it was delivered? | `fdf history <group>/<slug>`, `<group>/<slug>.log.md`, bundle `LOG.md` |
+| How is it verified? | `<feature>.test.md` — run that case first |
+| Why was it built this way? | `<feature>.spec.md` (frozen: read it, never edit it) |
+| What was built, and where | `<feature>.plan.md` and the tasks under `<feature>/` — their `resource:` paths name the code |
+| What happened since it was delivered? | `fdf history <feature>`, `<feature>.log.md`, bundle `LOG.md` |
 | What conventions should the code follow? | `ARCHITECTURE.md`, `SURFACES.md`, `STACK.md`, `INFRA.md` |
 | How was this mechanism supposed to be done? | the practice whose `applies-to` covers the file in the trace — `# Rules` is binding, and code that ignores one is a common root cause |
 | Is this already known? | `fdf bug --open` and `fdf debt --open` — an entry whose `resource` names the file in the trace, or whose `affects` names the feature, has already diagnosed this, and says why it was left |
@@ -53,8 +54,8 @@ the lexicon bans and the documents therefore never use — and grep it for the f
 `resource:` line names the code that task produced:
 
 ```bash
-grep -rn "refund" docs/features --include='*.md'
-grep -rn "src/payments/refund.ts" docs/features   # which task built this?
+grep -rn "refund" docs/fdf --include='*.md'
+grep -rn "src/payments/refund.ts" docs/fdf   # which task built this?
 ```
 
 The report's word maps to the term through `instead-of`; the surface that
@@ -81,8 +82,7 @@ word" is never a root cause and never routes to a Fix.
    document per feature. An `adopted` feature is delivered like a `done` one.
    **No feature owns the code at all** — common in a codebase that predates
    its bundle — is a finding too: the repair will route through fdf-adopt.
-4. **Check both registers** — `fdf bug --open` and `fdf debt --open` (below
-   v0.7 there is no bug register, and `fdf bug` says so). A bug
+4. **Check both registers** — `fdf bug --open` and `fdf debt --open`. A bug
    or debt whose `resource` names a file in the trace, or whose `affects`
    names the feature, has already diagnosed this and says why it was left.
    Then the conversation changes: the defect was known, and the question is
@@ -93,7 +93,7 @@ word" is never a root cause and never routes to a Fix.
    - no scenario covers this situation → nobody ever decided it.
 
    That distinction *is* the routing decision in Phase 3. Do not blur it.
-6. **Check what changed.** `fdf history <group>/<slug>` lists every Change and
+6. **Check what changed.** `fdf history <feature>` lists every Change and
    Fix that touched the feature; a recent one is a prime suspect, and its
    `# Scenario changes` says exactly what was meant to move. Then git log and
    diff, dependency bumps, config and environment differences.
@@ -141,8 +141,8 @@ Work down; the first row that matches wins:
 | The bundle contradicts itself; `fdf validate` fails | fdf-validate. The code may be fine and the documents may be the drift. |
 | The owning feature is `draft`, `specified`, `planned`, or `implementing` | Not post-delivery. Repair it in the in-flight workflow — a task under fdf-execute; or, if the design itself was wrong, amend the Gherkin and `slug.spec.md` directly with the user's approval (the feature is still in flight) and re-plan with fdf-plan. Never open a Change or Fix against an undelivered feature; F10 rejects it. |
 | No feature documents the code at all | **Adopt first**: map the capability (fdf-adopt, one map entry), then route by its new status — usually the next row but one: nobody wrote the promise down, so a Change adds it |
-| A `done`/`adopted`/`retired` feature has a scenario saying otherwise — the code drifted | **Fix**: `fdf fix --affects <group>/<slug>[,…] [<group>/]<slug>` → fdf-change |
-| No scenario covers the case, or the scenario itself is what is wrong | **Change**: `fdf change --affects <group>/<slug>[,…] [<group>/]<slug>` → fdf-change |
+| A `done`/`adopted`/`retired` feature has a scenario saying otherwise — the code drifted | **Fix**: `fdf fix --affects <feature>[,…] [<group>/…]<slug>` → fdf-change |
+| No scenario covers the case, or the scenario itself is what is wrong | **Change**: `fdf change --affects <feature>[,…] [<group>/…]<slug>` → fdf-change |
 | The behavior that should exist reads as its own `Feature:` block | New feature → fdf-brainstorm, naming the feature it builds on in `depends-on` |
 | The root cause is upstream — a dependency, a platform, an external service | Still ours to answer: what should our software do when that happens? That decision is a Change. A version pin with no observable difference is neutral. |
 
@@ -181,12 +181,8 @@ simply deferred. Everything the investigation learned goes on the register, so
 the next person starts from it instead of from zero:
 
 ```bash
-fdf bug --affects <group>/<slug>[,…] [<group>/]<slug>
+fdf bug --affects <feature>[,…] [<group>/…]<slug>
 ```
-
-On a bundle pinned below v0.7, `fdf bug` refuses, because the bug register
-arrived in v0.7: propose `fdf migrate`, or file the defect as a debt until
-then.
 
 - `# Symptom` — the verbatim reproduction and its failing output; or, for a
   defect found by reading, the code path and the input that reaches it. Say
@@ -239,7 +235,7 @@ takes it over with `--from`.
 
 Record the conclusion in the feature's log when it is worth the next agent's
 time — a decision, or a dead end the next investigator should not repeat:
-`fdf log <group>/<slug> "**Investigated**: …"`. A filed bug needs no log line: `fdf history` lists it from its
+`fdf log <feature> "**Investigated**: …"`. A filed bug needs no log line: `fdf history` lists it from its
 `affects`, and a hand-written pointer to it is a back-link that drifts. Never edit the feature's frozen
 `slug.spec.md`, `slug.plan.md`, or tasks — they record how it was built,
 which is the context that made this diagnosis possible.

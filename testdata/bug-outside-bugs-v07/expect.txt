@@ -1,3 +1,0 @@
-exit: 1
-contains: venues/misfiled.md: expected `type: Feature`, got "Bug" (F3)
-contains: misfiled-root.md: `type: Bug` documents cannot live at the bundle root

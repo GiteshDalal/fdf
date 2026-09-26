@@ -31,7 +31,7 @@ func TestSubmoduleMountResolvesResourcesAgainstSuperproject(t *testing.T) {
 	// Bundle repo: copy the valid-done fixture, give 01-do-thing.md a resource.
 	bundleRepo := filepath.Join(tmp, "features-repo")
 	copyTree(t, filepath.Join("..", "..", "..", "testdata", "valid-done", "bundle"), bundleRepo)
-	task := filepath.Join(bundleRepo, "wdise", "example", "01-do-thing.md")
+	task := filepath.Join(bundleRepo, "features", "wdise", "example", "01-do-thing.md")
 	raw, _ := os.ReadFile(task)
 	patched := strings.Replace(string(raw), "status: done\n", "status: done\nresource: services/thing\n", 1)
 	if err := os.WriteFile(task, []byte(patched), 0o644); err != nil {
@@ -52,10 +52,10 @@ func TestSubmoduleMountResolvesResourcesAgainstSuperproject(t *testing.T) {
 	git(t, super, "init", "-q")
 	git(t, super, "add", "-A")
 	git(t, super, "commit", "-qm", "code")
-	git(t, super, "-c", "protocol.file.allow=always", "submodule", "add", "-q", bundleRepo, "docs/features")
+	git(t, super, "-c", "protocol.file.allow=always", "submodule", "add", "-q", bundleRepo, "docs/fdf")
 	git(t, super, "commit", "-qm", "mount bundle")
 
-	mounted := filepath.Join(super, "docs", "features")
+	mounted := filepath.Join(super, "docs", "fdf")
 	root, standalone := fdfroot.ProjectRoot(mounted)
 	if standalone || root != super {
 		t.Fatalf("ProjectRoot(%s) = %q standalone=%v; want superproject %q", mounted, root, standalone, super)

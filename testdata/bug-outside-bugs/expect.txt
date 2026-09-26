@@ -1,0 +1,2 @@
+exit: 1
+contains: features/venues/misfiled.md: expected `type: Feature`, got "Bug" (F3)

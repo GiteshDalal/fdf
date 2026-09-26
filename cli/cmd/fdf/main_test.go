@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -11,11 +13,12 @@ import (
 	"github.com/GiteshDalal/fdf/cli/internal/scaffold"
 )
 
-// writeMinimalBundle creates the valid-minimal bundle files under dir.
+// writeMinimalBundle creates the smallest conformant bundle under dir: a
+// root INDEX.md that pins the current version, and its log.
 func writeMinimalBundle(t *testing.T, dir string) {
 	t.Helper()
 	files := map[string]string{
-		"INDEX.md": "---\nfdf_version: \"0.2\"\n---\n\n# B\n\n* [spec](https://github.com/GiteshDalal/fdf/blob/main/SPEC.md) - pin.\n",
+		"INDEX.md": "---\nfdf_version: \"" + scaffold.CurrentVersion() + "\"\n---\n\n# B\n\n* [spec](https://github.com/GiteshDalal/fdf/blob/main/SPEC.md) - pin.\n",
 		"LOG.md":   "# Bundle Update Log\n\n## 2026-07-06\n* **Initialization**: created.\n",
 	}
 	for rel, content := range files {
@@ -97,6 +100,40 @@ func TestValidateHonorsEnvAndFlagRoots(t *testing.T) {
 	out.Reset()
 	if exit := runValidate([]string{"--root", "documents/features"}, &out); exit != 0 {
 		t.Fatalf("--root must beat env: exit %d\n%s", exit, out.String())
+	}
+}
+
+// With neither --root nor FDF_ROOT_DIR, a command finds a bundle from before
+// 1.0 at docs/features and labels it so. Once docs/fdf holds a bundle too,
+// docs/fdf wins, and the header warns about the other.
+func TestDefaultRootIsLabelledAndAShadowedBundleWarned(t *testing.T) {
+	tmp, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(tmp, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old, _ := os.Getwd()
+	defer os.Chdir(old)
+	os.Chdir(tmp)
+	t.Setenv("FDF_ROOT_DIR", "")
+	features, fdf := filepath.Join(tmp, "docs", "features"), filepath.Join(tmp, "docs", "fdf")
+
+	writeMinimalBundle(t, features)
+	var out bytes.Buffer
+	runValidate(nil, &out)
+	if want := " · validate · root: " + features + " (pre-1.0 default docs/features)\n\n"; !strings.Contains(out.String(), want) {
+		t.Errorf("a bundle at docs/features is found and labelled:\n%s", out.String())
+	}
+
+	writeMinimalBundle(t, fdf)
+	out.Reset()
+	runValidate(nil, &out)
+	want := " · validate · root: " + fdf + " (default docs/fdf)\n" +
+		"warning: " + features + " holds a bundle too; docs/fdf comes first, so pass --root to work on the other\n\n"
+	if !strings.Contains(out.String(), want) {
+		t.Errorf("docs/fdf wins, and the header warns about docs/features:\n%s", out.String())
 	}
 }
 
@@ -220,6 +257,31 @@ func TestDevVersionDefaultsAgree(t *testing.T) {
 	}
 }
 
+// fdf X.Y.z ships spec X.Y as current, and the plugin manifest carries the
+// CLI's version, so a release moves the three together.
+func TestTheReleaseVersionMatchesTheSpecAndThePlugin(t *testing.T) {
+	parts := strings.SplitN(version, ".", 3)
+	if len(parts) < 3 {
+		t.Fatalf("main.version %q is not MAJOR.MINOR.PATCH", version)
+	}
+	if mm := parts[0] + "." + parts[1]; mm != scaffold.CurrentVersion() {
+		t.Errorf("fdf %s ships spec %s as current; want spec %s", version, scaffold.CurrentVersion(), mm)
+	}
+	raw, err := os.ReadFile("../../../.claude-plugin/plugin.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.Version != version {
+		t.Errorf(".claude-plugin/plugin.json has version %q; want main.version, %q", manifest.Version, version)
+	}
+}
+
 func TestHelpForOneCommandIsScoped(t *testing.T) {
 	var out bytes.Buffer
 	if exit := runHelp([]string{"migrate"}, &out); exit != 0 {
@@ -277,7 +339,7 @@ func TestBundleCommandsAnnounceVersionAndRoot(t *testing.T) {
 // against, so R1 is skipped with a warning rather than failing every path —
 // and the repository's own hidden directories are not bundle directories.
 func TestValidateBundleThatIsItsOwnRepository(t *testing.T) {
-	src := filepath.Join("..", "..", "..", "testdata", "valid-adopted-v07", "repo", "docs", "features")
+	src := filepath.Join("..", "..", "..", "testdata", "valid-adopted", "repo", "docs", "fdf")
 	root := t.TempDir()
 	err := filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -312,5 +374,69 @@ func TestValidateBundleThatIsItsOwnRepository(t *testing.T) {
 	}
 	if strings.Contains(out.String(), ".obsidian") || strings.Contains(out.String(), ".git") {
 		t.Errorf("hidden directories are not bundle directories:\n%s", out.String())
+	}
+}
+
+// --skip may be given more than once, and each glob reaches migrate: of two,
+// the one that names no file is refused, and the other is not.
+func TestMigrateTakesSkipMoreThanOnce(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	project := t.TempDir()
+	for rel, content := range map[string]string{
+		"docs/features/INDEX.md": "---\nfdf_version: \"0.7\"\n---\n\n# Bundle\n",
+		"schema.sql":             "-- docs/features\n",
+	} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(project, rel)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(project, rel), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, args := range [][]string{{"init", "-q"}, {"add", "-A"}, {"commit", "-qm", "bundle"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = project
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	code, out, _ := fdfRun("migrate", "--root", filepath.Join(project, "docs", "features"), "--skip", "schema.sql", "--skip", "nope/**", "--dry-run")
+	if code != 1 || !strings.Contains(out, "  --skip 'nope/**': names no file git tracks outside the bundle") || strings.Contains(out, "--skip schema.sql") {
+		t.Errorf("fdf migrate --skip schema.sql --skip 'nope/**': exit %d\n%s", code, out)
+	}
+}
+
+// fdf log gates a bundle before it reads it: a lone argument that names a
+// document of a bundle the commands do not work on is refused with the
+// gate's words, not read as an ID written without its entry.
+func TestLogGatesTheBundleBeforeItReadsIt(t *testing.T) {
+	src := filepath.Join("..", "..", "..", "testdata", "valid-bugs", "bundle")
+	root := t.TempDir()
+	err := filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(src, p)
+		if d.IsDir() {
+			return os.MkdirAll(filepath.Join(root, rel), 0o755)
+		}
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(root, rel), raw, 0o644)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	index, _ := os.ReadFile(filepath.Join(root, "INDEX.md"))
+	os.WriteFile(filepath.Join(root, "INDEX.md"), []byte(strings.Replace(string(index), `fdf_version: "1.0"`, `fdf_version: "0.7"`, 1)), 0o644)
+	var out bytes.Buffer
+	if code := runLog([]string{"--root", root, "features/venues/opening-hours"}, &out); code != 1 ||
+		!strings.HasSuffix(out.String(), "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n") {
+		t.Errorf("fdf log on a 0.7 bundle: exit %d\n%s", code, out.String())
 	}
 }

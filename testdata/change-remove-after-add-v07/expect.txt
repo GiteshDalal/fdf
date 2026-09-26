@@ -1,2 +1,0 @@
-exit: 1
-contains: changes/a-drop-hours.md: done, but venues/opening-hours still has scenario "Venue owner sets opening hours" (F10)

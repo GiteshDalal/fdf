@@ -1,0 +1,2 @@
+exit: 1
+contains: changes/drop-hours.md: `retires` names features/venues/opening-hours, which is not in `affects` (F10)

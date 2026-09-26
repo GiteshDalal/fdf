@@ -56,6 +56,18 @@ func write(t *testing.T, root, rel, text string) {
 	}
 }
 
+// pinTo makes the bundle at root one that pins version, as a bundle nobody
+// has migrated does.
+func pinTo(t *testing.T, root, version string) {
+	t.Helper()
+	index := read(t, root, "INDEX.md")
+	pinned := strings.Replace(index, `fdf_version: "1.0"`, `fdf_version: "`+version+`"`, 1)
+	if pinned == index {
+		t.Fatalf("INDEX.md pins no 1.0 to change:\n%s", index)
+	}
+	write(t, root, "INDEX.md", pinned)
+}
+
 func validates(t *testing.T, root string) string {
 	t.Helper()
 	var out bytes.Buffer
@@ -81,45 +93,84 @@ func gone(t *testing.T, root, rel string) {
 	}
 }
 
+// A mention of an ID is the ID where it ends: bare, as one of its documents,
+// or as its task directory. A path that goes on past it names something
+// else, code or a route's template. Where the IDs are 0.x ones, which name
+// no register (routes), a bare /<id> reads as a URL's path, even for a 0.6
+// group named bugs/; a 1.0 ID's /features/venues/opening-hours is the
+// document.
+func TestIDMentionsReadAnIDWhereItEnds(t *testing.T) {
+	const old, new = "venues/opening-hours", "features/venues/opening-hours"
+	for _, c := range []struct {
+		old, new, text, want string
+		routes               bool
+	}{
+		{old, new, "affects: venues/opening-hours\n", "affects: features/venues/opening-hours\n", true},
+		{old, new, "See venues/opening-hours.", "See features/venues/opening-hours.", true},
+		{old, new, "`venues/opening-hours.spec.md`, venues/opening-hours/01-build.md", "`features/venues/opening-hours.spec.md`, features/venues/opening-hours/01-build.md", true},
+		{old, new, "its spec, venues/opening-hours.spec; its code, venues/opening-hours.spec.ts", "its spec, features/venues/opening-hours.spec; its code, venues/opening-hours.spec.ts", true},
+		{old, new, "its tasks, in venues/opening-hours/.", "its tasks, in features/venues/opening-hours/.", true},
+		{old, new, "from the root, /venues/opening-hours.md", "from the root, /features/venues/opening-hours.md", true},
+		{old, new, "served as `GET /venues/opening-hours`", "served as `GET /venues/opening-hours`", true},
+		{old, new, "`GET /venues/opening-hours/ lists them`", "`GET /venues/opening-hours/ lists them`", true},
+		{old, new, "`PUT /venues/opening-hours/{id}`, `DELETE /venues/opening-hours/:id`", "`PUT /venues/opening-hours/{id}`, `DELETE /venues/opening-hours/:id`", true},
+		{old, new, "the route venues/opening-hours/{id}", "the route venues/opening-hours/{id}", true},
+		{old, new, "in venues/opening-hours/handler.go", "in venues/opening-hours/handler.go", true},
+		{old, new, "venues/opening-hours.go, venues/opening-hours-v2", "venues/opening-hours.go, venues/opening-hours-v2", true},
+		{old, new, "src/venues/opening-hours", "src/venues/opening-hours", true},
+		{"bugs/crash-report", "features/bugs/crash-report", "`GET /bugs/crash-report`, and bugs/crash-report", "`GET /bugs/crash-report`, and features/bugs/crash-report", true},
+		{"features/venues/opening-hours", "features/venues/hours", "see /features/venues/opening-hours, and features/venues/opening-hours.spec", "see /features/venues/hours, and features/venues/hours.spec", false},
+	} {
+		got := c.text
+		reps := IDMentions(c.text, map[string]string{c.old: c.new}, "", nil, c.routes)
+		for i := len(reps) - 1; i >= 0; i-- {
+			got = got[:reps[i].Start] + reps[i].Text + got[reps[i].End:]
+		}
+		if got != c.want {
+			t.Errorf("%q\n got %q\nwant %q", c.text, got, c.want)
+		}
+	}
+}
+
 func TestMoveRenamesAFeatureWithItsTrailAndRepairsEveryReference(t *testing.T) {
-	root := fixture(t, "valid-bugs-v07")
+	root := fixture(t, "valid-bugs")
 	// A release listing the feature, and a sample link in a code fence that
 	// must stay a sample.
-	write(t, root, "venues/opening-hours.spec.md", read(t, root, "venues/opening-hours.spec.md")+
-		"\nSee [the plan](opening-hours.plan.md).\n\n```markdown\n[x](/venues/opening-hours.md)\n```\n")
-	out := move(t, root, "venues/opening-hours", "venues/trading-hours")
+	write(t, root, "features/venues/opening-hours.spec.md", read(t, root, "features/venues/opening-hours.spec.md")+
+		"\nSee [the plan](opening-hours.plan.md).\n\n```markdown\n[x](/features/venues/opening-hours.md)\n```\n")
+	out := move(t, root, "features/venues/opening-hours", "features/venues/trading-hours")
 
-	for _, rel := range []string{"venues/opening-hours.md", "venues/opening-hours.spec.md", "venues/opening-hours/01-build.md"} {
+	for _, rel := range []string{"features/venues/opening-hours.md", "features/venues/opening-hours.spec.md", "features/venues/opening-hours/01-build.md"} {
 		gone(t, root, rel)
 	}
-	for _, rel := range []string{"venues/trading-hours.md", "venues/trading-hours.spec.md", "venues/trading-hours.plan.md", "venues/trading-hours.test.md", "venues/trading-hours/01-build.md"} {
+	for _, rel := range []string{"features/venues/trading-hours.md", "features/venues/trading-hours.spec.md", "features/venues/trading-hours.plan.md", "features/venues/trading-hours.test.md", "features/venues/trading-hours/01-build.md"} {
 		read(t, root, rel)
 	}
-	if s := read(t, root, "venues/trading-hours.plan.md"); !strings.Contains(s, "(trading-hours/01-build.md)") {
+	if s := read(t, root, "features/venues/trading-hours.plan.md"); !strings.Contains(s, "(trading-hours/01-build.md)") {
 		t.Fatalf("the plan's task link must follow its task directory:\n%s", s)
 	}
-	if s := read(t, root, "venues/trading-hours.spec.md"); !strings.Contains(s, "(trading-hours.plan.md)") || !strings.Contains(s, "[x](/venues/opening-hours.md)") {
+	if s := read(t, root, "features/venues/trading-hours.spec.md"); !strings.Contains(s, "(trading-hours.plan.md)") || !strings.Contains(s, "[x](/features/venues/opening-hours.md)") {
 		t.Fatalf("a real link is repaired, a sample in a code fence is not:\n%s", s)
 	}
 	fix := read(t, root, "changes/closed-hours-fix.md")
-	if !strings.Contains(fix, "affects: venues/trading-hours") || !strings.Contains(fix, "## venues/trading-hours") {
+	if !strings.Contains(fix, "affects: features/venues/trading-hours") || !strings.Contains(fix, "## features/venues/trading-hours") {
 		t.Fatalf("a Fix's affects and declaration heading follow the move:\n%s", fix)
 	}
 	bug := read(t, root, "bugs/hours-off-by-one.md")
-	if !strings.Contains(bug, "affects: venues/trading-hours") || !strings.Contains(bug, "## venues/trading-hours") {
+	if !strings.Contains(bug, "affects: features/venues/trading-hours") || !strings.Contains(bug, "## features/venues/trading-hours") {
 		t.Fatalf("a bug's affects and # Violates heading follow the move:\n%s", bug)
 	}
-	if s := read(t, root, "venues/INDEX.md"); !strings.Contains(s, "(trading-hours.md)") {
+	if s := read(t, root, "features/venues/INDEX.md"); !strings.Contains(s, "(trading-hours.md)") {
 		t.Fatalf("the group index link follows the move:\n%s", s)
 	}
-	if s := read(t, root, "LOG.md"); !strings.Contains(s, "**Moved**: `venues/opening-hours` → `venues/trading-hours`") {
+	if s := read(t, root, "LOG.md"); !strings.Contains(s, "**Moved**: `features/venues/opening-hours` → `features/venues/trading-hours`") {
 		t.Fatalf("the move is logged:\n%s", s)
 	}
 	if !strings.Contains(out, "reference(s) repaired") {
 		t.Fatalf("the command reports what it repaired:\n%s", out)
 	}
-	// The repaired count includes venues/INDEX.md, a file but not a document.
-	if !strings.Contains(out, "  venues/INDEX.md: 1 reference(s) repaired") || !strings.Contains(out, " file(s); logged in LOG.md.") || strings.Contains(out, "document(s)") {
+	// The repaired count includes features/venues/INDEX.md, a file but not a document.
+	if !strings.Contains(out, "  features/venues/INDEX.md: 1 reference(s) repaired") || !strings.Contains(out, " file(s); logged in LOG.md.") || strings.Contains(out, "document(s)") {
 		t.Fatalf("the counts say files, INDEX.md among them:\n%s", out)
 	}
 	if s := read(t, root, "LOG.md"); !strings.Contains(s, " file(s)).") {
@@ -129,19 +180,19 @@ func TestMoveRenamesAFeatureWithItsTrailAndRepairsEveryReference(t *testing.T) {
 }
 
 func TestMoveToANewGroupMovesTheListing(t *testing.T) {
-	root := fixture(t, "valid-bugs-v07")
-	out := move(t, root, "venues/opening-hours", "sites/opening-hours")
-	if s := read(t, root, "venues/INDEX.md"); strings.Contains(s, "opening-hours") {
+	root := fixture(t, "valid-bugs")
+	out := move(t, root, "features/venues/opening-hours", "features/sites/opening-hours")
+	if s := read(t, root, "features/venues/INDEX.md"); strings.Contains(s, "opening-hours") {
 		t.Fatalf("the old group index no longer lists the feature:\n%s", s)
 	}
-	if s := read(t, root, "sites/INDEX.md"); !strings.HasPrefix(s, "# Sites features\n") || !strings.Contains(s, "(opening-hours.md)") {
+	if s := read(t, root, "features/sites/INDEX.md"); !strings.HasPrefix(s, "# Sites\n") || !strings.Contains(s, "(opening-hours.md)") {
 		t.Fatalf("the new group index lists it:\n%s", s)
 	}
 	// The new group is listed beside the others, as `fdf new` lists one.
-	if s := read(t, root, "INDEX.md"); !strings.Contains(s, "* [Venues](/venues/INDEX.md) - venues.\n* [Sites](/sites/INDEX.md) - sites features.\n") {
-		t.Fatalf("the root index lists the new group:\n%s", s)
+	if s := read(t, root, "features/INDEX.md"); !strings.Contains(s, "* [Venues](/features/venues/INDEX.md) - features in venues.\n* [Sites](/features/sites/INDEX.md) - features in sites.\n") {
+		t.Fatalf("features/INDEX.md lists the new group:\n%s", s)
 	}
-	if !strings.Contains(out, "group sites/ listed in INDEX.md") {
+	if !strings.Contains(out, "group features/sites/ listed in features/INDEX.md") {
 		t.Fatalf("the report says the group was listed:\n%s", out)
 	}
 	validates(t, root)
@@ -159,12 +210,12 @@ func TestMoveToANewGroupMovesTheListing(t *testing.T) {
 }
 
 func TestMoveToANewGroupKeepsURLsAnchorsAndMailLinksInTheListing(t *testing.T) {
-	root := fixture(t, "valid-bugs-v07")
-	write(t, root, "venues/INDEX.md", strings.Replace(read(t, root, "venues/INDEX.md"),
+	root := fixture(t, "valid-bugs")
+	write(t, root, "features/venues/INDEX.md", strings.Replace(read(t, root, "features/venues/INDEX.md"),
 		"* [opening-hours](opening-hours.md) - a capability.",
 		"* [opening-hours](opening-hours.md) - a capability. See [the site](https://example.com/hours), [the top](#top) and [the team](mailto:team@example.com).", 1))
-	move(t, root, "venues/opening-hours", "sites/opening-hours")
-	s := read(t, root, "sites/INDEX.md")
+	move(t, root, "features/venues/opening-hours", "features/sites/opening-hours")
+	s := read(t, root, "features/sites/INDEX.md")
 	for _, want := range []string{"(opening-hours.md)", "(https://example.com/hours)", "(#top)", "(mailto:team@example.com)"} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("want %q in the moved listing line:\n%s", want, s)
@@ -179,37 +230,37 @@ func TestMoveToANewGroupKeepsURLsAnchorsAndMailLinksInTheListing(t *testing.T) {
 // other document's listing, not the moved one's: it stays where it is, and
 // only the mention inside it is repaired, like any other reference.
 func TestMoveToANewGroupLeavesAnotherListingsSecondLinkRepaired(t *testing.T) {
-	root := fixture(t, "valid-bugs-v07")
-	write(t, root, "venues/INDEX.md", read(t, root, "venues/INDEX.md")+
-		"* [Venues](/venues/INDEX.md) - the group; see [opening-hours](opening-hours.md) for its hours.\n")
-	move(t, root, "venues/opening-hours", "sites/opening-hours")
-	if s := read(t, root, "venues/INDEX.md"); !strings.Contains(s, "* [Venues](/venues/INDEX.md) - the group; see [opening-hours](../sites/opening-hours.md) for its hours.\n") {
+	root := fixture(t, "valid-bugs")
+	write(t, root, "features/venues/INDEX.md", read(t, root, "features/venues/INDEX.md")+
+		"* [Venues](/features/venues/INDEX.md) - the group; see [opening-hours](opening-hours.md) for its hours.\n")
+	move(t, root, "features/venues/opening-hours", "features/sites/opening-hours")
+	if s := read(t, root, "features/venues/INDEX.md"); !strings.Contains(s, "* [Venues](/features/venues/INDEX.md) - the group; see [opening-hours](../sites/opening-hours.md) for its hours.\n") {
 		t.Fatalf("another document's listing stays behind, its mention of the moved document repaired:\n%s", s)
 	}
-	if s := read(t, root, "sites/INDEX.md"); strings.Contains(s, "Venues") {
+	if s := read(t, root, "features/sites/INDEX.md"); strings.Contains(s, "Venues") {
 		t.Fatalf("the other document's listing must not be carried off to the new index:\n%s", s)
 	}
 	validates(t, root)
 }
 
 func TestMoveRenamesAWholeGroup(t *testing.T) {
-	root := fixture(t, "valid-bugs-v07")
-	move(t, root, "venues", "sites")
-	gone(t, root, "venues")
-	if s := read(t, root, "INDEX.md"); !strings.Contains(s, "(/sites/INDEX.md)") {
-		t.Fatalf("the root index follows the group:\n%s", s)
+	root := fixture(t, "valid-bugs")
+	move(t, root, "features/venues", "features/sites")
+	gone(t, root, "features/venues")
+	if s := read(t, root, "features/INDEX.md"); !strings.Contains(s, "(/features/sites/INDEX.md)") {
+		t.Fatalf("features/INDEX.md follows the group:\n%s", s)
 	}
-	if s := read(t, root, "changes/old-fix.md"); !strings.Contains(s, "affects: sites/opening-hours") {
+	if s := read(t, root, "changes/old-fix.md"); !strings.Contains(s, "affects: features/sites/opening-hours") {
 		t.Fatalf("every edge into the group follows it:\n%s", s)
 	}
 	validates(t, root)
 }
 
 func TestMoveRefilesADebtAsABug(t *testing.T) {
-	root := fixture(t, "valid-debt-v06")
-	// valid-debt-v06 pins 0.6; re-filing is a 0.7 move, so pin the copy.
-	write(t, root, "INDEX.md", strings.Replace(read(t, root, "INDEX.md"), `"0.6"`, `"0.7"`, 1))
-	write(t, root, "debts/INDEX.md", read(t, root, "debts/INDEX.md")+"* [Deferred batch import](deferred-batch-import.md) - deferred.\n")
+	root := fixture(t, "valid-bugs")
+	os.RemoveAll(filepath.Join(root, "bugs"))
+	write(t, root, "debts/INDEX.md", "# Debt\n\n* [Deferred batch import](deferred-batch-import.md) - deferred.\n")
+	write(t, root, "debts/deferred-batch-import.md", "---\ntype: Debt\nstatus: open\ntitle: Deferred batch import\ndescription: d.\ntimestamp: 2026-09-16T00:00:00Z\n---\n\n# Gap\n\nBatch import waits for the nightly job.\n")
 	var out bytes.Buffer
 	if code := Move(root, "", "debts/deferred-batch-import", "bugs/deferred-batch-import", false, &out); code != 0 {
 		t.Fatalf("re-file: %d\n%s", code, out.String())
@@ -233,110 +284,224 @@ func TestMoveRefilesADebtAsABug(t *testing.T) {
 }
 
 func TestMoveRenumbersATask(t *testing.T) {
-	root := fixture(t, "valid-bugs-v07")
-	write(t, root, "venues/opening-hours/02-docs.md", "---\ntype: Task\nstatus: done\ntitle: Docs\ndepends-on: 01-build\ntimestamp: 2026-09-23T00:00:00Z\n---\n\n# Objective\n\nDocs.\n")
-	plan := read(t, root, "venues/opening-hours.plan.md")
-	write(t, root, "venues/opening-hours.plan.md", plan+"2. [02-docs.md](opening-hours/02-docs.md)\n")
-	move(t, root, "venues/opening-hours/01-build", "venues/opening-hours/01-build-hours")
-	if s := read(t, root, "venues/opening-hours.plan.md"); !strings.Contains(s, "(opening-hours/01-build-hours.md)") {
+	root := fixture(t, "valid-bugs")
+	write(t, root, "features/venues/opening-hours/02-docs.md", "---\ntype: Task\nstatus: done\ntitle: Docs\ndepends-on: 01-build\ntimestamp: 2026-09-23T00:00:00Z\n---\n\n# Objective\n\nDocs.\n")
+	plan := read(t, root, "features/venues/opening-hours.plan.md")
+	write(t, root, "features/venues/opening-hours.plan.md", plan+"2. [02-docs.md](opening-hours/02-docs.md)\n")
+	move(t, root, "features/venues/opening-hours/01-build", "features/venues/opening-hours/01-build-hours")
+	if s := read(t, root, "features/venues/opening-hours.plan.md"); !strings.Contains(s, "(opening-hours/01-build-hours.md)") {
 		t.Fatalf("the plan links the renamed task:\n%s", s)
 	}
-	if s := read(t, root, "venues/opening-hours/02-docs.md"); !strings.Contains(s, "depends-on: 01-build-hours") {
+	if s := read(t, root, "features/venues/opening-hours/02-docs.md"); !strings.Contains(s, "depends-on: 01-build-hours") {
 		t.Fatalf("a sibling's depends-on follows the rename:\n%s", s)
 	}
 	validates(t, root)
 }
 
 func TestMoveDryRunChangesNothing(t *testing.T) {
-	root := fixture(t, "valid-bugs-v07")
+	root := fixture(t, "valid-bugs")
 	before := read(t, root, "changes/closed-hours-fix.md")
 	var out bytes.Buffer
-	if code := Move(root, "", "venues/opening-hours", "venues/trading-hours", true, &out); code != 0 {
+	if code := Move(root, "", "features/venues/opening-hours", "features/venues/trading-hours", true, &out); code != 0 {
 		t.Fatalf("dry run: %d\n%s", code, out.String())
 	}
-	if !strings.Contains(out.String(), "would move venues/opening-hours.md -> venues/trading-hours.md") || !strings.Contains(out.String(), "Nothing was changed") {
+	if !strings.Contains(out.String(), "would move features/venues/opening-hours.md -> features/venues/trading-hours.md") || !strings.Contains(out.String(), "Nothing was changed") {
 		t.Fatalf("dry run reports the plan:\n%s", out.String())
 	}
-	read(t, root, "venues/opening-hours.md")
+	read(t, root, "features/venues/opening-hours.md")
 	if read(t, root, "changes/closed-hours-fix.md") != before {
 		t.Fatal("a dry run edits nothing")
 	}
 }
 
 func TestLogsKeepTheirWordsButNotBrokenLinks(t *testing.T) {
-	root := fixture(t, "valid-bugs-v07")
+	root := fixture(t, "valid-bugs")
 	write(t, root, "bugs/hours-off-by-one.log.md", read(t, root, "bugs/hours-off-by-one.log.md")+
-		"\nFirst seen in venues/opening-hours; see [it](/venues/opening-hours.md).\n")
-	move(t, root, "venues/opening-hours", "venues/trading-hours")
+		"\nFirst seen in features/venues/opening-hours; see [it](/features/venues/opening-hours.md).\n")
+	move(t, root, "features/venues/opening-hours", "features/venues/trading-hours")
 	s := read(t, root, "bugs/hours-off-by-one.log.md")
-	if !strings.Contains(s, "First seen in venues/opening-hours;") {
+	if !strings.Contains(s, "First seen in features/venues/opening-hours;") {
 		t.Fatalf("a log keeps what things were called then:\n%s", s)
 	}
-	if !strings.Contains(s, "(/venues/trading-hours.md)") {
+	if !strings.Contains(s, "(/features/venues/trading-hours.md)") {
 		t.Fatalf("but its links still resolve:\n%s", s)
 	}
 }
 
-// bugsGroupV06 is a v0.6 bundle whose feature group is named bugs/: legal
-// under v0.6, and what `fdf migrate` asks to be moved before it reaches v0.7.
-func bugsGroupV06(t *testing.T) string {
-	t.Helper()
-	root := fixture(t, "valid-domain-v06")
-	write(t, root, "INDEX.md", read(t, root, "INDEX.md")+"* [Bugs](/bugs/INDEX.md) - the crash tracker.\n")
-	write(t, root, "bugs/INDEX.md", "# Bugs features\n\n* [Crash report](/bugs/crash-report.md) - crash reports.\n")
-	write(t, root, "bugs/crash-report.md", strings.NewReplacer("title: Example", "title: Crash report", "Feature: Example", "Feature: Crash report").
-		Replace(read(t, root, "wdise/example.md")))
-	validates(t, root)
-	return root
+// fdf mv works on spec 1.0 bundles: a 0.x bundle is upgraded with
+// `fdf migrate` first, and nothing in it moves.
+func TestMovePointsA0xBundleAtMigrate(t *testing.T) {
+	root := fixture(t, "valid-bugs")
+	pinTo(t, root, "0.7")
+	var out bytes.Buffer
+	if code := Move(root, "", "features/venues/opening-hours", "features/venues/trading-hours", false, &out); code != 1 ||
+		out.String() != "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n" {
+		t.Fatalf("exit %d\n%s", code, out.String())
+	}
+	read(t, root, "features/venues/opening-hours.md")
 }
 
-// Which directories are registers follows the pin: on a v0.6 bundle bugs/ is
-// a feature group, so its documents and the group itself move like any other.
-func TestMoveOnAV06BundleTreatsBugsAsAFeatureGroup(t *testing.T) {
-	root := bugsGroupV06(t)
-	move(t, root, "bugs/crash-report", "issues/crash-report")
-	gone(t, root, "bugs/crash-report.md")
-	if s := read(t, root, "issues/INDEX.md"); !strings.HasPrefix(s, "# Issues features\n") || !strings.Contains(s, "crash-report.md") {
-		t.Fatalf("the feature is listed in its new group:\n%s", s)
+// A group may be called index or log, which no document may be: a disk that
+// ignores case reads index.md as INDEX.md, but no directory as either. The
+// INDEX.md beside the group's new place does not stand in its way.
+func TestMoveTakesAGroupNamedIndexOrLog(t *testing.T) {
+	root := fixture(t, "valid-bugs")
+	move(t, root, "features/venues", "features/index")
+	read(t, root, "features/index/opening-hours.md")
+	move(t, root, "features/index", "features/log")
+	read(t, root, "features/log/opening-hours.md")
+	validates(t, root)
+}
+
+// A `resource` or `applies-to` path names code, not a document, even where
+// it spells a feature's ID, as code that shares its layout may: fdf mv leaves
+// it as it is, as fdf migrate does, and rewrites the ID everywhere else.
+func TestMoveLeavesAResourcePathAsItIs(t *testing.T) {
+	root := fixture(t, "valid-bugs")
+	task := "features/venues/opening-hours/01-build.md"
+	write(t, root, task, strings.Replace(read(t, root, task), "status: done\n", "status: done\nresource: features/venues/opening-hours\n", 1))
+	move(t, root, "features/venues/opening-hours", "features/venues/trading-hours")
+	if got := read(t, root, "features/venues/trading-hours/01-build.md"); !strings.Contains(got, "\nresource: features/venues/opening-hours\n") {
+		t.Errorf("the resource path is left as it is:\n%s", got)
 	}
-	// Under v0.6 a feature may move into bugs/ as well.
-	move(t, root, "wdise/example", "bugs/example")
+	if got := read(t, root, "changes/closed-hours-fix.md"); !strings.Contains(got, "affects: features/venues/trading-hours\n") {
+		t.Errorf("the ID is rewritten everywhere else:\n%s", got)
+	}
+}
+
+// No name is reserved inside a register: a feature group called bugs/ moves,
+// and takes features, like any other.
+func TestMoveTreatsAGroupCalledBugsAsAnyOther(t *testing.T) {
+	root := fixture(t, "valid-bugs")
+	move(t, root, "features/venues/opening-hours", "features/bugs/opening-hours")
+	read(t, root, "features/bugs/opening-hours.md")
+	if s := read(t, root, "features/INDEX.md"); !strings.Contains(s, "* [Bugs](/features/bugs/INDEX.md) - features in bugs.\n") {
+		t.Fatalf("features/INDEX.md lists the new group:\n%s", s)
+	}
+	validates(t, root)
+	move(t, root, "features/bugs", "features/triage")
+	read(t, root, "features/triage/opening-hours.md")
+	validates(t, root)
+}
+
+// A document moves between flat and grouped, and into groups nested to any
+// depth: its listing goes to the index of its new directory, each new group
+// on the way gets an index listed in its parent's, and a group the move
+// leaves empty is named.
+func TestMoveBetweenFlatAndNestedGroups(t *testing.T) {
+	root := fixture(t, "valid-bugs")
+	// macOS Finder leaves one in any directory it has shown. It is not the
+	// group's, so the group it is left in is emptied all the same.
+	write(t, root, "features/venues/.DS_Store", "finder")
+	out := move(t, root, "features/venues/opening-hours", "features/opening-hours")
+	if s := read(t, root, "features/INDEX.md"); !strings.Contains(s, "* [opening-hours](opening-hours.md) - a capability.\n") {
+		t.Fatalf("a flat feature is listed in features/INDEX.md:\n%s", s)
+	}
+	if !strings.Contains(out, "note: features/venues/ now holds no documents") {
+		t.Fatalf("the emptied group is named:\n%s", out)
+	}
 	validates(t, root)
 
-	root = bugsGroupV06(t)
-	move(t, root, "bugs", "issues")
-	gone(t, root, "bugs")
-	read(t, root, "issues/crash-report.md")
-	if s := read(t, root, "INDEX.md"); !strings.Contains(s, "(/issues/INDEX.md)") {
-		t.Fatalf("the root index follows the group:\n%s", s)
+	out = move(t, root, "features/opening-hours", "features/platform/sites/opening-hours")
+	for rel, want := range map[string]string{
+		"features/INDEX.md":                "* [Platform](/features/platform/INDEX.md) - features in platform.\n",
+		"features/platform/INDEX.md":       "# Platform\n\n* [Sites](/features/platform/sites/INDEX.md) - features in sites.\n",
+		"features/platform/sites/INDEX.md": "# Sites\n\n* [opening-hours](opening-hours.md) - a capability.\n",
+	} {
+		if s := read(t, root, rel); !strings.Contains(s, want) {
+			t.Errorf("%s should hold %q:\n%s", rel, want, s)
+		}
+	}
+	for _, want := range []string{"group features/platform/ listed in features/INDEX.md", "group features/platform/sites/ listed in features/platform/INDEX.md"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the report should say %q:\n%s", want, out)
+		}
+	}
+	if s := read(t, root, "changes/old-fix.md"); !strings.Contains(s, "affects: features/platform/sites/opening-hours") {
+		t.Fatalf("every edge follows the feature to any depth:\n%s", s)
 	}
 	validates(t, root)
 
-	// Without a bug register there is nothing to re-file a debt into.
-	root = bugsGroupV06(t)
-	write(t, root, "debts/INDEX.md", "# Debt\n\n* [Gap](/debts/gap.md) - a gap.\n")
-	write(t, root, "debts/gap.md", "---\ntype: Debt\nstatus: open\ntitle: Gap\ndescription: d.\ntimestamp: 2026-09-16T00:00:00Z\n---\n\n# Gap\n\nMissing.\n")
-	var out bytes.Buffer
-	if code := Move(root, "", "debts/gap", "bugs/gap", false, &out); code != 1 || !strings.Contains(out.String(), "a debt stays under debts/ (nothing changes register)") {
-		t.Fatalf("a v0.6 debt cannot be re-filed as a bug: exit %d\n%s", code, out.String())
+	// A group moves to another parent, its listing with it.
+	move(t, root, "features/platform/sites", "features/sites")
+	if s := read(t, root, "features/INDEX.md"); !strings.Contains(s, "* [Sites](/features/sites/INDEX.md) - features in sites.\n") {
+		t.Fatalf("the group's listing moves to its new parent's index:\n%s", s)
 	}
+	if s := read(t, root, "features/platform/INDEX.md"); strings.Contains(s, "sites") {
+		t.Fatalf("and leaves its old parent's:\n%s", s)
+	}
+	validates(t, root)
+
+	// Register documents nest too.
+	move(t, root, "bugs/ui/unclear-error", "bugs/platform/ui/unclear-error")
+	if s := read(t, root, "bugs/platform/ui/INDEX.md"); !strings.Contains(s, "(/bugs/platform/ui/unclear-error.md)") && !strings.Contains(s, "(unclear-error.md)") {
+		t.Fatalf("the bug is listed in its new group:\n%s", s)
+	}
+	validates(t, root)
+}
+
+// A practice, debt or bug owns no directory, so one beside it stays where
+// it is when the entry moves, and the links into it are repaired. One that
+// holds Markdown is an F3 error, and moving the entry away is the repair
+// the validator asks for.
+func TestMoveLeavesADirectoryBesideAnEntry(t *testing.T) {
+	root := fixture(t, "valid-bugs")
+	bug := read(t, root, "bugs/hours-off-by-one.md")
+	write(t, root, "bugs/hours-off-by-one.md", strings.Replace(bug, "# Symptom\n", "# Symptom\n\n![Screenshot](hours-off-by-one/screenshot.png)\n", 1))
+	write(t, root, "bugs/hours-off-by-one/screenshot.png", "PNG")
+	out := move(t, root, "bugs/hours-off-by-one", "bugs/venues/hours-off-by-one")
+	if !strings.Contains(out, "  bugs/hours-off-by-one/ stays where it is: a bug owns no directory\n") {
+		t.Errorf("the move says the directory stays:\n%s", out)
+	}
+	if read(t, root, "bugs/hours-off-by-one/screenshot.png") != "PNG" ||
+		!strings.Contains(read(t, root, "bugs/venues/hours-off-by-one.md"), "![Screenshot](../hours-off-by-one/screenshot.png)") {
+		t.Errorf("the screenshot stays, and the link to it is repaired:\n%s", read(t, root, "bugs/venues/hours-off-by-one.md"))
+	}
+	validates(t, root)
+
+	practice := "---\ntype: Practice\nstatus: active\ntitle: Permission checks\ndescription: How a permission is checked.\ntimestamp: 2026-09-25T00:00:00Z\n---\n\n# Rules\n\n- Check it in one place.\n\n# How\n\nThrough one helper.\n"
+	write(t, root, "practices/INDEX.md", "# Practices\n\n* [Permission checks](/practices/permission-checks.md) - practice.\n")
+	write(t, root, "practices/permission-checks.md", practice)
+	write(t, root, "practices/permission-checks/examples.md", strings.Replace(practice, "Permission checks", "Examples", 1))
+	var before bytes.Buffer
+	if bundle.Validate(root, bundle.Options{Out: &before}) == 0 || !strings.Contains(before.String(), "rename one of them (F3)") {
+		t.Fatalf("a directory of Markdown beside a practice is an F3 error:\n%s", before.String())
+	}
+	move(t, root, "practices/permission-checks", "practices/permission-rules")
+	validates(t, root)
 }
 
 func TestMoveRefusals(t *testing.T) {
-	root := fixture(t, "valid-bugs-v07")
+	root := fixture(t, "valid-bugs")
 	cases := []struct{ from, to, want string }{
-		{"venues/opening-hours", "venues/opening-hours", "already where it is"},
-		{"venues/ghost", "venues/x", "is not a feature"},
-		{"changes", "work", "reserved directory"},
+		{"features/venues/opening-hours", "features/venues/opening-hours", "already where it is"},
+		{"features/venues/ghost", "features/venues/x", "is not a document, group or task"},
+		{"changes", "work", "changes/ is a register"},
+		{"features/venues/opening-hours", "venues/opening-hours", "a feature stays under features/"},
+		// An ID written the 0.7 way gets its full ID suggested.
+		{"venues/opening-hours", "features/venues/hours", "venues/opening-hours is not a document, group or task in this bundle — did you mean features/venues/opening-hours?"},
+		{"venues", "features/places", "venues is not a document, group or task in this bundle — did you mean features/venues?"},
+		{"features/venues/opening-hours", "venues/hours", "a feature stays under features/ (a debt and a bug can be re-filed as each other; nothing else changes register) — did you mean features/venues/hours?"},
+		{"features/venues", "places", "a features/ group moves to another group in features/, not places — did you mean features/places?"},
 		{"changes/old-fix", "practices/old-fix", "stays under changes/"},
-		{"venues/opening-hours/01-build", "venues/other/01-build", "within its own task directory"},
-		{"venues/opening-hours", "bugs/hours", "moves to <group>/<slug>"},
-		{"venues/opening-hours", "Venues/Hours", "lowercase"},
-		// A directory under changes/ is a change's task directory or a group (F3).
+		{"features/venues/opening-hours/01-build", "features/venues/other/01-build", "within its own task directory"},
+		{"features/venues/opening-hours", "bugs/hours", "a feature stays under features/"},
+		{"features/venues/opening-hours", "features/Venues/Hours", "lowercase"},
+		{"features/venues", "features/venues/inner", "cannot move into itself"},
+		{"features/venues", "bugs/venues", "a features/ group moves to another group in features/"},
+		{"releases/1.2.0", "releases/1.3.0", "nothing in releases/ moves"},
+		// A directory beside a document belongs to it (F3).
 		{"changes/old-fix", "changes/closed-hours-fix/old-fix", "task directory of changes/closed-hours-fix"},
 		{"changes/old-fix", "changes/hours", "changes/hours/ is a group"},
+		{"features/venues/opening-hours", "features/venues/opening-hours/nested", "task directory of features/venues/opening-hours"},
+		{"features/sites", "features/venues/opening-hours/sites", "features/venues/opening-hours/ is the task directory of features/venues/opening-hours"},
+		// A directory that holds no Markdown is outside the bundle.
+		{"features/images", "features/assets/images", "features/images/ holds no Markdown, so it is outside the bundle"},
 	}
 	write(t, root, "changes/hours/INDEX.md", "# Hours\n")
+	write(t, root, "features/sites/INDEX.md", "# Sites\n")
+	write(t, root, "features/images/logo.png", "PNG")
+	write(t, root, "releases/1.2.0.md", "---\ntype: Release\ntitle: 1.2.0\nstatus: planned\n---\n\n# Features\n\n* (none)\n")
 	for _, c := range cases {
 		var out bytes.Buffer
 		if code := Move(root, "", c.from, c.to, false, &out); code != 1 || !strings.Contains(out.String(), c.want) {
@@ -344,17 +509,37 @@ func TestMoveRefusals(t *testing.T) {
 		}
 	}
 	// A stray file where a sibling would land is never overwritten either.
-	write(t, root, "venues/fresh.spec.md", "---\ntype: Spec\n---\n")
+	write(t, root, "features/venues/fresh.spec.md", "---\ntype: Spec\n---\n")
 	var stray bytes.Buffer
-	if code := Move(root, "", "venues/opening-hours", "venues/fresh", false, &stray); code != 1 || !strings.Contains(stray.String(), "would overwrite venues/fresh.spec.md") {
+	if code := Move(root, "", "features/venues/opening-hours", "features/venues/fresh", false, &stray); code != 1 || !strings.Contains(stray.String(), "would overwrite features/venues/fresh.spec.md") {
 		t.Fatalf("a stray target sibling is refused:\n%s", stray.String())
 	}
 	// A target that exists is never overwritten.
-	write(t, root, "venues/other.md", "---\ntype: Feature\n---\n")
+	write(t, root, "features/venues/other.md", "---\ntype: Feature\n---\n")
 	var out bytes.Buffer
-	if code := Move(root, "", "venues/opening-hours", "venues/other", false, &out); code != 1 || !strings.Contains(out.String(), "already exists") {
+	if code := Move(root, "", "features/venues/opening-hours", "features/venues/other", false, &out); code != 1 || !strings.Contains(out.String(), "already exists") {
 		t.Fatalf("an existing target is refused:\n%s", out.String())
 	}
+}
+
+// A group directory spelled in capitals that holds no Markdown is outside
+// the bundle, but on a disk that ignores case it is where a move into the
+// group spelled in lowercase would land, and the bundle would fail F3. The
+// move is refused, naming the directory as it is spelled, and nothing moves.
+func TestMoveRefusesAGroupSpelledInAnotherCase(t *testing.T) {
+	root := fixture(t, "valid-bugs")
+	write(t, root, "features/Places/map.png", "PNG")
+	for _, tc := range []struct{ from, to string }{
+		{"features/venues/opening-hours", "features/places/opening-hours"},
+		{"features/venues", "features/places/venues"},
+	} {
+		var out bytes.Buffer
+		want := "error: features/Places/ is already there: a disk that ignores case would file " + tc.to + " in it, and directory names are lowercase (F3); rename that directory, or choose another name\n"
+		if code := Move(root, "", tc.from, tc.to, false, &out); code != 1 || out.String() != want {
+			t.Errorf("fdf mv %s %s: exit %d\n got: %q\nwant: %q", tc.from, tc.to, code, out.String(), want)
+		}
+	}
+	read(t, root, "features/venues/opening-hours.md")
 }
 
 // A move that changes a document's depth repairs the links that leave the
@@ -362,7 +547,7 @@ func TestMoveRefusals(t *testing.T) {
 // even though they did not. A footnote is not a link, and a reference
 // definition inside a code fence is a sample; neither changes.
 func TestMoveDeeperRepairsLinksThatLeaveTheBundle(t *testing.T) {
-	root := fixture(t, "valid-bugs-v07")
+	root := fixture(t, "valid-bugs")
 	write(t, root, "changes/old-fix.md", read(t, root, "changes/old-fix.md")+
 		"\n- [auth](../../okf/modules/auth.md#login)\n"+
 		"- [angle](<../../okf/modules/auth.md>)\n"+
@@ -370,7 +555,7 @@ func TestMoveDeeperRepairsLinksThatLeaveTheBundle(t *testing.T) {
 		"- [defined][okf]\n\n"+
 		"[okf]: ../../okf/modules/auth.md\n"+
 		"[^1]: See the notes.\n\n"+
-		"```markdown\n[sample]: ../venues/opening-hours.md\n```\n")
+		"```markdown\n[sample]: ../features/venues/opening-hours.md\n```\n")
 	move(t, root, "changes/old-fix", "changes/hours/old-fix")
 	got := read(t, root, "changes/hours/old-fix.md")
 	for _, want := range []string{
@@ -379,7 +564,7 @@ func TestMoveDeeperRepairsLinksThatLeaveTheBundle(t *testing.T) {
 		"(../../../src/refund.go)",
 		"[okf]: ../../../okf/modules/auth.md",
 		"[^1]: See the notes.",
-		"[sample]: ../venues/opening-hours.md",
+		"[sample]: ../features/venues/opening-hours.md",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("after moving one level deeper, want %q in:\n%s", want, got)

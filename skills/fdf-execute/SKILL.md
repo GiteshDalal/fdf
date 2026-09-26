@@ -15,12 +15,13 @@ This skill executes a **feature**. Tasks belonging to a post-delivery
 the surrounding workflow — declaring effects, amending the affected feature's
 living documents — is fdf-change's.
 
-Stem paths for a feature `<group>/<slug>`:
+Stem paths for a feature whose ID is `<feature>` — its path from the bundle
+root without `.md`, such as `features/payments/instant-refunds`:
 
-- Feature: `<group>/<slug>.md`
-- Spec / plan / test: `<group>/<slug>.spec.md`, `.plan.md`, `.test.md`
-- Optional: `<group>/<slug>.surface.md`, `<group>/<slug>.log.md`
-- Tasks only: `<group>/<slug>/NN-….md`
+- Feature: `<feature>.md`
+- Spec / plan / test: `<feature>.spec.md`, `.plan.md`, `.test.md`
+- Optional: `<feature>.surface.md`, `<feature>.log.md`
+- Tasks only: `<feature>/NN-….md`
 
 ## Choose a mode
 
@@ -117,8 +118,8 @@ Blockers).
   entry for it (F6); remove any scenario only it would have proven, along
   with that scenario's `slug.test.md` case — the feature must not promise
   what it will not do; log the decision
-  (`fdf log <group>/<slug> "**Decision**: …"`); and file a debt
-  (`fdf debt [<group>/]<slug>`) naming what was left undone. Never mark a
+  (`fdf log <feature> "**Decision**: …"`); and file a debt
+  (`fdf debt [<group>/…]<slug>`) naming what was left undone. Never mark a
   blocked task `done`.
 
 ## Completion gate
@@ -135,7 +136,7 @@ Blockers).
   exposes an interface and has no surface document yet gets one now (see
   fdf-brainstorm, *Surface document*); one with no interface says
   `surface: none` in its frontmatter.
-- Log the completion: `fdf log <group>/<slug> "**Done**: …"`. Say what
+- Log the completion: `fdf log <feature> "**Done**: …"`. Say what
   shipped, and any decision the build took that the spec does not record, with
   who agreed to it. The entry goes in the feature's own log, never the root
   `LOG.md` (see Rules).
@@ -180,7 +181,7 @@ any other practice edit. Silence is neither.
 The threshold is the **second** occurrence, not the first. One feature doing a
 thing is what its `slug.spec.md` records; two features doing it the same way
 is a practice waiting to be written before a third guesses differently. When
-that line is crossed, propose `fdf practice [<group>/]<slug>`.
+that line is crossed, propose `fdf practice [<group>/…]<slug>`.
 
 A practice is **extracted, not authored**: the decision was already made, in
 the specs of the features that made it. Read them and lift the rules out. The
@@ -194,8 +195,8 @@ do. `applies-to` lists the existing repo paths it governs (R1) and is how
 later work finds it — a feature never lists the practices it follows, so a
 practice with no `applies-to` is a document nothing routes to. No Gherkin, no
 spec, no plan, no tasks; the only sibling it may have is `<slug>.log.md`.
-`fdf practice` lists it in `practices/INDEX.md`; give the listing a real
-description.
+`fdf practice` lists it in `practices/INDEX.md`, or in its group's index;
+give the listing a real description.
 
 Write only what the code **already does**. If the feature revealed a better
 way nobody has adopted yet, that is a proposal for the user, not a practice
@@ -205,7 +206,7 @@ asserting it is already the rule.
 
 Work deferred to ship, a rule the new code follows that older code does not, a
 task that ended blocked on something outside the project. `fdf debt
-[<group>/]<slug>` files it: `# Gap` states it concretely (files and counts, not
+[<group>/…]<slug>` files it: `# Gap` states it concretely (files and counts, not
 impressions — F13), `# Cost` says what carrying it risks, and `resource` names
 the paths, which is how later work finds it. When the new code repeats a gap
 an open debt already names, amend that debt's `# Gap` and `resource` instead

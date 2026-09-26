@@ -1,0 +1,2 @@
+exit: 1
+contains: practices/platform/Auth/: directory names must be lowercase [a-z0-9-] (F3)

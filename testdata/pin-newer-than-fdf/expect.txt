@@ -1,0 +1,5 @@
+exit: 1
+contains: FAIL: INDEX.md: fdf_version "1.1" is newer than any version this fdf validates (1.0) — upgrade fdf (F1)
+contains: Bundle not validated
+not-contains: fdf migrate
+not-contains: (F3)

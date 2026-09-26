@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/GiteshDalal/fdf/cli/internal/layout"
 	"github.com/GiteshDalal/fdf/cli/internal/links"
 	"github.com/GiteshDalal/fdf/cli/internal/logs"
 	"github.com/GiteshDalal/fdf/cli/internal/scaffold"
@@ -30,21 +31,16 @@ var (
 	fenceRe    = regexp.MustCompile("^(`{3,}|~{3,})")
 )
 
-// registers are the reserved bundle-root directories holding documents of
-// one kind each (releases/ holds releases and nothing moves in it). Which of
-// them a bundle has follows its pin (scaffold.ReservedDirs): on a v0.6
-// bundle, bugs/ is a feature group and moves like one.
-var registers = map[string]string{"changes": "change", "practices": "practice", "debts": "debt", "bugs": "bug"}
+// nouns say what each register holds, for the messages that name one.
+var nouns = map[string]string{"features": "feature", "changes": "change", "practices": "practice", "debts": "debt", "bugs": "bug"}
 
 // kind is what a move moves.
 type kind int
 
 const (
-	kFeature kind = iota
-	kGroup
-	kRegisterDoc
-	kRegisterGroup
-	kTask
+	kDoc   kind = iota // a register's document: a feature, Change, Fix, practice, debt or bug
+	kGroup             // a group, at any depth in its register
+	kTask              // a task, renamed within its task directory
 )
 
 // plan is a move worked out in full before anything is touched.
@@ -56,19 +52,22 @@ type plan struct {
 	ids      map[string]string // old document ID -> new document ID
 	task     [2]string         // a task rename: old and new stem, within one task directory
 	flip     map[string]string // new rel -> the type it takes (a debt re-filed as a bug, or back)
-	prefix   string            // the bundle's path in the project, e.g. "docs/features/"
-	reserved map[string]bool   // the bundle-root directories the pin reserves, releases/ included
-	reg      map[string]string // the registers among them: directory -> the noun of what it holds
+	prefix   string            // the bundle's path in the project, e.g. "docs/fdf/"
+	stays    string            // a directory beside a moved practice, debt or bug, which owns none
 }
 
 // Move moves or renames a document — with its trail, task directory and log —
-// or a whole group, and repairs every reference to it across the bundle.
-// projectRoot, when set, is searched for references outside the bundle, which
-// are reported and never edited. dryRun prints the plan and changes nothing.
+// or a whole group, at any depth, and repairs every reference to it across
+// the bundle. from and to are full IDs. projectRoot, when set, is searched for
+// references outside the bundle, which are reported and never edited. dryRun
+// prints the plan and changes nothing.
 func Move(root, projectRoot, from, to string, dryRun bool, out io.Writer) int {
 	rootAbs, err := filepath.Abs(root)
 	if err != nil {
 		fmt.Fprintln(out, "error:", err)
+		return 1
+	}
+	if !scaffold.RequireSupported(rootAbs, out) {
 		return 1
 	}
 	from, to = cleanID(from), cleanID(to)
@@ -97,6 +96,9 @@ func Move(root, projectRoot, from, to string, dryRun bool, out io.Writer) int {
 	}
 	for _, rel := range sortedKeys(p.flip) {
 		fmt.Fprintf(out, "  %s re-filed: type is now %s\n", rel, p.flip[rel])
+	}
+	if p.stays != "" {
+		fmt.Fprintf(out, "  %s/ stays where it is: a %s owns no directory\n", p.stays, nouns[strings.SplitN(p.from, "/", 2)[0]])
 	}
 	changed := 0
 	refs := 0
@@ -148,16 +150,13 @@ func exists(p string) bool { _, err := os.Stat(p); return err == nil }
 func isDir(p string) bool  { fi, err := os.Stat(p); return err == nil && fi.IsDir() }
 
 // makePlan classifies the source, checks the target, and lists everything
-// that moves.
+// that moves. Every position comes from layout, as the validator reads it.
 func makePlan(rootAbs, from, to string) (*plan, error) {
-	p := &plan{from: from, to: to, files: map[string]string{}, dirs: map[string]string{}, ids: map[string]string{}, flip: map[string]string{},
-		reserved: scaffold.ReservedDirs(rootAbs), reg: map[string]string{}}
-	for dir, noun := range registers {
-		if p.reserved[dir] {
-			p.reg[dir] = noun
-		}
-	}
+	p := &plan{from: from, to: to, files: map[string]string{}, dirs: map[string]string{}, ids: map[string]string{}, flip: map[string]string{}}
 	fp, tp := strings.Split(from, "/"), strings.Split(to, "/")
+	if fp[0] == "releases" || tp[0] == "releases" {
+		return nil, fmt.Errorf("a release is named by its version: nothing in releases/ moves")
+	}
 	for _, s := range append(append([]string{}, fp...), tp...) {
 		if !segRe.MatchString(s) && !taskBaseRe.MatchString(s) {
 			return nil, fmt.Errorf("IDs are lowercase [a-z0-9-] segments; %q is not one", s)
@@ -167,94 +166,84 @@ func makePlan(rootAbs, from, to string) (*plan, error) {
 		return nil, fmt.Errorf("%s is already where it is", from)
 	}
 	src := func(rel string) string { return filepath.Join(rootAbs, filepath.FromSlash(rel)) }
-	docExists := func(id string) bool { return exists(src(id + ".md")) }
+	b := layout.New(os.DirFS(rootAbs))
+	fromReg, toReg := fp[0], tp[0]
 
+	// The source is read as layout reads names, exactly: on a disk that
+	// ignores case, os.Stat finds features/INDEX.md for features/index.
 	switch {
-	case len(fp) == 1:
-		if p.reserved[fp[0]] {
-			return nil, fmt.Errorf("%s/ is a reserved directory; move the documents or groups inside it instead", fp[0])
-		}
-		if !isDir(src(from)) {
-			return nil, fmt.Errorf("%s is not a group in this bundle", from)
-		}
-		if len(tp) != 1 || p.reserved[tp[0]] {
-			return nil, fmt.Errorf("a feature group moves to another group name, not to %s", to)
-		}
-		p.kind = kGroup
-	case p.reg[fp[0]] != "":
-		switch {
-		case (len(fp) == 2 || len(fp) == 3) && docExists(from):
-			p.kind = kRegisterDoc
-		case len(fp) == 2 && isDir(src(from)):
-			p.kind = kRegisterGroup
-		case taskBaseRe.MatchString(fp[len(fp)-1]) && docExists(from):
+	case b.Exists(from + ".md"):
+		switch pos := b.File(from + ".md"); pos.Kind {
+		case layout.Task:
 			p.kind = kTask
+		case layout.Document:
+			p.kind = kDoc
+		case layout.Stray:
+			return nil, fmt.Errorf("%s has no place in a 1.0 bundle — %s: %s (F3)", from, pos.Where, pos.Problem)
 		default:
-			return nil, fmt.Errorf("%s is not a document or group in this bundle", from)
+			return nil, fmt.Errorf("%s is not a document fdf mv moves: a feature, Change, Fix, practice, debt or bug, a group, or a task", from)
 		}
-	case len(fp) == 2 && docExists(from):
-		p.kind = kFeature
-	case len(fp) == 3 && taskBaseRe.MatchString(fp[2]) && docExists(from):
-		p.kind = kTask
+	case b.Exists(from) && isDir(src(from)):
+		switch pos := b.Dir(from); {
+		case pos.Kind == layout.Register:
+			return nil, fmt.Errorf("%s/ is a register; move the documents or groups inside it instead", from)
+		case pos.Kind == layout.TaskDir:
+			return nil, fmt.Errorf("%s/ is the task directory of %s, and moves with it: fdf mv %s <to>", from, from, from)
+		case !b.HoldsMarkdown(from):
+			return nil, fmt.Errorf("%s/ holds no Markdown, so it is outside the bundle: fdf mv moves documents, groups and tasks", from)
+		case pos.Kind == layout.Group:
+			p.kind = kGroup
+		default:
+			return nil, fmt.Errorf("%s/ is not a group in this bundle — %s: %s (F3)", from, pos.Where, pos.Problem)
+		}
 	default:
-		return nil, fmt.Errorf("%s is not a feature, group, change, fix, practice, debt, bug or task in this bundle", from)
+		return nil, fmt.Errorf("%s is not a document, group or task in this bundle%s", from, scaffold.IDHint(rootAbs, from))
 	}
 
-	if exists(src(to+".md")) || (p.kind == kGroup || p.kind == kRegisterGroup) && exists(src(to)) {
+	// A group's place is read by its own name, which any disk reads alike: on
+	// one that ignores case, os.Stat finds features/INDEX.md for a group
+	// called features/index, whose name is free. A document it would land
+	// beside is PlaceGroup's.
+	if p.kind == kGroup && exists(src(to)) || p.kind != kGroup && exists(src(to+".md")) {
 		return nil, fmt.Errorf("%s already exists — a move never overwrites; pick another name, or move documents into an existing group one at a time", to)
 	}
 
 	switch p.kind {
-	case kFeature:
-		if len(tp) != 2 || p.reserved[tp[0]] {
-			return nil, fmt.Errorf("a feature moves to <group>/<slug>, not %s", to)
-		}
-		p.addDoc(rootAbs, from, to, true)
-	case kGroup:
-		p.dirs[from] = to
-		filepath.WalkDir(src(from), func(q string, d os.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				return nil
-			}
-			rel := relSlash(rootAbs, q)
-			p.files[rel] = to + strings.TrimPrefix(rel, from)
-			if base := path.Base(rel); strings.HasSuffix(base, ".md") && !strings.Contains(strings.TrimSuffix(base, ".md"), ".") &&
-				base != "INDEX.md" && base != "LOG.md" && strings.Count(rel, "/") == 1 {
-				id := strings.TrimSuffix(rel, ".md")
-				p.ids[id] = to + strings.TrimPrefix(id, from)
-			}
-			return nil
-		})
-	case kRegisterDoc:
-		fromReg, toReg := fp[0], tp[0]
-		// Re-filing needs both registers, and bugs/ is one from v0.7 only.
-		both := p.reg["debts"] != "" && p.reg["bugs"] != ""
-		refile := both && ((fromReg == "debts" && toReg == "bugs") || (fromReg == "bugs" && toReg == "debts"))
+	case kDoc:
+		refile := fromReg == "debts" && toReg == "bugs" || fromReg == "bugs" && toReg == "debts"
 		if fromReg != toReg && !refile {
-			why := "nothing changes register"
-			if both {
-				why = "a debt and a bug can be re-filed as each other; nothing else changes register"
+			return nil, fmt.Errorf("a %s stays under %s/ (a debt and a bug can be re-filed as each other; nothing else changes register)%s", nouns[fromReg], fromReg, within(fromReg, to))
+		}
+		// layout says what the directory beside the document is. A task
+		// directory moves with it. A practice, debt or bug owns no directory,
+		// so one beside it stays where it is, and the link engine repairs the
+		// links into it. When it holds Markdown, the move is what repairs the
+		// F3.
+		tasks := false
+		if isDir(src(from)) {
+			switch b.Dir(from).Kind {
+			case layout.TaskDir:
+				tasks = true
+			case layout.Stray:
+				p.stays = from
 			}
-			return nil, fmt.Errorf("a %s stays under %s/ (%s)", p.reg[fromReg], fromReg, why)
 		}
-		if len(tp) < 2 || len(tp) > 3 {
-			return nil, fmt.Errorf("%s moves to %s/<slug> or %s/<group>/<slug>, not %s", from, toReg, toReg, to)
+		if problem := b.Place(to); problem != "" {
+			return nil, fmt.Errorf("%s", problem)
 		}
-		if isDir(src(from)) && fromReg != "changes" {
-			return nil, fmt.Errorf("%s has a directory beside it, which a %s never owns", from, p.reg[fromReg])
-		}
-		if toReg == "changes" {
-			if why := scaffold.ChangePlaceTaken(rootAbs, strings.TrimPrefix(to, "changes/")); why != "" {
-				return nil, fmt.Errorf("%s", why)
-			}
-		}
-		p.addDoc(rootAbs, from, to, fromReg == "changes")
+		p.addDoc(rootAbs, from, to, tasks)
 		if refile {
 			p.flip[to+".md"] = map[string]string{"bugs": "Bug", "debts": "Debt"}[toReg]
 		}
-	case kRegisterGroup:
-		if len(tp) != 2 || tp[0] != fp[0] {
-			return nil, fmt.Errorf("a %s/ group moves to another %s/<group>, not %s", fp[0], fp[0], to)
+	case kGroup:
+		switch {
+		case toReg != fromReg || len(tp) < 2:
+			return nil, fmt.Errorf("a %s/ group moves to another group in %s/, not %s%s", fromReg, fromReg, to, within(fromReg, to))
+		case strings.HasPrefix(to, from+"/"):
+			return nil, fmt.Errorf("%s/ cannot move into itself", from)
+		}
+		if problem := b.PlaceGroup(to); problem != "" {
+			return nil, fmt.Errorf("%s", problem)
 		}
 		p.dirs[from] = to
 		filepath.WalkDir(src(from), func(q string, d os.DirEntry, err error) error {
@@ -263,8 +252,7 @@ func makePlan(rootAbs, from, to string) (*plan, error) {
 			}
 			rel := relSlash(rootAbs, q)
 			p.files[rel] = to + strings.TrimPrefix(rel, from)
-			if base := path.Base(rel); strings.Count(rel, "/") == 2 && strings.HasSuffix(base, ".md") &&
-				!strings.Contains(strings.TrimSuffix(base, ".md"), ".") && base != "INDEX.md" && base != "LOG.md" {
+			if strings.HasSuffix(rel, ".md") && b.File(rel).Kind == layout.Document {
 				id := strings.TrimSuffix(rel, ".md")
 				p.ids[id] = to + strings.TrimPrefix(id, from)
 			}
@@ -286,6 +274,15 @@ func makePlan(rootAbs, from, to string) (*plan, error) {
 		}
 	}
 	return p, nil
+}
+
+// within suggests the target in the source's register, when it names none:
+// a feature ID written the 0.7 way, or a group without its register.
+func within(reg, to string) string {
+	if layout.IsRegister(strings.SplitN(to, "/", 2)[0]) {
+		return ""
+	}
+	return " — did you mean " + reg + "/" + to + "?"
 }
 
 // addDoc adds a document with its stem-qualified siblings and, when it may
@@ -400,17 +397,81 @@ func isPathByte(c byte) bool {
 }
 
 // mentions finds every mention of a moved document's ID outside a link
-// target: in frontmatter edges (affects, depends-on, replaced-by, retires,
-// superseded-by, resolves), declaration headings, code spans and prose. An ID
-// is a whole token: not inside a longer path such as src/<id>/handler.go,
-// though "/<id>" at a boundary is a bundle-relative path and counts. The
-// suffixes it may carry — ".spec.md", "/01-task.md" — move with it.
+// target and a `resource` or `applies-to` path, which names code
+// (FieldPaths), with IDMentions, and, for a renamed task, its name in its
+// siblings' depends-on.
 func (p *plan) mentions(text, rel string, targets map[int]bool) []span {
+	skip := FieldPaths(text)
+	for k := range targets {
+		skip[k] = true
+	}
 	var out []span
-	ids := sortedKeys(p.ids)
-	sort.Slice(ids, func(i, j int) bool { return len(ids[i]) > len(ids[j]) }) // longest first
+	for _, r := range IDMentions(text, p.ids, p.prefix, skip, false) {
+		out = append(out, span{r.Start, r.End, r.Text})
+	}
+	// A renamed task is named by its siblings' `depends-on`.
+	if p.task[0] != "" && path.Dir(rel) == path.Dir(p.from) && path.Base(rel) != p.task[0]+".md" {
+		out = append(out, dependsOnRenames(text, p.task[0], p.task[1])...)
+	}
+	return out
+}
+
+// FieldPaths marks the bytes of the resource and applies-to values in text's
+// frontmatter, inline or as a list: paths in the project, which name code,
+// never a document, so no ID in them is one to rewrite.
+func FieldPaths(text string) map[int]bool {
+	out := map[int]bool{}
+	if !strings.HasPrefix(text, "---") {
+		return out
+	}
+	in, pos := false, 0
+	for i, line := range strings.SplitAfter(text, "\n") {
+		start := pos
+		pos += len(line)
+		t := strings.TrimSpace(line)
+		switch {
+		case i > 0 && t == "---":
+			return out
+		case strings.HasPrefix(line, "resource:") || strings.HasPrefix(line, "applies-to:"):
+			in = true
+		case in && strings.HasPrefix(t, "-"):
+			// an item of the field's list
+		default:
+			in = false
+		}
+		if in {
+			for k := start; k < pos; k++ {
+				out[k] = true
+			}
+		}
+	}
+	return out
+}
+
+// Replacement is text to put in place of the bytes text[Start:End].
+type Replacement struct {
+	Start, End int
+	Text       string
+}
+
+// IDMentions finds every mention in text of an ID ids renames (old -> new),
+// outside the byte offsets skip holds, such as link targets: in frontmatter
+// edges (affects, depends-on, replaced-by, retires, superseded-by,
+// resolves), declaration headings, code spans and prose. An ID is a whole
+// token: not inside a longer path such as src/<id>/handler.go, though
+// "/<id>" at a boundary is a bundle-relative path and counts, and so does
+// "<prefix><id>", the document's path in the project when prefix is the
+// bundle's ("docs/fdf/"). It counts only where it ends (idEnds), and the
+// suffixes it may carry — ".spec.md", "/01-task.md" — move with it. Longer
+// IDs are matched first. routes says the IDs are 0.x ones, which name no
+// register: a bare /<id> written from the bundle root then reads as a URL's
+// path, as in GET /venues/opening-hours, where a 1.0 ID's is the document.
+func IDMentions(text string, ids map[string]string, prefix string, skip map[int]bool, routes bool) []Replacement {
+	var out []Replacement
+	olds := sortedKeys(ids)
+	sort.Slice(olds, func(i, j int) bool { return len(olds[i]) > len(olds[j]) }) // longest first
 	taken := map[int]bool{}
-	for _, old := range ids {
+	for _, old := range olds {
 		for i := 0; ; {
 			j := strings.Index(text[i:], old)
 			if j < 0 {
@@ -418,41 +479,84 @@ func (p *plan) mentions(text, rel string, targets map[int]bool) []span {
 			}
 			s, e := i+j, i+j+len(old)
 			i = e
-			if targets[s] || taken[s] {
+			if skip[s] || taken[s] {
 				continue
 			}
 			before := byte(' ')
 			if s > 0 {
 				before = text[s-1]
 			}
+			route := false
 			switch {
-			case p.prefix != "" && s >= len(p.prefix) && text[s-len(p.prefix):s] == p.prefix &&
-				(s == len(p.prefix) || !isPathByte(text[s-len(p.prefix)-1])):
-				// the document by its path in the project: docs/features/<id>
+			case prefix != "" && s >= len(prefix) && text[s-len(prefix):s] == prefix &&
+				(s == len(prefix) || !isPathByte(text[s-len(prefix)-1])):
+				// the document by its path in the project: docs/fdf/<id>
 			case before == '/':
 				if s > 1 && isPathByte(text[s-2]) {
 					continue
 				}
+				route = routes // written from the bundle root
 			case isPathByte(before):
 				continue
 			}
-			if e < len(text) {
-				after := text[e]
-				if after == '-' || after == '_' || after >= '0' && after <= '9' || after >= 'a' && after <= 'z' || after >= 'A' && after <= 'Z' {
-					continue
-				}
+			if !idEnds(text[e:], route) {
+				continue
 			}
 			for k := s; k < e; k++ {
 				taken[k] = true
 			}
-			out = append(out, span{s, e, p.ids[old]})
+			out = append(out, Replacement{s, e, ids[old]})
 		}
 	}
-	// A renamed task is named by its siblings' `depends-on`.
-	if p.task[0] != "" && path.Dir(rel) == path.Dir(p.from) && path.Base(rel) != p.task[0]+".md" {
-		out = append(out, dependsOnRenames(text, p.task[0], p.task[1])...)
-	}
 	return out
+}
+
+// docSuffixes are what an ID's documents add to it: a trail's role, with or
+// without .md, or .md alone.
+var docSuffixes = []string{".spec.md", ".plan.md", ".test.md", ".surface.md", ".log.md", ".md", ".spec", ".plan", ".test", ".surface", ".log"}
+
+var taskPathRe = regexp.MustCompile(`^/\d+-`)
+
+// idEnds reports whether a mention of an ID ends where rest, the text after
+// it, begins: the ID itself, before a character no path holds or a full
+// stop that ends a sentence; one of its documents (<id>.md, <id>.spec.md,
+// <id>.spec); or its task directory (<id>/01-build.md, or <id>/ where the
+// path ends). A path that goes on past it names something else: code, as
+// <id>/handler.go, <id>.go or <id>.spec.ts, or a route's template, as
+// <id>/{id} or <id>/:id. A mention that reads as a URL's path (route) counts
+// only as a document or a task.
+func idEnds(rest string, route bool) bool {
+	for _, s := range docSuffixes {
+		if strings.HasPrefix(rest, s) && pathEnds(rest[len(s):]) {
+			return true
+		}
+	}
+	switch {
+	case taskPathRe.MatchString(rest):
+		return true
+	case route:
+		return false
+	case strings.HasPrefix(rest, "/"):
+		return dirEnds(rest[1:]) // its task directory
+	}
+	return pathEnds(rest)
+}
+
+// dirEnds reports whether a mention of a directory, written with its slash,
+// ends where rest begins: at the end of the text, or before white space, a
+// closing quote or bracket, or a mark that ends a clause. A { or a : after
+// it makes a route's template.
+func dirEnds(rest string) bool {
+	return rest == "" || strings.IndexByte(" \t\r\n`'\")],;.", rest[0]) >= 0
+}
+
+// pathEnds reports whether a path ends where rest begins: before a character
+// no path holds, or a full stop that ends a sentence.
+func pathEnds(rest string) bool {
+	if strings.HasPrefix(rest, ".") {
+		rest = rest[1:]
+	}
+	return rest == "" || !isPathByte(rest[0])
 }
 
 var dependsOnRe = regexp.MustCompile(`(?m)^depends-on:.*$`)
@@ -519,11 +623,16 @@ func applySpans(text string, reps []span) string {
 	return b.String()
 }
 
-// moveListings moves a moved document's line from its old index to its new
-// one, when the move changes the directory it is listed in. It edits the
-// already-rewritten texts and reports what it did.
+// moveListings moves a moved document's or group's listing line from the
+// index it was listed in to the one it is listed in now, when the move
+// changes its directory. A directory that gains its first listing gets an
+// index, and so does every directory on its way that has none, each listed in
+// its parent's, as `fdf new` lists a new group. A move carries a listing and
+// never writes one: a document its index did not list is not listed after
+// the move, and a group made for it gets no index, which would list nothing.
+// It edits the already-rewritten texts and reports what it did.
 func moveListings(rootAbs string, p *plan, edits map[string]*edit) []string {
-	if p.kind != kFeature && p.kind != kRegisterDoc {
+	if p.kind == kTask {
 		return nil
 	}
 	oldDir, newDir := path.Dir(p.from), path.Dir(p.to)
@@ -542,9 +651,17 @@ func moveListings(rootAbs string, p *plan, edits map[string]*edit) []string {
 	if !ok {
 		return nil
 	}
+	// The old index's line, already retargeted: a document's listing links
+	// the document, a group's its index or its directory.
+	lists := func(t string) bool {
+		if p.kind == kGroup {
+			return t == p.to+"/INDEX.md" || t == p.to
+		}
+		return t == p.to+".md"
+	}
 	var kept, movedLines []string
 	for _, line := range strings.Split(src, "\n") {
-		if scaffold.ListingTarget(line, oldDir) == p.to+".md" { // the old index's line, already retargeted
+		if lists(scaffold.ListingTarget(line, oldDir)) {
 			movedLines = append(movedLines, line)
 			continue
 		}
@@ -578,28 +695,51 @@ func moveListings(rootAbs string, p *plan, edits map[string]*edit) []string {
 	}
 	notes := []string{fmt.Sprintf("listing moved from %s to %s", oldIdx, newIdx)}
 	dst, ok := textOf(newIdx)
-	if !ok {
-		// A new group is headed, and listed beside its siblings, the way
-		// `fdf new` and the registers' commands head and list one: a feature
-		// group in the root INDEX.md, a register's group in the register's.
-		parent, group := path.Split(newDir)
-		parent = strings.TrimSuffix(parent, "/")
-		heading := strings.ToUpper(group[:1]) + group[1:] // a register itself, named plainly
-		if isGroup := parent == "" && p.reg[group] == "" || p.reg[parent] != ""; isGroup {
-			heading = scaffold.GroupTitle(parent, group)
-			parentIdx := path.Join(parent, "INDEX.md")
-			if text, ok := textOf(parentIdx); ok {
-				if listed, added := scaffold.WithGroupListing(text, parent, group); added {
-					setText(parentIdx, listed, 0)
-					notes = append(notes, fmt.Sprintf("group %s/ listed in %s", newDir, parentIdx))
-				}
+	if ok {
+		dst = strings.TrimRight(dst, "\n") + "\n"
+	} else {
+		notes = append(notes, indexNewGroups(newDir, textOf, setText)...)
+		dst = "# " + indexTitle(newDir) + "\n\n"
+	}
+	setText(newIdx, dst+strings.Join(movedLines, "\n")+"\n", len(movedLines))
+	return notes
+}
+
+// indexNewGroups lists each group on the way to dir that has no index yet —
+// dir included, outermost first — in its parent's index, and gives each but
+// dir an index of its own; the caller writes dir's, with the lines it moves
+// there. A register has no parent to be listed in.
+func indexNewGroups(dir string, textOf func(string) (string, bool), setText func(string, string, int)) []string {
+	var missing []string
+	for d := dir; strings.Contains(d, "/"); d = path.Dir(d) {
+		if _, ok := textOf(d + "/INDEX.md"); ok {
+			break
+		}
+		missing = append([]string{d}, missing...)
+	}
+	var notes []string
+	for _, d := range missing {
+		parent, group := path.Dir(d), path.Base(d)
+		if d != dir {
+			setText(d+"/INDEX.md", "# "+indexTitle(d)+"\n", 0)
+		}
+		if text, ok := textOf(parent + "/INDEX.md"); ok {
+			if listed, added := scaffold.WithGroupListing(text, parent, group); added {
+				setText(parent+"/INDEX.md", listed, 0)
+				notes = append(notes, fmt.Sprintf("group %s/ listed in %s/INDEX.md", d, parent))
 			}
 		}
-		dst = "# " + heading + "\n\n"
 	}
-	dst = strings.TrimRight(dst, "\n") + "\n" + strings.Join(movedLines, "\n") + "\n"
-	setText(newIdx, dst, len(movedLines))
 	return notes
+}
+
+// indexTitle is how a new index is headed: a group's as `fdf new` heads one,
+// a register's by its name.
+func indexTitle(dir string) string {
+	if !strings.Contains(dir, "/") {
+		return strings.ToUpper(dir[:1]) + dir[1:]
+	}
+	return scaffold.GroupTitle(path.Dir(dir), path.Base(dir))
 }
 
 // apply performs the move: renames first, then every rewritten text written
@@ -635,21 +775,21 @@ func apply(rootAbs string, p *plan, edits map[string]*edit) error {
 	return nil
 }
 
-// emptiedGroup names a feature group the move left holding only its index.
+// emptiedGroup names the group a document or group moved out of, when the
+// move left it holding only its index. The .DS_Store macOS Finder leaves in a
+// directory it has shown is not the group's, as the registers' cleanup reads
+// it.
 func emptiedGroup(rootAbs string, p *plan) string {
-	if p.kind != kFeature {
-		return ""
-	}
 	g := path.Dir(p.from)
-	if g == path.Dir(p.to) {
+	if p.kind == kTask || g == path.Dir(p.to) || !strings.Contains(g, "/") {
 		return ""
 	}
-	entries, err := os.ReadDir(filepath.Join(rootAbs, g))
+	entries, err := os.ReadDir(filepath.Join(rootAbs, filepath.FromSlash(g)))
 	if err != nil {
 		return ""
 	}
 	for _, e := range entries {
-		if e.Name() != "INDEX.md" {
+		if e.Name() != "INDEX.md" && e.Name() != ".DS_Store" {
 			return ""
 		}
 	}

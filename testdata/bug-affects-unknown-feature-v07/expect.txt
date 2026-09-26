@@ -1,2 +1,0 @@
-exit: 1
-contains: bugs/ghost.md: `affects` names unknown feature "venues/ghost" (F14)

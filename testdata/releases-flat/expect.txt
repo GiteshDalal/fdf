@@ -1,0 +1,2 @@
+exit: 1
+contains: releases/2026/: releases/ is flat: a release is releases/<version>.md (F3)

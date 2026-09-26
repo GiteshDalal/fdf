@@ -1,2 +1,0 @@
-exit: 1
-contains: venues/card-payments.md: `resource` path does not exist in repo -> src/gone (R1)

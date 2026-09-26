@@ -21,22 +21,27 @@ func bundle(t *testing.T) string {
 			t.Fatal(err)
 		}
 	}
-	mk("INDEX.md", "---\nfdf_version: \"0.7\"\n---\n\n# Bundle\n\n* [Payments](/payments/INDEX.md) - payments.\n")
-	mk("payments/instant-refunds.md", "---\ntype: Feature\ntitle: Instant refunds\nstatus: done\n---\n\n# Feature\n")
+	mk("INDEX.md", "---\nfdf_version: \"1.0\"\n---\n\n# Bundle\n\n* [Features](/features/INDEX.md) - what the software does.\n")
+	mk("features/INDEX.md", "# Features\n\n* [Payments](/features/payments/INDEX.md) - features in payments.\n")
+	mk("features/payments/instant-refunds.md", "---\ntype: Feature\ntitle: Instant refunds\nstatus: done\n---\n\n# Feature\n")
 	return root
 }
 
-// Changes and Fixes are v0.5: under an older pin changes/ is a feature group,
-// where a Change fails validation (F3), so neither command writes one there.
-func TestNewRefusesAPinBeforeChanges(t *testing.T) {
+// The commands write spec 1.0: a 0.x bundle, whose features sit at the root,
+// is upgraded with `fdf migrate` before a Change or Fix is filed in it.
+func TestNewPointsA0xBundleAtMigrate(t *testing.T) {
 	root := bundle(t)
-	os.WriteFile(filepath.Join(root, "INDEX.md"), []byte("---\nfdf_version: \"0.4\"\n---\n\n# Bundle\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "INDEX.md"), []byte("---\nfdf_version: \"0.7\"\n---\n\n# Bundle\n"), 0o644)
 	for _, docType := range []string{"Change", "Fix"} {
 		var out bytes.Buffer
-		if code := New(root, "refund-window", docType, []string{"payments/instant-refunds"}, &out); code != 1 ||
-			!strings.HasPrefix(out.String(), "error: Changes and Fixes arrived in spec v0.5, and this bundle pins fdf_version 0.4: under that pin changes/ is a feature group, and a "+docType+" written there fails validation (F3).") {
-			t.Errorf("%s on a v0.4 bundle: exit %d\n%s", docType, code, out.String())
+		if code := New(root, "refund-window", docType, []string{"features/payments/instant-refunds"}, &out); code != 1 ||
+			out.String() != "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n" {
+			t.Errorf("%s on a v0.7 bundle: exit %d\n%s", docType, code, out.String())
 		}
+	}
+	var out bytes.Buffer
+	if code := History(root, "features/payments/instant-refunds", &out); code != 1 || !strings.Contains(out.String(), "`fdf migrate --dry-run` shows the plan") {
+		t.Errorf("history on a v0.7 bundle: exit %d\n%s", code, out.String())
 	}
 	if _, err := os.Stat(filepath.Join(root, "changes")); err == nil {
 		t.Error("a refused Change or Fix writes nothing")
@@ -46,7 +51,7 @@ func TestNewRefusesAPinBeforeChanges(t *testing.T) {
 func TestNewFixScaffoldsRegressionSectionAndIndex(t *testing.T) {
 	root := bundle(t)
 	var out bytes.Buffer
-	if code := New(root, "refund-rounding", "Fix", []string{"payments/instant-refunds"}, &out); code != 0 {
+	if code := New(root, "refund-rounding", "Fix", []string{"features/payments/instant-refunds"}, &out); code != 0 {
 		t.Fatalf("exit %d\n%s", code, out.String())
 	}
 	raw, err := os.ReadFile(filepath.Join(root, "changes", "refund-rounding.md"))
@@ -54,8 +59,8 @@ func TestNewFixScaffoldsRegressionSectionAndIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := string(raw)
-	for _, want := range []string{"type: Fix", "status: draft", "affects: payments/instant-refunds",
-		"# Regression cases", "## payments/instant-refunds"} {
+	for _, want := range []string{"type: Fix", "status: draft", "affects: features/payments/instant-refunds",
+		"# Regression cases", "## features/payments/instant-refunds"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("scaffolded Fix missing %q:\n%s", want, body)
 		}
@@ -72,7 +77,7 @@ func TestNewFixScaffoldsRegressionSectionAndIndex(t *testing.T) {
 func TestNewChangeIsGroupedAndCarriesScenarioChanges(t *testing.T) {
 	root := bundle(t)
 	var out bytes.Buffer
-	if code := New(root, "payments/refund-window", "Change", []string{"payments/instant-refunds"}, &out); code != 0 {
+	if code := New(root, "payments/refund-window", "Change", []string{"features/payments/instant-refunds"}, &out); code != 0 {
 		t.Fatalf("exit %d\n%s", code, out.String())
 	}
 	raw, err := os.ReadFile(filepath.Join(root, "changes", "payments", "refund-window.md"))
@@ -100,7 +105,7 @@ func TestTodoPlaceholdersAreWholeLines(t *testing.T) {
 	root := bundle(t)
 	var out bytes.Buffer
 	for _, c := range []struct{ id, docType string }{{"refund-window", "Change"}, {"refund-rounding", "Fix"}} {
-		if code := New(root, c.id, c.docType, []string{"payments/instant-refunds"}, &out); code != 0 {
+		if code := New(root, c.id, c.docType, []string{"features/payments/instant-refunds"}, &out); code != 0 {
 			t.Fatalf("exit %d\n%s", code, out.String())
 		}
 		raw, _ := os.ReadFile(filepath.Join(root, "changes", c.id+".md"))
@@ -127,7 +132,7 @@ func TestNewRefusesAPlaceAChangeOrGroupHolds(t *testing.T) {
 	root := bundle(t)
 	var out bytes.Buffer
 	for _, id := range []string{"refund-window", "payments/refund-rounding"} {
-		if code := New(root, id, "Change", []string{"payments/instant-refunds"}, &out); code != 0 {
+		if code := New(root, id, "Change", []string{"features/payments/instant-refunds"}, &out); code != 0 {
 			t.Fatalf("exit %d\n%s", code, out.String())
 		}
 	}
@@ -136,7 +141,7 @@ func TestNewRefusesAPlaceAChangeOrGroupHolds(t *testing.T) {
 		{"payments", "changes/payments/ is a group"},
 	} {
 		out.Reset()
-		if code := New(root, c.id, "Fix", []string{"payments/instant-refunds"}, &out); code != 1 || !strings.Contains(out.String(), c.want) {
+		if code := New(root, c.id, "Fix", []string{"features/payments/instant-refunds"}, &out); code != 1 || !strings.Contains(out.String(), c.want) {
 			t.Errorf("fdf fix %s: exit %d, want a refusal containing %q:\n%s", c.id, code, c.want, out.String())
 		}
 		if _, err := os.Stat(filepath.Join(root, "changes", filepath.FromSlash(c.id)+".md")); err == nil {
@@ -149,7 +154,7 @@ func TestNewRefusesAPlaceAChangeOrGroupHolds(t *testing.T) {
 // line of its own, where validation's placeholder check finds it.
 func TestNewChangeFromBugMarksAMissingExpectation(t *testing.T) {
 	root := bundle(t)
-	writeBug(t, root, "bugs/slow-refunds", "---\ntype: Bug\nstatus: open\ntitle: Slow refunds\naffects: payments/instant-refunds\n---\n\n# Symptom\n\nA refund takes a day.\n\n# Expected\n\nTODO — what should happen instead.\n")
+	writeBug(t, root, "bugs/slow-refunds", "---\ntype: Bug\nstatus: open\ntitle: Slow refunds\naffects: features/payments/instant-refunds\n---\n\n# Symptom\n\nA refund takes a day.\n\n# Expected\n\nTODO — what should happen instead.\n")
 	var out bytes.Buffer
 	if code := NewFrom(root, "slow-refunds", "Change", nil, "bugs/slow-refunds", &out); code != 0 {
 		t.Fatalf("exit %d\n%s", code, out.String())
@@ -160,15 +165,15 @@ func TestNewChangeFromBugMarksAMissingExpectation(t *testing.T) {
 	}
 }
 
-// A changes/ group is listed like every reserved directory's groups: its index
-// is titled after the group and listed once in changes/INDEX.md.
+// A changes/ group is listed like every register's groups: its index is
+// titled after the group and listed once in changes/INDEX.md.
 func TestNewChangeGroupIsTitledAndListed(t *testing.T) {
 	root := bundle(t)
 	var out bytes.Buffer
-	if code := New(root, "payments/refund-window", "Change", []string{"payments/instant-refunds"}, &out); code != 0 {
+	if code := New(root, "payments/refund-window", "Change", []string{"features/payments/instant-refunds"}, &out); code != 0 {
 		t.Fatalf("exit %d\n%s", code, out.String())
 	}
-	if code := New(root, "payments/refund-rounding", "Fix", []string{"payments/instant-refunds"}, &out); code != 0 {
+	if code := New(root, "payments/refund-rounding", "Fix", []string{"features/payments/instant-refunds"}, &out); code != 0 {
 		t.Fatalf("exit %d\n%s", code, out.String())
 	}
 	group, _ := os.ReadFile(filepath.Join(root, "changes", "payments", "INDEX.md"))
@@ -201,8 +206,10 @@ func TestNewRejectsUnknownOrMissingAffects(t *testing.T) {
 		want    string
 	}{
 		{"none", nil, "--affects is required"},
-		{"malformed", []string{"instant-refunds"}, "feature IDs of the form"},
-		{"unknown", []string{"payments/nope"}, "not a feature in this bundle"},
+		{"old-style", []string{"payments/instant-refunds"},
+			"error: --affects names payments/instant-refunds, which is not a feature in this bundle — did you mean features/payments/instant-refunds?\n"},
+		{"unknown", []string{"features/payments/nope"}, "error: --affects names features/payments/nope, which is not a feature in this bundle\n"},
+		{"not-a-feature", []string{"changes/refund-window"}, "error: --affects names changes/refund-window, which is not a feature in this bundle\n"},
 	} {
 		var out bytes.Buffer
 		if code := New(root, "c-"+tc.name, "Fix", tc.affects, &out); code == 0 {
@@ -223,7 +230,7 @@ func TestNewRejectsUnknownOrMissingAffects(t *testing.T) {
 func TestNewTakesTheFullID(t *testing.T) {
 	root := bundle(t)
 	var out bytes.Buffer
-	if code := New(root, "changes/refund-window", "Change", []string{"payments/instant-refunds"}, &out); code != 0 {
+	if code := New(root, "changes/refund-window", "Change", []string{"features/payments/instant-refunds"}, &out); code != 0 {
 		t.Fatalf("exit %d\n%s", code, out.String())
 	}
 	if _, err := os.Stat(filepath.Join(root, "changes", "refund-window.md")); err != nil {
@@ -237,11 +244,16 @@ func TestNewTakesTheFullID(t *testing.T) {
 func TestHistoryFindsChangesByAffects(t *testing.T) {
 	root := bundle(t)
 	var out bytes.Buffer
-	New(root, "refund-rounding", "Fix", []string{"payments/instant-refunds"}, &out)
-	New(root, "payments/refund-window", "Change", []string{"payments/instant-refunds"}, &out)
+	New(root, "refund-rounding", "Fix", []string{"features/payments/instant-refunds"}, &out)
+	New(root, "payments/refund-window", "Change", []string{"features/payments/instant-refunds"}, &out)
+
+	// A document in a hidden directory has no place in the bundle.
+	hidden := filepath.Join(root, "changes", ".drafts", "old-idea.md")
+	os.MkdirAll(filepath.Dir(hidden), 0o755)
+	os.WriteFile(hidden, []byte("---\ntype: Change\ntitle: Old idea\nstatus: draft\naffects: features/payments/instant-refunds\n---\n"), 0o644)
 
 	out.Reset()
-	if code := History(root, "payments/instant-refunds", &out); code != 0 {
+	if code := History(root, "features/payments/instant-refunds", &out); code != 0 {
 		t.Fatalf("exit %d\n%s", code, out.String())
 	}
 	got := out.String()
@@ -250,12 +262,15 @@ func TestHistoryFindsChangesByAffects(t *testing.T) {
 			t.Errorf("history missing %q:\n%s", want, got)
 		}
 	}
+	if strings.Contains(got, "old-idea") {
+		t.Errorf("history lists a document in a hidden directory:\n%s", got)
+	}
 }
 
 func TestHistoryOnUntouchedFeatureSaysSo(t *testing.T) {
 	root := bundle(t)
 	var out bytes.Buffer
-	if code := History(root, "payments/instant-refunds", &out); code != 0 {
+	if code := History(root, "features/payments/instant-refunds", &out); code != 0 {
 		t.Fatalf("exit %d", code)
 	}
 	if !strings.Contains(out.String(), "no Change or Fix names it in `affects`") {
@@ -278,7 +293,7 @@ const splitCaptureBug = `---
 type: Bug
 status: open
 title: A full refund misses the second capture
-affects: payments/instant-refunds
+affects: features/payments/instant-refunds
 timestamp: 2026-09-23T00:00:00Z
 ---
 
@@ -292,7 +307,7 @@ The whole payment is refunded.
 
 # Violates
 
-## payments/instant-refunds
+## features/payments/instant-refunds
 
 - Full refund of a settled payment — only the first capture is refunded
 
@@ -313,7 +328,7 @@ func TestNewFixFromBugTakesOverTheAnalysis(t *testing.T) {
 	raw, _ := os.ReadFile(filepath.Join(root, "changes", "split-capture-fix.md"))
 	body := string(raw)
 	for _, want := range []string{
-		"affects: payments/instant-refunds",
+		"affects: features/payments/instant-refunds",
 		"resolves: bugs/split-capture",
 		"A 40.00 payment settled as two captures refunds 25.00.",
 		"refund.go refunds the first capture only.",
@@ -363,6 +378,19 @@ func TestNewFromBugWithoutAffectsPointsAtAdoption(t *testing.T) {
 	}
 }
 
+// A Fix from a bug takes the bug's `affects`. When the bug names a feature
+// wrongly, the error says so of the bug, which is where it is corrected, not
+// of --affects, which nobody passed.
+func TestNewFromBugNamesTheBugsOwnAffects(t *testing.T) {
+	root := bundle(t)
+	writeBug(t, root, "bugs/stale", "---\ntype: Bug\nstatus: open\ntitle: Stale\naffects: payments/instant-refunds\n---\n\n# Symptom\n\nIt breaks.\n\n# Expected\n\nIt works.\n")
+	var out bytes.Buffer
+	want := "error: bugs/stale's `affects` names payments/instant-refunds, which is not a feature in this bundle (F14); correct it there, then retry — did you mean features/payments/instant-refunds?\n"
+	if code := NewFrom(root, "stale-fix", "Fix", nil, "bugs/stale", &out); code != 1 || out.String() != want {
+		t.Fatalf("exit %d, want 1 saying %q:\n%s", code, want, out.String())
+	}
+}
+
 func TestNewFromRejectsWhatIsNotABug(t *testing.T) {
 	root := bundle(t)
 	var out bytes.Buffer
@@ -370,7 +398,7 @@ func TestNewFromRejectsWhatIsNotABug(t *testing.T) {
 		t.Fatalf("an unknown bug must be refused: %d\n%s", code, out.String())
 	}
 	out.Reset()
-	if code := NewFrom(root, "x", "Fix", nil, "debts/gap", &out); code != 1 || !strings.Contains(out.String(), "bugs/<slug>") {
+	if code := NewFrom(root, "x", "Fix", nil, "debts/gap", &out); code != 1 || !strings.Contains(out.String(), "bugs/[<group>/…]<slug>") {
 		t.Fatalf("a non-bug ID must be refused: %d\n%s", code, out.String())
 	}
 }
@@ -381,12 +409,61 @@ func TestHistoryListsKnownBugsAndWhatResolvesThem(t *testing.T) {
 	var out bytes.Buffer
 	NewFrom(root, "split-capture-fix", "Fix", nil, "bugs/split-capture", &out)
 	out.Reset()
-	if code := History(root, "payments/instant-refunds", &out); code != 0 {
+	if code := History(root, "features/payments/instant-refunds", &out); code != 0 {
 		t.Fatalf("history: %d", code)
 	}
 	for _, want := range []string{"resolves bugs/split-capture", "known bugs — 1 on the register", "A full refund misses the second capture"} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("history missing %q:\n%s", want, out.String())
 		}
+	}
+}
+
+// Changes and Fixes file flat or in groups nested to any depth, each new
+// group listed in its parent's index; a bug filed in nested groups is repaired
+// by its full ID.
+func TestNewFilesInNestedGroupsAndFromANestedBug(t *testing.T) {
+	root := bundle(t)
+	writeBug(t, root, "bugs/platform/payments/split-capture", splitCaptureBug)
+	var out bytes.Buffer
+	if code := NewFrom(root, "platform/payments/split-capture-fix", "Fix", nil, "bugs/platform/payments/split-capture", &out); code != 0 {
+		t.Fatalf("exit %d\n%s", code, out.String())
+	}
+	raw, err := os.ReadFile(filepath.Join(root, "changes", "platform", "payments", "split-capture-fix.md"))
+	if err != nil || !strings.Contains(string(raw), "resolves: bugs/platform/payments/split-capture") {
+		t.Fatalf("the Fix is filed in its groups and resolves the nested bug: %v\n%s", err, raw)
+	}
+	for rel, want := range map[string]string{
+		"changes/INDEX.md":                   "* [Platform](/changes/platform/INDEX.md) - changes and fixes in platform.\n",
+		"changes/platform/INDEX.md":          "# Platform\n\n* [Payments](/changes/platform/payments/INDEX.md) - changes and fixes in payments.\n",
+		"changes/platform/payments/INDEX.md": "# Payments\n\n* [Split capture fix](/changes/platform/payments/split-capture-fix.md) - fix.\n",
+	} {
+		if got, _ := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel))); !strings.Contains(string(got), want) {
+			t.Errorf("%s should hold %q:\n%s", rel, want, got)
+		}
+	}
+	if !strings.Contains(out.String(), "done: Fix changes/platform/payments/split-capture-fix affects features/payments/instant-refunds\n") {
+		t.Errorf("the Fix is named by its full ID:\n%s", out.String())
+	}
+}
+
+// history takes a feature's full ID, at any depth, and suggests it for one
+// written the 0.7 way.
+func TestHistoryTakesTheFullFeatureID(t *testing.T) {
+	root := bundle(t)
+	os.MkdirAll(filepath.Join(root, "features", "platform", "payouts"), 0o755)
+	os.WriteFile(filepath.Join(root, "features", "platform", "payouts", "weekly.md"), []byte("---\ntype: Feature\ntitle: Weekly\nstatus: done\n---\n\n# Feature\n"), 0o644)
+	var out bytes.Buffer
+	if code := New(root, "payout-day", "Change", []string{"features/platform/payouts/weekly"}, &out); code != 0 {
+		t.Fatalf("exit %d\n%s", code, out.String())
+	}
+	out.Reset()
+	if code := History(root, "features/platform/payouts/weekly", &out); code != 0 || !strings.Contains(out.String(), "changes/payout-day") {
+		t.Errorf("history of a nested feature: exit %d\n%s", code, out.String())
+	}
+	out.Reset()
+	if code := History(root, "payments/instant-refunds", &out); code != 1 ||
+		out.String() != "error: payments/instant-refunds is not a feature in this bundle — did you mean features/payments/instant-refunds?\n" {
+		t.Errorf("a 0.7-style ID: exit %d\n%q", code, out.String())
 	}
 }

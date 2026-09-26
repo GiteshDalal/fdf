@@ -1,20 +1,21 @@
 # FDF — Feature Document Format
 
 **Documentation-as-a-directory for software features.** Each feature is a
-Markdown + Gherkin document; its design spec, plan, acceptance tests, and
-optional surface/log trail live as **stem-qualified siblings** beside it;
-tasks live only under a paired `slug/` directory; post-delivery change
-requests and bug fixes live under `changes/`; the recurring mechanisms every
-feature must follow the same way live as **practices**, what the project
-has said but not yet done everywhere is written down as **debt**, and what the
-software does wrong and nobody has repaired yet is written down as a **bug**;
-code that predates the bundle is **adopted** rather than given an invented
-history; an opinionated CLI validates the whole bundle — and renames and
-rewords it — so it can never silently drift.
+Markdown + Gherkin document under `features/`; its design spec, plan,
+acceptance tests, and optional surface/log trail live as **stem-qualified
+siblings** beside it; tasks live only under a paired `slug/` directory;
+post-delivery change requests and bug fixes live under `changes/`; the
+recurring mechanisms every feature must follow the same way live as
+**practices**, what the project has said but not yet done everywhere is
+written down as **debt**, and what the software does wrong and nobody has
+repaired yet is written down as a **bug**; code that predates the bundle is
+**adopted** rather than given an invented history; an opinionated CLI
+validates the whole bundle — and renames and rewords it — so it can never
+silently drift.
 
 ```
-docs/features/
-├── INDEX.md                      # bundle root (pins fdf_version)
+docs/fdf/
+├── INDEX.md                      # bundle root (pins fdf_version: "1.0")
 ├── LOG.md
 ├── SPEC.md                       # the format spec, shipped in the bundle
 ├── STACK.md                      # Context: technology stack
@@ -22,32 +23,43 @@ docs/features/
 ├── SURFACES.md                   # Context: interface principles (all surfaces)
 ├── INFRA.md                      # Context: build & deployment infra
 ├── DOMAIN.md                     # Context: the project's domain language
-├── bugs/                         # known defects not repaired yet
+├── features/                     # what the software does
 │   ├── INDEX.md
-│   └── refund-split-capture.md   # type: Bug — open | accepted | resolved
-├── changes/                      # post-delivery work (flat or grouped)
+│   ├── onboarding.md             # a flat feature: ID features/onboarding
+│   └── payments/                 # a group; groups nest to any depth
+│       ├── INDEX.md
+│       ├── card-payments.md          # Feature, status: adopted — predates the bundle
+│       ├── card-payments.test.md
+│       ├── instant-refunds.md        # Feature: Gherkin scenarios + status
+│       ├── instant-refunds.spec.md   # approved design (type: Spec)
+│       ├── instant-refunds.plan.md   # links every task (type: Plan)
+│       ├── instant-refunds.test.md   # one `## <scenario name>` case per scenario, with its proof (type: Test)
+│       ├── instant-refunds.surface.md  # its endpoint, screens and events as they are today (type: Surface)
+│       ├── instant-refunds.log.md    # what happened to it and why, newest first (fdf log)
+│       └── instant-refunds/          # task directory ONLY
+│           ├── 01-refund-api.md
+│           └── 02-refund-ui.md
+├── changes/                      # post-delivery work
 │   ├── INDEX.md
 │   └── refund-rounding.md        # type: Fix — the code drifted from the doc
-├── debts/                        # known gaps between doc and code
-│   ├── INDEX.md
-│   └── authz-legacy-handlers.md  # type: Debt — open | accepted | resolved
 ├── practices/                    # how recurring mechanisms are done
 │   ├── INDEX.md
 │   └── permission-checks.md      # type: Practice — binding on all code
-└── payments/
-    ├── INDEX.md
-    ├── card-payments.md          # Feature, status: adopted — predates the bundle
-    ├── card-payments.test.md
-    ├── instant-refunds.md        # Feature: Gherkin scenarios + status
-    ├── instant-refunds.spec.md   # approved design (type: Spec)
-    ├── instant-refunds.plan.md   # links every task (type: Plan)
-    ├── instant-refunds.test.md   # one `## <scenario name>` case per scenario, with its proof (type: Test)
-    ├── instant-refunds.surface.md  # its endpoint, screens and events as they are today (type: Surface)
-    ├── instant-refunds.log.md    # what happened to it and why, newest first (fdf log)
-    └── instant-refunds/          # task directory ONLY
-        ├── 01-refund-api.md
-        └── 02-refund-ui.md
+├── debts/                        # known gaps between doc and code
+│   ├── INDEX.md
+│   └── authz-legacy-handlers.md  # type: Debt — open | accepted | resolved
+├── bugs/                         # known defects not repaired yet
+│   ├── INDEX.md
+│   └── refund-split-capture.md   # type: Bug — open | accepted | resolved
+└── releases/                     # optional: what shipped in each version
 ```
+
+The bundle root is closed: its own files, the five Context documents and six
+**registers** — `features/`, `changes/`, `practices/`, `debts/`, `bugs/` and
+`releases/` — and nothing else, so free-form documentation lives in the rest
+of `docs/`. Every register but `releases/` files its documents flat or in
+groups nested to any depth, and a document's ID is its path without `.md`,
+register first: `features/payments/instant-refunds`, `changes/refund-rounding`.
 
 **Documents are living or episodic**, and that decides what happens when the
 software changes. Living documents describe the system *today* — the feature's
@@ -174,9 +186,9 @@ go install github.com/GiteshDalal/fdf/cli/cmd/fdf@latest
 ## Use
 
 ```bash
-fdf init                     # scaffold docs/features/ + SPEC.md + context stubs (or FDF_ROOT_DIR / --root)
+fdf init                     # scaffold docs/fdf/ + SPEC.md + context stubs (or FDF_ROOT_DIR / --root)
                              #   then run the fdf-init skill to fill STACK/ARCHITECTURE/SURFACES/INFRA/DOMAIN
-fdf new payments/instant-refunds
+fdf new payments/instant-refunds  # features/payments/instant-refunds.md; `fdf new onboarding` files one flat
 fdf validate                 # F1-F14 + R1; exit 1 on any violation
 fdf validate --strict-domain # …and F12 banned words become errors (or `strict: true` in DOMAIN.md)
 fdf practice permission-checks  # scaffold a Practice under practices/
@@ -189,27 +201,27 @@ fdf debt authz-legacy-handlers  # file a new debt
 fdf debt --cleanup           # fold resolved debts into debts/LOG.md and clear them
 fdf debt --cleanup --dry-run # …show the plan first, change nothing
 fdf bug --open               # the bug register (fdf debt's flags; clearing always logs)
-fdf bug --affects payments/instant-refunds refund-split-capture  # file a known defect
-fdf mv payments/store-hours venues/opening-hours  # move/rename with its trail; every reference repaired
+fdf bug --affects features/payments/instant-refunds refund-split-capture  # file a known defect
+fdf mv features/payments/store-hours features/venues/opening-hours  # move/rename with its trail; every reference repaired
 fdf lexicon                  # every banned domain word, with file:line:col
 fdf lexicon --term Venue --fix --dry-run  # …sweep one term, reviewing the diff first
-fdf log payments/instant-refunds "**Specified**: design approved"  # into the feature's own log, created on first use
-fdf log "**Checkpoint**: Context documents current"  # the root LOG.md: bundle-wide events only
-fdf spec                     # print the format spec (-v 0.4 for an older one)
+fdf log features/payments/instant-refunds "**Specified**: design approved."  # into the feature's own log, created on first use
+fdf log "**Checkpoint**: Context documents current."  # the root LOG.md: bundle-wide events only
+fdf spec                     # print the format spec (-v 0.7 for an older one)
 fdf help                     # every command with examples (fdf <command> --help for one)
 fdf serve                    # browse the bundle (bun x mdts)
 
 # after a feature is delivered
-fdf change --affects payments/instant-refunds refund-window   # behavior should differ
-fdf fix    --affects payments/instant-refunds refund-rounding # code drifted from the doc
-fdf fix    --from bugs/refund-split-capture refund-split-capture  # …repairing a filed bug
-fdf history payments/instant-refunds                          # what happened since it was delivered
+fdf change --affects features/payments/instant-refunds refund-window   # behavior should differ
+fdf fix    --affects features/payments/instant-refunds refund-rounding # code drifted from the doc
+fdf fix    --from bugs/refund-split-capture refund-split-capture       # …repairing a filed bug
+fdf history features/payments/instant-refunds                          # what happened since it was delivered
 fdf release 1.2.0            # derive the release doc from `version:` fields; --ship to close it
 fdf install claude-code      # user-level skills + "## Feature Document Format" primer
 fdf install codex            #   (a primer you edited is left alone; one fdf wrote is upgraded)
 fdf install opencode
 fdf install --project claude-code   # project-level: skills under .claude/, primer in ./CLAUDE.md
-fdf migrate                  # mechanical upgrade to the current spec version
+fdf migrate                  # upgrade a bundle from before 1.0 (see Upgrading to 1.0)
 ```
 
 `fdf install` defaults to **user-level** (under your home directory). Prefer
@@ -237,7 +249,7 @@ now removes them (leaving any commands you wrote yourself alone).
 `--project` outside a git working tree is a usage error (exit 2).
 `fdf install --root <dir>` (or `FDF_ROOT_DIR`) bakes a non-default bundle
 location into the installed skills, which otherwise reference
-`docs/features/`; it composes with `--project` unchanged. Agents need no prior
+`docs/fdf/`; it composes with `--project` unchanged. Agents need no prior
 FDF knowledge: the spec copy at the bundle root is the reference the skills
 and primer point them to.
 
@@ -245,52 +257,90 @@ Works the same everywhere: the bundle may be a plain directory or a git
 submodule mounted at the same path — `resource:` paths always verify against
 the **project** root.
 
-### Upgrading to v0.7
+### Upgrading to 1.0
 
-1. Run `fdf migrate`. From **v0.6** nothing moves: the pin moves, `SPEC.md`
-   is re-vendored, `bugs/INDEX.md` appears, the status tags older versions
-   wrote after index listings (` (**draft**)`) are dropped, and the migration
-   is logged in `LOG.md`. A feature group already named `bugs/` must be moved
-   first (`fdf mv bugs <new-group>`): that name is now reserved. The
-   migration then validates and counts what v0.7 checks that v0.6 did not.
-2. **Rewrite test cases as headings**: a case is a `## <scenario name>`
-   heading under `# Test Cases`, matched exactly (F8). Bullets and table rows
-   that name a scenario no longer count, so rewrite them by hand.
-3. **Decide each surface**: a feature from `specified` on has a
-   `slug.surface.md`, or says `surface: none` in its frontmatter (a warning
-   otherwise).
-4. **Fix timestamps without a zone** (F1): give each the `Z` or offset it was
-   written in, or keep only its date.
-5. **Triage, then sweep** the domain language: F12 now reads every document
-   and name, not only the Gherkin, so a bundle that swept only its features
-   reports the rest, as warnings (or errors under `--strict-domain`).
-   `fdf lexicon` lists them. Qualify the words used in another sense and list
-   them under `except:` in `DOMAIN.md`, put mentions of a word in code spans,
-   then `fdf lexicon --term <Term> --fix --dry-run` and `--fix`, one term at a
-   time. When the report is empty, set `strict: true` in `DOMAIN.md`.
-6. **Re-file defects**: a debt that describes the software doing something
-   wrong is a bug — `fdf mv debts/<id> bugs/<id>`, then write its `# Expected`.
-7. **Re-run `fdf install`** so the skills (now ten, with `fdf-adopt`) and the
-   primer teach v0.7.
+fdf 1.x works on spec 1.x bundles only. A bundle that pins 0.x fails
+`fdf validate` (F1), and every command that works on a bundle refuses it,
+pointing at `fdf migrate`, which upgrades any 0.x bundle to 1.0 in one run.
+Upgrade fdf and the bundle together: until `fdf install` runs again, an agent
+works from 0.7's skills, which tell it to run `fdf migrate` whenever a pin is
+not supported, and 1.0's `fdf migrate` moves the bundle and rewrites
+references to it across the project. A project you are not upgrading yet
+stays on 0.7.x (*Not ready yet?*, below). To upgrade:
 
-### Upgrading to v0.6
+1. **Commit everything.** Migrate starts only from a clean tree, and git is
+   its undo: should it stop partway, it prints the commands that put
+   everything back, and once done, those that back it out.
+2. **`fdf migrate --dry-run`** prints the whole plan and changes nothing.
+   Every feature group moves into `features/`, and every feature ID gains
+   `features/` wherever it is written, frozen documents included (logs keep
+   their words); every link is repaired; and a bundle at `docs/features/`
+   moves to `docs/fdf/` (`--to <dir>` chooses another place). In a git
+   repository migrate also rewrites the rest of the project's tracked text
+   files — each Markdown link into the bundle, and each mention of its path —
+   and lists each mention it leaves for you to decide on. `--skip <glob>`
+   leaves the files it names as they are, such as applied SQL migrations
+   whose checksums a tool verifies.
+3. **`fdf migrate`**, with the dry run's `--skip` flags, which validates the
+   result and exits with the validator's code.
+4. **Re-run `fdf install`** for each harness you use, so the skills and the
+   primer teach 1.0. A primer an earlier fdf wrote that nobody edited is
+   replaced, even one written for `docs/features/`.
+5. **Review `git diff -M --stat`** — each move shows as a rename — **and
+   commit.** Then run the `fdf-checkpoint` skill: an instruction file may
+   still name a feature by its 0.7 ID, which migrate leaves alone outside the
+   bundle, where it cannot tell an ID from a code path.
 
-1. Run `fdf migrate` on the bundle. From **v0.5** nothing moves: the pin
-   moves, `SPEC.md` is re-vendored, and `practices/INDEX.md`, `debts/INDEX.md`
-   and a `DOMAIN.md` stub appear. One thing does change, and it is the point of the version —
-   `DOMAIN.md` is a fifth Context document, so **F9 holds the bundle to filling
-   it before the next feature**. `fdf migrate` itself never fails on that
-   (fresh stubs are advisory); the next plain `fdf validate` does, until the
-   `fdf-init` interview fills the lexicon. From **v0.4** it also scaffolds
-   `changes/INDEX.md`; from **v0.2/v0.3** it additionally lifts nested trail
-   files to stem-qualified siblings and scaffolds `SURFACES.md`.
-2. **Re-run `fdf install`** for each harness you use. Skills and primers
-   written under an older version do not know about `practices/`, `debts/`,
-   the `Practice` and `Debt` types, or `DOMAIN.md`, and stay stale in
-   CLAUDE.md/AGENTS.md
-   until refreshed. `fdf install` upgrades skills automatically when the
-   version marker changes, and a primer it wrote with them; a primer you
-   edited is left alone, so edit or replace that section yourself.
+A bundle from before 0.7 also meets what 0.7 added, which migrate counts:
+a test case is a `## <scenario name>` heading, matched exactly (F8), so
+rewrite bullets and table rows by hand; a feature from `specified` on has a
+`slug.surface.md` or says `surface: none`; a `timestamp` carries its zone
+(F1); F12 reads every document and name, so triage, then sweep with
+`fdf lexicon`; and a debt that describes the software doing something wrong
+is a bug — `fdf mv debts/<id> bugs/<id>`, then write its `# Expected`.
+
+**Not ready yet?** Keep fdf 0.7.x, and its skills, until you are: a version
+manager pins it per project (`mise use ubi:GiteshDalal/fdf@0.7.1`). fdf 1.x
+still prints the 0.x specs, as `fdf spec -v 0.7`.
+
+**Where fdf looks.** With neither `--root` nor `FDF_ROOT_DIR`, fdf uses the
+first of `docs/fdf/` and `docs/features/` that holds a bundle, so one nobody
+has migrated yet is still found; when both do, `docs/fdf/` wins, with a
+warning. `docs/features/` counts only when its `INDEX.md` pins
+`fdf_version`, so a documentation site's `docs/features/` is never taken for
+a bundle. A bundle there with no pin, or no `INDEX.md` at all — fdf 0.7
+validated either under 0.2's rules — is upgraded with
+`fdf migrate --root docs/features` once it has an `INDEX.md`, committed: an
+empty one will do, since migrate writes it, and a v0.1 bundle's `index.md`
+counts as one. Don't run `fdf init` there, nor in `docs/fdf/`, where migrate
+moves the bundle: it starts a new one, and refuses a directory that already
+holds Markdown, and `docs/fdf/` beside a `docs/features/INDEX.md` that pins
+nothing.
+
+**What `fdf migrate` 1.0.0 leaves to you:**
+
+- Outside a git repository it rewrites no mention of the bundle's path,
+  inside the bundle or out: with no project root, it cannot tell the path.
+- A monorepo component's own mention of its bundle, such as `docs/features`
+  in `services/api/README.md` for a bundle at `services/api/docs/features`,
+  is not the bundle's path from the project root, so it is neither rewritten
+  nor listed. Nor does migrate reach the superproject of a bundle below a
+  submodule's root.
+- A group with no `INDEX.md`, which the root never listed, gets a listing in
+  `features/INDEX.md` but no index of its own. A `releases/` with no
+  `INDEX.md` gets none, and the root lists it once `fdf release` writes one.
+- A group the root `INDEX.md` lists in an ordered list or a table stays
+  listed there, its link repaired, and `features/INDEX.md` gets a listing
+  of it without its description.
+- Inside the bundle, a mention of a group's path that is no feature ID, such
+  as `venues/INDEX.md` in prose, is left as it is.
+- The clean-tree check and the printed undo put every file outside the
+  bundle that migrate rewrites on one command line, which a very large
+  monorepo can push past the system's argument-length limit; the check then
+  fails before anything is written.
+- A `.gitignore` inside the bundle is read where it is, before the move, so
+  a file git tracks that one of its rules ignores, such as a force-added
+  diagram under a `*.png` rule, drops out of git once it moves.
 
 ## Skills
 
@@ -411,7 +461,7 @@ agent build *this* project's way instead of guessing.
 
 Most of what the software does already exists and has no feature document.
 Map it breadth first — one `adopted` map entry per capability, `fdf adopt
---resource <path> <group>/<slug>` — so every later piece of work can find the
+--resource <path> [<group>/…]<slug>` — so every later piece of work can find the
 capability it touches; then backfill scenarios where work happens and where
 being wrong costs most. `fdf adopt` alone shows what is built, what is
 adopted, and which code no document claims yet.
@@ -427,9 +477,11 @@ puts one name in place of another. Never rename a bundle file by hand.
 ## Spec
 
 FDF is defined by versioned specs under [`spec/`](spec/) — current
-[v0.7](spec/0.7.md), prior [v0.6](spec/0.6.md) / [v0.5](spec/0.5.md) / [v0.4](spec/0.4.md) / [v0.3](spec/0.3.md) /
-[v0.2](spec/0.2.md);
+[v1.0](spec/1.0.md); the 0.x versions, [v0.7](spec/0.7.md) /
+[v0.6](spec/0.6.md) / [v0.5](spec/0.5.md) / [v0.4](spec/0.4.md) /
+[v0.3](spec/0.3.md) / [v0.2](spec/0.2.md), are kept as history: fdf 1.x does
+not validate them, and `fdf migrate` upgrades a bundle from any of them.
 [SPEC.md](SPEC.md) indexes them. Each is normative for the bundles pinning
 its version, and every bundle vendors its pinned version's spec at
-`docs/features/SPEC.md`. `testdata/` fixtures are the executable conformance
+`docs/fdf/SPEC.md`. `testdata/` fixtures are the executable conformance
 contract. MIT licensed.

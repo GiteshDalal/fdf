@@ -5,7 +5,9 @@ import (
 	"io"
 	"strings"
 
+	"github.com/GiteshDalal/fdf/cli/internal/fdfroot"
 	"github.com/GiteshDalal/fdf/cli/internal/logs"
+	"github.com/GiteshDalal/fdf/cli/internal/scaffold"
 )
 
 // runLog writes one entry to the log it belongs in: the <slug>.log.md beside
@@ -15,18 +17,15 @@ import (
 // than a file an agent has to remember how to start.
 func runLog(args []string, stdout io.Writer) int {
 	fs := newFlagSet("log")
-	root, source, rest, exit, ok := resolveRootSource(fs, args, stdout)
+	r, rest, exit, ok := resolveRootSource(fs, args, stdout)
 	if !ok {
 		return exit
 	}
+	root := r.Root
 	var id, entry string
 	switch len(rest) {
 	case 1:
 		entry = rest[0]
-		if logs.IsID(root, entry) {
-			fmt.Fprintf(stdout, "usage: %q names a document — the entry comes after it: fdf log %s \"<entry>\"\n", entry, entry)
-			return 2
-		}
 	case 2:
 		id, entry = rest[0], rest[1]
 	default:
@@ -38,6 +37,19 @@ func runLog(args []string, stdout io.Writer) int {
 		printUsage(stdout, "log")
 		return 2
 	}
-	announce("log", root, source, stdout)
+	announce("log", r, stdout)
+	// The gate comes before the command reads the bundle, and it reads it to
+	// tell a lone document ID, written with no entry after it, from an entry.
+	if err := fdfroot.CheckBundle(root); err != nil {
+		fmt.Fprintln(stdout, "error:", err)
+		return 1
+	}
+	if !scaffold.RequireSupported(root, stdout) {
+		return 1
+	}
+	if id == "" && logs.IsID(root, entry) {
+		fmt.Fprintf(stdout, "usage: %q names a document — the entry comes after it: fdf log %s \"<entry>\"\n", entry, entry)
+		return 2
+	}
 	return logs.Append(root, id, entry, stdout)
 }

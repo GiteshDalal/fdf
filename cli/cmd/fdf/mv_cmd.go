@@ -10,15 +10,16 @@ import (
 )
 
 // runMv moves or renames a document with its whole trail — or a whole group —
-// and repairs every reference to it (v0.7's reference repair). It validates
+// and repairs every reference to it (reference repair). It validates
 // afterwards, so a move that left anything behind says so at once.
 func runMv(args []string, stdout io.Writer) int {
 	fs := newFlagSet("mv")
 	dryRun := fs.Bool("dry-run", false, "print what would move and what would be repaired, and change nothing")
-	root, source, rest, exit, ok := resolveRootSource(fs, args, stdout)
+	r, rest, exit, ok := resolveRootSource(fs, args, stdout)
 	if !ok {
 		return exit
 	}
+	root := r.Root
 	if len(rest) != 2 {
 		printUsage(stdout, "mv")
 		return 2
@@ -27,7 +28,7 @@ func runMv(args []string, stdout io.Writer) int {
 	if pr, standalone := fdfroot.ProjectRoot(root); !standalone {
 		projectRoot = pr
 	}
-	announce("mv", root, source, stdout)
+	announce("mv", r, stdout)
 	if !requireBundle(root, stdout) {
 		return 1
 	}

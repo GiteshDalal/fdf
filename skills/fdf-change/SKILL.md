@@ -58,11 +58,14 @@ Fix body's `# Symptom` and `# Root cause` sections are waiting for.
    fdf-adopt, *Phase 2*. Behavior the code does not have yet needs no
    backfill, and a defect is never backfilled.
 2. **Scaffold**, flags before the slug:
-   - `fdf change --affects <group>/<slug>[,…] [<group>/]<slug>`
-   - `fdf fix --affects <group>/<slug>[,…] [<group>/]<slug>`
+   - `fdf change --affects <feature-id>[,…] [<group>/…]<slug>`
+   - `fdf fix --affects <feature-id>[,…] [<group>/…]<slug>`
+
+   `--affects` takes each feature's full ID, register first:
+   `fdf change --affects features/payments/instant-refunds payments/refund-window`.
 
    When the work repairs a bug on the register, scaffold **from** it:
-   `fdf fix --from bugs/<id> [<group>/]<slug>` (or `fdf change --from …`). It
+   `fdf fix --from bugs/<id> [<group>/…]<slug>` (or `fdf change --from …`). It
    takes over the bug's analysis as this document's permanent record — its
    `# Symptom` and `# Root cause`, its `# Violates` scenarios as regression
    cases — defaults `affects` to the bug's, and writes `resolves: bugs/<id>`.
@@ -81,7 +84,8 @@ Fix body's `# Symptom` and `# Root cause` sections are waiting for.
    against the feature's Gherkin.
 
    For a `Change`, under `# Scenario changes`, one `## <feature-id>` heading
-   per affected feature:
+   per affected feature, with its full ID
+   (`## features/payments/instant-refunds`):
    - `- add: <scenario name>` — must exist in that feature once done.
    - `- modify: <scenario name>` — exists before and after; **name unchanged**,
      steps change.
@@ -151,7 +155,7 @@ Fix body's `# Symptom` and `# Root cause` sections are waiting for.
    effects are not reality.
 10. **Log it** in each affected feature's own log, one entry naming this
     document, so the feature's log tells its whole life:
-    `fdf log <group>/<slug> "**Changed**: [<id>](/changes/<id>.md) <what now differs>."`
+    `fdf log <feature-id> "**Changed**: [<id>](/changes/<id>.md) <what now differs>."`
     (`**Fixed**` for a Fix). Decisions taken while doing the work go in this
     document's own log (`fdf log changes/<id> "**Decision**: …"`). Both are
     feature-scoped, so neither goes in the root `LOG.md`.
@@ -160,8 +164,8 @@ Fix body's `# Symptom` and `# Root cause` sections are waiting for.
     DOMAIN.md)? Did the code diverge from a practice that governs its paths,
     and is that a defect or an approved `# Exceptions` entry? Did it establish
     a mechanism a second feature now repeats, which should become a practice?
-    Did it knowingly leave something undone — `fdf debt [<group>/]<slug>` —
-    or find a defect it is not repairing — `fdf bug [<group>/]<slug>`? When
+    Did it knowingly leave something undone — `fdf debt [<group>/…]<slug>` —
+    or find a defect it is not repairing — `fdf bug [<group>/…]<slug>`? When
     the work spread a gap an open debt already names to new code, amend that
     debt's `# Gap` and `resource` instead of filing a second one.
     *Propose* each edit and wait for explicit approval. Never edit a Context
@@ -250,7 +254,7 @@ deleted — the document records behavior the software once had.
 - Never fork a practice per change: amend the one that exists, or supersede
   it. A practice describes today, and there is only one today.
 - Never hand-write a back-link on the feature. `affects:` is the whole link;
-  `fdf history <group>/<slug>` computes the trail.
+  `fdf history <feature-id>` computes the trail.
 - A `Fix` names only scenarios that already exist. If you need a new one, it
   is a `Change`.
 - `fdf validate` exit 0 after every bundle edit.
