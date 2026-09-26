@@ -612,7 +612,7 @@ func TestMigrateNeverWritesOverAFileItDidNotRead(t *testing.T) {
 	}
 }
 
-// copyFixture copies a conformance fixture's bundle into a temp dir.
+// copyFixture copies a bundle migrate's tests start from into a temp dir.
 func copyFixture(t *testing.T, name string) string {
 	t.Helper()
 	dst := t.TempDir()
@@ -620,10 +620,12 @@ func copyFixture(t *testing.T, name string) string {
 	return dst
 }
 
-// copyFixtureTo copies a conformance fixture's bundle to dst.
+// copyFixtureTo copies the bundle testdata/name, one migrate's tests start
+// from, to dst: a 0.x bundle, which the conformance fixtures no longer hold
+// once fdf validates 1.0 alone, or one at 1.0.
 func copyFixtureTo(t *testing.T, name, dst string) {
 	t.Helper()
-	src := filepath.Join("..", "..", "..", "testdata", name, "bundle")
+	src := filepath.Join("testdata", name)
 	filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {
 		if err == nil && !d.IsDir() {
 			rel, _ := filepath.Rel(src, p)
@@ -1512,7 +1514,7 @@ func gitIn(t *testing.T, dir string, args ...string) string {
 }
 
 // gitProject makes a git repository whose docs/features holds a copy of the
-// conformance fixture name, all committed, and returns the repository's root.
+// bundle testdata/name, all committed, and returns the repository's root.
 func gitProject(t *testing.T, name string) string {
 	t.Helper()
 	return gitProjectAt(t, name, t.TempDir())
@@ -2542,8 +2544,8 @@ func TestMigrateABundleThatIsItsOwnRepositoryHasNoOutside(t *testing.T) {
 }
 
 // gitSuperproject makes a git repository whose docs/features is a submodule
-// holding a copy of the conformance fixture name, all committed, and returns
-// the superproject's root.
+// holding a copy of the bundle testdata/name, all committed, and returns the
+// superproject's root.
 func gitSuperproject(t *testing.T, name string) string {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
