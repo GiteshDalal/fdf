@@ -435,9 +435,9 @@ Working in an FDF project:
 `
 }
 
-// primerV07 is the primer shipped by the v0.7.0 release (feature groups at
-// the bundle root, docs/features by default), kept so an upgrade can
-// recognize an untouched managed section and refresh it in place.
+// primerV07 is the primer the v0.7.0 and v0.7.1 releases shipped (feature
+// groups at the bundle root, docs/features by default), kept so an upgrade
+// can recognize an untouched managed section and refresh it in place.
 func primerV07(root string) string {
 	return primerHeading + `
 

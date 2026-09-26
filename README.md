@@ -300,7 +300,7 @@ rewrite bullets and table rows by hand; a feature from `specified` on has a
 is a bug — `fdf mv debts/<id> bugs/<id>`, then write its `# Expected`.
 
 **Not ready yet?** Keep fdf 0.7.x, and its skills, until you are: a version
-manager pins it per project (`mise use ubi:GiteshDalal/fdf@0.7.0`). fdf 1.x
+manager pins it per project (`mise use ubi:GiteshDalal/fdf@0.7.1`). fdf 1.x
 still prints the 0.x specs, as `fdf spec -v 0.7`.
 
 **Where fdf looks.** With neither `--root` nor `FDF_ROOT_DIR`, fdf uses the
