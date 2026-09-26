@@ -1,7 +1,7 @@
 {
   "name": "fdf",
   "description": "Feature Document Format: init \u2192 brainstorm \u2192 plan \u2192 execute \u2192 change skills, plus adopt (mapping a codebase that predates its bundle, in phases), debug (root-cause triage that routes a defect to a fix, change, feature or adoption, or files a bug), checkpoint (a periodic audit of the context docs, SPEC.md and CLAUDE.md/AGENTS.md against the code and each other) and validate (the post-edit gate), that keep context docs (stack/architecture/surfaces/infra/domain), feature docs, Gherkin scenarios, stem-trail spec/plan/test acceptance, practices, debt and bug registers, post-delivery changes and fixes, and statuses in lockstep with the fdf CLI.",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "author": {
     "name": "Gitesh Dalal"
   },

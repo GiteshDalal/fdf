@@ -80,6 +80,13 @@ holds no `INDEX.md`.
   file whose gitdir holds `commondir` is a **linked worktree** and ends the walk there:
   the worktree is its own checkout, even inside the main repo's directory.
 
+- **`cli/internal/links`** — the one link-repair engine. `Find` returns a Markdown text's
+  link targets (inline links, images and reference definitions; a footnote is not a link,
+  and a target in code is marked as a sample), and `Retarget` recomputes one after a
+  `Move`: a relative link changes whenever its file or its target moves, wherever the
+  target is, inside the bundle or outside it. A link written from the bundle root changes
+  only when its target moves. `fdf mv` uses it.
+
 - **`cli/internal/bundle`** (`validate.go`) — the heart of the tool. `Validate()` is the
   enforcement engine for the spec. Rules are coded **F1–F14** (format conformance) and **R1**
   (repo integrity); every error message ends with its rule code, e.g. `(F4)`. Highlights:
