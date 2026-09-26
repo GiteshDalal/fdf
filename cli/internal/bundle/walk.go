@@ -78,9 +78,14 @@ func (c *collection) walk(rootAbs string) {
 // filed records a register's document by its register.
 func (c *collection) filed(rel string, pos layout.Position, d doc) {
 	// A task whose task directory has no document beside it reads as a
-	// document in a group; say what is missing instead.
+	// document in a group; say what is missing instead. One at a register's
+	// root has no directory to be the task directory of anything.
 	if d.docType == "Task" && (pos.Register == "features" || pos.Register == "changes") && taskFileRe.MatchString(path.Base(rel)) {
-		c.fail("%s: `type: Task`, but %s.md does not exist — a task directory sits beside the feature, Change or Fix it belongs to (F3)", rel, path.Dir(pos.ID))
+		if owner := path.Dir(pos.ID); owner == pos.Register {
+			c.fail("%s: `type: Task` at the root of %s/ — a task sits in the task directory beside the feature, Change or Fix it belongs to (F3)", rel, owner)
+		} else {
+			c.fail("%s: `type: Task`, but %s.md does not exist — a task directory sits beside the feature, Change or Fix it belongs to (F3)", rel, owner)
+		}
 		return
 	}
 	switch pos.Register {

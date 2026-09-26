@@ -223,13 +223,19 @@ func (b *Bundle) Dir(rel string) Position {
 			case !ownsTasks[reg]:
 				return stray(sub+"/", fmt.Sprintf("shares its name with the %s %s.md, and a %s owns no directory — rename one of them", nouns[reg], sub, nouns[reg]))
 			case i < len(parts)-1:
-				return stray(sub+"/"+parts[i+1]+"/", taskDirProblem+", and no directory")
+				return stray(sub+"/"+parts[i+1]+"/", taskDirProblem+", and no directory"+ownedBy(sub))
 			}
 			return Position{Kind: TaskDir, Register: reg, ID: sub}
 		}
 		dir = sub
 	}
 	return Position{Kind: Group, Register: reg, ID: dir}
+}
+
+// ownedBy names the document whose task directory is at id: a directory
+// meant for a group, beside a document of its name, is that document's.
+func ownedBy(id string) string {
+	return fmt.Sprintf(" — %s/ is the task directory of %s.md", id, id)
 }
 
 // File returns the position of the Markdown file at rel, a slash-separated
@@ -247,7 +253,7 @@ func (b *Bundle) File(rel string) Position {
 		if taskRe.MatchString(name) {
 			return Position{Kind: Task, Register: d.Register, ID: d.ID}
 		}
-		return stray(rel, taskDirProblem)
+		return stray(rel, taskDirProblem+ownedBy(d.ID))
 	}
 	switch {
 	case name == "INDEX.md":

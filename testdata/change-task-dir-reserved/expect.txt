@@ -1,2 +1,2 @@
 exit: 1
-contains: changes/venues/hours-fix/INDEX.md: task directories may contain only NN-slug.md tasks (F3)
+contains: changes/venues/hours-fix/INDEX.md: task directories may contain only NN-slug.md tasks — changes/venues/hours-fix/ is the task directory of changes/venues/hours-fix.md (F3)

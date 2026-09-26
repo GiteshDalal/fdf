@@ -626,12 +626,14 @@ func findCycle(deps map[string][]string) string {
 	return ""
 }
 
-// sectionTargets returns the targets of the links the links engine finds in
-// each `# <heading>` section of a body, outside code. A title after a
-// target, a destination in angle brackets and a reference definition read
-// as they do everywhere else. It reads the body as written, so a heading
-// line that starts in code, such as one a fenced sample quotes, neither
-// opens a section nor closes one.
+// sectionTargets returns the targets of the links in each `# <heading>`
+// section of a body that a reader follows (links.Rendered), outside code: a
+// reference counts where it is, whatever section its definition sits in,
+// and a definition, which renders nothing, lists nothing. A title after a
+// target and a destination in angle brackets read as they do everywhere
+// else. It reads the body as written, so a heading line that starts in
+// code, such as one a fenced sample quotes, neither opens a section nor
+// closes one.
 func sectionTargets(body, heading string) []string {
 	code := links.Code(body)
 	inCode := func(at int) bool {
@@ -656,9 +658,9 @@ func sectionTargets(body, heading string) []string {
 		pos += len(line)
 	}
 	var out []string
-	for _, l := range links.Find(body) {
+	for _, l := range links.Rendered(body) {
 		for _, s := range sections {
-			if !l.InCode && l.Start >= s[0] && (s[1] < 0 || l.Start < s[1]) {
+			if l.Start >= s[0] && (s[1] < 0 || l.Start < s[1]) {
 				out = append(out, l.Target)
 			}
 		}

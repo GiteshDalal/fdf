@@ -117,7 +117,10 @@ bundle is sent to that bundle.
   counting the brackets still open), `Code` returns the byte ranges `Find` reads as code
   (`[]Span`: a fence indented four columns opens none, a heading is a block of its own,
   and an indented line after a heading or a closing fence is code), `Blocks` just the
-  code blocks, `Resolve` reads one target as a path, and `Retarget` recomputes one after
+  code blocks, `Rendered` the links a reader follows (an inline link at its target, a
+  reference where it is used, with its definition's target, and no definition, which
+  renders nothing: the validator reads a section's links so, `sectionTargets`),
+  `Resolve` reads one target as a path, and `Retarget` recomputes one after
   a `Move`: a relative link changes whenever its file or its target moves, wherever the
   target is, inside the bundle or outside it, and keeps a `./` it was written with. A
   link written from the bundle root changes only when its target moves, or the bundle
