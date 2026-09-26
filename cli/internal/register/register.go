@@ -97,7 +97,7 @@ timestamp: %s
 
 # Symptom
 
-TODO — what the software does wrong, with the evidence: the reproduction and its failing output, or — for a defect found by reading — the code path and the input that reaches it. Say which.
+TODO — what the software does wrong, with the evidence: the commands you ran, verbatim, their failing output, and `+"`Reproduced.`"+` A defect nobody reported, spotted while reading the code, gives the code path, the input that reaches it, and `+"`Found by reading.`"+`
 
 # Expected
 
@@ -113,7 +113,7 @@ TODO — what should happen instead. When a scenario already promises it, cite i
 
 # Root cause
 
-TODO — optional until it is known: the one-sentence diagnosis, with its file:line.
+TODO — the one-sentence diagnosis, with its file:line: a line of the code or of its build, CI or dependency configuration, never a bundle document. Not diagnosed yet? Write `+"`Not found yet:`"+` and what you ruled out.
 
 # Cost
 
@@ -581,7 +581,7 @@ func (k Kind) New(root, name string, affects, resources []string, out io.Writer)
 		return code
 	}
 	fmt.Fprintf(out, "wrote %s.md (type: %s, status: open)\n", id, k.Type)
-	if code := scaffold.ListEntry(root, k.Dir, strings.TrimPrefix(id, k.Dir+"/"), title, k.noun, out); code != 0 {
+	if code := scaffold.ListEntry(root, k.Dir, strings.TrimPrefix(id, k.Dir+"/"), title, "TODO", out); code != 0 {
 		return code
 	}
 	fmt.Fprintln(out, k.next(id, affects, resources))

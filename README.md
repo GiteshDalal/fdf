@@ -205,8 +205,8 @@ fdf bug --affects features/payments/instant-refunds refund-split-capture  # file
 fdf mv features/payments/store-hours features/venues/opening-hours  # move/rename with its trail; every reference repaired
 fdf lexicon                  # every banned domain word, with file:line:col
 fdf lexicon --term Venue --fix --dry-run  # …sweep one term, reviewing the diff first
-fdf log features/payments/instant-refunds "**Specified**: design approved."  # into the feature's own log, created on first use
-fdf log "**Checkpoint**: Context documents current."  # the root LOG.md: bundle-wide events only
+fdf log features/payments/instant-refunds '**Specified**: design approved.'  # into the feature's own log, created on first use
+fdf log '**Checkpoint**: Context documents current.'  # the root LOG.md: bundle-wide events only
 fdf spec                     # print the format spec (-v 0.7 for an older one)
 fdf help                     # every command with examples (fdf <command> --help for one)
 fdf serve                    # browse the bundle (bun x mdts)

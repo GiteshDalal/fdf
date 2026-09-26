@@ -27,8 +27,8 @@ func TestListEntryListsEveryNewGroupOnTheWay(t *testing.T) {
 		t.Fatalf("ListEntry: exit %d\n%s", code, out.String())
 	}
 	for rel, want := range map[string]string{
-		"features/INDEX.md":                   "* [Platform](/features/platform/INDEX.md) - features in platform.\n",
-		"features/platform/INDEX.md":          "# Platform\n\n* [Payments](/features/platform/payments/INDEX.md) - features in payments.\n",
+		"features/INDEX.md":                   "* [Platform](/features/platform/INDEX.md) - TODO.\n",
+		"features/platform/INDEX.md":          "# Platform\n\n* [Payments](/features/platform/payments/INDEX.md) - TODO.\n",
 		"features/platform/payments/INDEX.md": "# Payments\n\n* [Instant refunds](/features/platform/payments/instant-refunds.md) - feature.\n",
 	} {
 		raw, _ := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))

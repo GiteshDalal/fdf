@@ -177,11 +177,11 @@ func TestNewChangeGroupIsTitledAndListed(t *testing.T) {
 		t.Fatalf("exit %d\n%s", code, out.String())
 	}
 	group, _ := os.ReadFile(filepath.Join(root, "changes", "payments", "INDEX.md"))
-	if want := "# Payments\n\n* [Refund window](/changes/payments/refund-window.md) - change.\n* [Refund rounding](/changes/payments/refund-rounding.md) - fix.\n"; string(group) != want {
+	if want := "# Payments\n\n* [Refund window](/changes/payments/refund-window.md) - TODO.\n* [Refund rounding](/changes/payments/refund-rounding.md) - TODO.\n"; string(group) != want {
 		t.Errorf("changes/payments/INDEX.md:\n%s\nwant:\n%s", group, want)
 	}
 	top, _ := os.ReadFile(filepath.Join(root, "changes", "INDEX.md"))
-	if n := strings.Count(string(top), "* [Payments](/changes/payments/INDEX.md) - changes and fixes in payments.\n"); n != 1 {
+	if n := strings.Count(string(top), "* [Payments](/changes/payments/INDEX.md) - TODO.\n"); n != 1 {
 		t.Errorf("changes/INDEX.md should list the group once, got %d:\n%s", n, top)
 	}
 	for _, want := range []string{
@@ -434,9 +434,9 @@ func TestNewFilesInNestedGroupsAndFromANestedBug(t *testing.T) {
 		t.Fatalf("the Fix is filed in its groups and resolves the nested bug: %v\n%s", err, raw)
 	}
 	for rel, want := range map[string]string{
-		"changes/INDEX.md":                   "* [Platform](/changes/platform/INDEX.md) - changes and fixes in platform.\n",
-		"changes/platform/INDEX.md":          "# Platform\n\n* [Payments](/changes/platform/payments/INDEX.md) - changes and fixes in payments.\n",
-		"changes/platform/payments/INDEX.md": "# Payments\n\n* [Split capture fix](/changes/platform/payments/split-capture-fix.md) - fix.\n",
+		"changes/INDEX.md":                   "* [Platform](/changes/platform/INDEX.md) - TODO.\n",
+		"changes/platform/INDEX.md":          "# Platform\n\n* [Payments](/changes/platform/payments/INDEX.md) - TODO.\n",
+		"changes/platform/payments/INDEX.md": "# Payments\n\n* [Split capture fix](/changes/platform/payments/split-capture-fix.md) - TODO.\n",
 	} {
 		if got, _ := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel))); !strings.Contains(string(got), want) {
 			t.Errorf("%s should hold %q:\n%s", rel, want, got)

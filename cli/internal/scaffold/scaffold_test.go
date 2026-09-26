@@ -166,9 +166,9 @@ func TestNewListsEveryNewGroupInItsParent(t *testing.T) {
 	for rel, want := range map[string]string{
 		"features/INDEX.md": "* [Format reference](/SPEC.md) - how features are structured.\n" +
 			"* [Onboarding](/features/onboarding.md) - TODO.\n" +
-			"* [Payments](/features/payments/INDEX.md) - features in payments.\n" +
-			"* [Platform](/features/platform/INDEX.md) - features in platform.\n",
-		"features/platform/INDEX.md":         "# Platform\n\n* [Payouts](/features/platform/payouts/INDEX.md) - features in payouts.\n",
+			"* [Payments](/features/payments/INDEX.md) - TODO.\n" +
+			"* [Platform](/features/platform/INDEX.md) - TODO.\n",
+		"features/platform/INDEX.md":         "# Platform\n\n* [Payouts](/features/platform/payouts/INDEX.md) - TODO.\n",
 		"features/platform/payouts/INDEX.md": "# Payouts\n\n* [Weekly payouts](/features/platform/payouts/weekly-payouts.md) - TODO.\n* [Card payouts](/features/platform/payouts/card-payouts.md) - TODO.\n",
 	} {
 		if raw, _ := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel))); !strings.Contains(string(raw), want) {
@@ -244,15 +244,15 @@ func TestPracticeIsListed(t *testing.T) {
 	}
 	top, _ := os.ReadFile(filepath.Join(root, "practices", "INDEX.md"))
 	for _, want := range []string{
-		"* [Permission checks](/practices/permission-checks.md) - practice.\n",
-		"* [Payments](/practices/payments/INDEX.md) - practices in payments.\n",
+		"* [Permission checks](/practices/permission-checks.md) - TODO.\n",
+		"* [Payments](/practices/payments/INDEX.md) - TODO.\n",
 	} {
 		if !strings.Contains(string(top), want) {
 			t.Errorf("practices/INDEX.md should contain %q:\n%s", want, top)
 		}
 	}
 	group, _ := os.ReadFile(filepath.Join(root, "practices", "payments", "INDEX.md"))
-	if want := "# Payments\n\n* [Capture](/practices/payments/capture.md) - practice.\n"; string(group) != want {
+	if want := "# Payments\n\n* [Capture](/practices/payments/capture.md) - TODO.\n"; string(group) != want {
 		t.Errorf("practices/payments/INDEX.md:\n%s\nwant:\n%s", group, want)
 	}
 	// Each listing is reported the way `fdf new` reports its own.

@@ -48,7 +48,7 @@ func runLog(args []string, stdout io.Writer) int {
 		return 1
 	}
 	if id == "" && logs.IsID(root, entry) {
-		fmt.Fprintf(stdout, "usage: %q names a document — the entry comes after it: fdf log %s \"<entry>\"\n", entry, entry)
+		fmt.Fprintf(stdout, "usage: %q names a document — the entry comes after it: fdf log %s '<entry>'\n", entry, entry)
 		return 2
 	}
 	return logs.Append(root, id, entry, stdout)

@@ -83,7 +83,7 @@ TYPICAL FLOW
       #   -> specified; slug.plan.md + slug.test.md, one
       #   ` + "`## <scenario name>`" + ` case per scenario -> planned;
       #   tasks under slug/ -> implementing -> done
-      fdf log features/payments/instant-refunds "**Specified**: approved."
+      fdf log features/payments/instant-refunds '**Specified**: approved.'
       fdf validate                         # the gate after every bundle edit
 
   Code that predates the bundle:
@@ -436,8 +436,8 @@ var helpTopics = []helpTopic{
 	{
 		name:    "log",
 		group:   "Check and maintain",
-		summary: "Add an entry to the log it belongs in: fdf log [<id>] \"<entry>\"",
-		usage:   "fdf log [--root <dir>] [<id>] \"<entry>\"",
+		summary: "Add an entry to the log it belongs in: fdf log [<id>] '<entry>'",
+		usage:   "fdf log [--root <dir>] [<id>] '<entry>'",
 		body: "Add one entry to the log it belongs in, under today's `## YYYY-MM-DD`\n" +
 			"heading, newest first; the date is UTC, as every date fdf writes is. An\n" +
 			"entry goes in the log of the one document it is about: a feature, Change,\n" +
@@ -448,13 +448,15 @@ var helpTopics = []helpTopic{
 			"LOG.md, which is for the bundle as a whole. A log is the one sibling a\n" +
 			"draft feature may have. Start an entry with a bold label naming the event\n" +
 			"(**Specified**, **Decision**, **Done**), then say what happened and, for a\n" +
-			"decision, why. fdf adds the list bullet itself; an entry that starts with\n" +
-			"\"-\" goes after --, so it is not read as a flag: fdf log -- \"- …\".",
+			"decision, why. Quote the entry in single quotes: inside double quotes the\n" +
+			"shell runs anything between backticks, and the entry loses it. fdf adds\n" +
+			"the list bullet itself; an entry that starts with \"-\" goes after --, so\n" +
+			"it is not read as a flag: fdf log -- '- …'.",
 		flags: []flagDoc{rootFlagDoc},
 		examples: []string{
-			"fdf log features/payments/instant-refunds \"**Specified**: design approved.\"",
-			"fdf log changes/refund-window \"**Decision**: refunds in flight keep the old window.\"",
-			"fdf log \"**Checkpoint**: Context documents re-read against the code.\"",
+			"fdf log features/payments/instant-refunds '**Specified**: design approved.'",
+			"fdf log changes/refund-window '**Decision**: refunds in flight keep the old window.'",
+			"fdf log '**Checkpoint**: Context documents re-read against the code.'",
 		},
 	},
 	{

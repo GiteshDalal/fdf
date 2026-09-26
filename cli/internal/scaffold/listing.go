@@ -56,16 +56,23 @@ var groupNouns = map[string]string{"features": "features", "changes": "changes a
 
 // GroupTitle is how a new group's own INDEX.md is headed: by its name.
 func GroupTitle(dir, group string) string {
-	title, _ := groupListing(dir, group)
+	title, _ := groupListing(dir, group, "")
 	return title
 }
 
 // groupListing is a group's title and the line its parent's INDEX.md lists
-// it with. dir is the parent: a register, or a group in one, at any depth.
-func groupListing(dir, group string) (title, line string) {
-	reg, _, _ := strings.Cut(dir, "/")
+// it with, saying what. dir is the parent: a register, or a group in one, at
+// any depth.
+func groupListing(dir, group, what string) (title, line string) {
 	title = strings.ToUpper(group[:1]) + strings.ReplaceAll(group[1:], "-", " ")
-	return title, fmt.Sprintf("* [%s](/%s/%s/INDEX.md) - %s in %s.", title, dir, group, groupNouns[reg], group)
+	return title, fmt.Sprintf("* [%s](/%s/%s/INDEX.md) - %s.", title, dir, group, what)
+}
+
+// groupContents says what a group holds, as a listing written for a person to
+// read: "features in payments".
+func groupContents(dir, group string) string {
+	reg, _, _ := strings.Cut(dir, "/")
+	return groupNouns[reg] + " in " + group
 }
 
 // registerListings are the lines the root INDEX.md lists each register with,
@@ -139,8 +146,10 @@ func WithRegisterListing(text, reg string) (string, bool) {
 }
 
 // ListGroup lists a group in its parent's INDEX.md, dir, unless it is listed
-// there already, and says so the way ListEntry does. A parent with no index
-// is left without one.
+// there already, and says so the way ListEntry does. A command that makes the
+// group lists it as it lists a new document, with `TODO.` for a person to
+// replace with what the group holds, which validate warns about until then. A
+// parent with no index is left without one.
 func ListGroup(root, dir, group string, out io.Writer) int {
 	idxRel := dir + "/INDEX.md"
 	p := filepath.Join(root, filepath.FromSlash(idxRel))
@@ -148,7 +157,7 @@ func ListGroup(root, dir, group string, out io.Writer) int {
 	if err != nil {
 		return 0
 	}
-	text, added := WithGroupListing(string(raw), dir, group)
+	text, added := withGroupListing(string(raw), dir, group, "TODO")
 	if !added {
 		return 0
 	}
@@ -156,7 +165,7 @@ func ListGroup(root, dir, group string, out io.Writer) int {
 		fmt.Fprintln(out, "error:", err)
 		return 1
 	}
-	title, _ := groupListing(dir, group)
+	title, _ := groupListing(dir, group, "")
 	fmt.Fprintf(out, "updated %s (now lists %q)\n", idxRel, title)
 	return 0
 }
@@ -167,8 +176,13 @@ func ListGroup(root, dir, group string, out io.Writer) int {
 // The line goes after the last group the index lists, so the groups stay
 // together; failing that, at the end.
 func WithGroupListing(text, dir, group string) (string, bool) {
+	return withGroupListing(text, dir, group, groupContents(dir, group))
+}
+
+// withGroupListing is WithGroupListing with the listing saying what.
+func withGroupListing(text, dir, group, what string) (string, bool) {
 	groupRel := dir + "/" + group
-	_, line := groupListing(dir, group)
+	_, line := groupListing(dir, group, what)
 	lines := strings.Split(text, "\n")
 	after := -1 // the line the listing goes after
 	for i, l := range lines {

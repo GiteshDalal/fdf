@@ -149,7 +149,7 @@ func NewFrom(root, name, docType string, affects []string, fromBug string, out i
 	if code := scaffold.EnsureIndex(root, "changes", out); code != 0 {
 		return code
 	}
-	if code := scaffold.ListEntry(root, "changes", strings.TrimPrefix(id, "changes/"), title, strings.ToLower(docType), out); code != 0 {
+	if code := scaffold.ListEntry(root, "changes", strings.TrimPrefix(id, "changes/"), title, "TODO", out); code != 0 {
 		return code
 	}
 	fmt.Fprintf(out, "\ndone: %s %s affects %s\n", docType, id, strings.Join(affects, ", "))
@@ -158,9 +158,9 @@ func NewFrom(root, name, docType string, affects []string, fromBug string, out i
 		fmt.Fprintf(out, "  `# Resolution` naming %s (F10 holds the bug to it).\n", id)
 	}
 	if docType == "Change" {
-		fmt.Fprintln(out, "next: fill `# Scenario changes`, then write "+id+".spec.md and get the design approved (status: specified).")
+		fmt.Fprintln(out, "next: first make sure you have asked the user about each word the request leaves open (a time, a boundary, an amount, a message) and read the feature's spec for decisions this reverses (fdf-change step 2); write its description (and its INDEX.md listing), fill `# Problem` and `# Scenario changes`, and present the design to the user; only once they approve it, write "+id+".spec.md and set the Change to status: specified.")
 	} else {
-		fmt.Fprintln(out, "next: fill `# Regression cases` with scenarios that already exist, and add the case to each affected feature's .test.md.")
+		fmt.Fprintln(out, "next: write its description (and its INDEX.md listing), fill `# Symptom`, `# Root cause` and `# Regression cases` (scenarios that already exist), and make each one's case in the affected feature's .test.md run the regression check.")
 	}
 	return 0
 }
