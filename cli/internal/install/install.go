@@ -319,6 +319,169 @@ status (draft → specified → planned → implementing → done → retired, o
 adopted → retired for a capability documented from code that predates the
 bundle) that must always reflect reality; the ` + "`fdf validate`" + ` CLI gates
 consistency and must exit 0 after any bundle edit. The full format rules ship inside the bundle at
+` + "`" + root + "/SPEC.md`" + `. It is long: read the section you need — exact
+frontmatter fields, casing, a rule's semantics — which
+` + "`grep -n '^#' " + root + "/SPEC.md`" + ` lists (a rule such as F10 starts a line
+` + "`**F10.`" + `). ` + "`fdf help`" + ` documents every command with examples. fdf 1.x
+works on spec 1.x bundles. Upgrading one from before 1.0, with
+` + "`fdf migrate`" + ` and then ` + "`fdf install`" + `, is the user's decision: it
+moves the bundle's documents and rewrites references to them across the
+project.
+
+Five bundle-root **Context documents** — ` + "`" + root + "/STACK.md`" + `,
+` + "`ARCHITECTURE.md`" + `, ` + "`SURFACES.md`" + `, ` + "`INFRA.md`" + `,
+` + "`DOMAIN.md`" + ` — are the project's current stack, architecture, surface
+(interface) principles for all surfaces, build/deployment infrastructure, and
+**domain language**. They are **critical**: filled once by the fdf-init
+interview, then changed only with explicit human approval and a logged reason.
+Accurate context here is what makes this agentic engineering rather than vibe
+coding — read them before designing, and keep them true. Their upkeep is the
+human's responsibility.
+
+` + "`DOMAIN.md`" + ` is the project's vocabulary: one canonical name per concept
+and the words banned in its place. It governs the project's **internal**
+language — the bundle's documents and the identifiers in the code — where
+calling one thing ` + "`Item`" + ` here and ` + "`Product`" + ` there is the drift
+it exists to stop. It does not govern what a person reads on a surface: UI
+labels, locale and translation files, help text and other user-facing copy
+may say "store" for a Venue on purpose. That is a surface decision, not
+drift — never rewrite such copy to match the lexicon. F12 reports a banned
+word in every document except ` + "`slug.test.md`" + ` and ` + "`slug.surface.md`" + `
+(which quote what a surface shows), and in document names; ` + "`fdf lexicon`" + `
+lists each one, and ` + "`fdf lexicon --term <Term> --fix`" + ` sweeps a term once
+its other senses are triaged into ` + "`except:`" + `.
+
+**Practice documents** under ` + "`" + root + "/practices/`" + ` (` + "`type: Practice`" + `)
+are the project's binding answers to *how do we do X* for recurring
+mechanisms — authorization, permission checks, payment capture, database
+access. Before writing code in a path a practice's ` + "`applies-to`" + ` covers,
+read it and follow its ` + "`# Rules`" + `; a deliberate divergence is an approved
+` + "`# Exceptions`" + ` entry, never silence. Practices are living and binding:
+propose, get explicit approval, then write.
+
+**Debt documents** under ` + "`" + root + "/debts/`" + ` (` + "`type: Debt`" + `) record
+known gaps between what the project says and what the code does — work left
+undone, and rules the code does not follow everywhere yet. ` + "`fdf debt`" + `
+reads the register and ` + "`fdf debt --open`" + ` shows what is outstanding;
+check it before diagnosing something, because a filed gap is not a discovery.
+When work knowingly leaves something behind, propose filing it rather than
+rounding it off, and file it once the user approves:
+` + "`fdf debt [<group>/…]<slug>`" + `.
+
+**Bug documents** under ` + "`" + root + "/bugs/`" + ` (` + "`type: Bug`" + `) record
+known defects — the software doing something observably wrong — that have
+not been repaired yet. ` + "`fdf bug --open`" + ` shows them; check both registers
+before diagnosing something. A bug is never repaired in place: its repair is a
+` + "`Fix`" + ` or ` + "`Change`" + ` that names it in ` + "`resolves`" + ` —
+` + "`fdf fix --from bugs/<id>`" + ` when it cites a scenario under ` + "`# Violates`" + `,
+` + "`fdf change --from bugs/<id>`" + ` when it cites none — or, while its feature
+is still being built, one of that feature's tasks.
+
+**Documents are living or episodic**, and that decides what happens when the
+software changes. Living documents describe the system today (the feature's
+Gherkin, ` + "`slug.test.md`" + `, ` + "`slug.surface.md`" + `, practices, debts, bugs,
+the Context docs) and are amended in place. Episodic documents record one piece
+of work (` + "`slug.spec.md`" + `, ` + "`slug.plan.md`" + `, tasks, changes, logs): written while
+that work is in flight, and frozen once it is done — new work gets a new
+episode. A log entry is never rewritten. Three **maintenance edits**
+reach every document, frozen ones included, because each only puts one name in
+place of another: a lexicon fix (a banned word replaced by its term), a
+reference repair after a move (` + "`fdf mv`" + ` does it whole), and a path repair
+made with the code move (each path edited by hand, then ` + "`fdf validate`" + `;
+fdf-checkpoint repairs none). Each is logged; none needs a change document.
+
+Working in an FDF project:
+
+- First run: after ` + "`fdf init`" + `, use the fdf-init skill to fill the five
+  Context docs. Feature work is blocked (rule F9) while they're unfilled. On a
+  codebase that predates the bundle, the fdf-adopt skill then maps what it
+  already does (` + "`fdf adopt`" + `).
+- Before writing code or any bundle document, or saying how you would handle
+  a request, read the fdf-help skill in full — this list is only its index —
+  and route the work by feature status: work that alters or extends a
+  command, route, screen or job no feature documents → fdf-adopt, then
+  fdf-change, even when the behavior asked for is new; a new capability —
+  even beside code a feature documents — or ` + "`draft`" + ` → fdf-brainstorm; ` + "`specified`" + ` → fdf-plan; ` + "`planned`" + ` or ` + "`implementing`" + ` → fdf-execute; ` + "`done`" + ` or ` + "`adopted`" + ` →
+  fdf-change (only adding scenarios for what an ` + "`adopted`" + ` feature already
+  does → fdf-adopt); a ` + "`retired`" + ` capability coming back → fdf-brainstorm.
+  Skills are not commands: there is no ` + "`fdf plan`" + ` or ` + "`fdf debug`" + `, and the
+  spec, plan, test, surface and task documents are written by hand.
+- When something is broken, fdf-help sends it to the fdf-debug skill:
+  reproduce it and find the root cause before any fix, and it routes the
+  repair — a ` + "`Fix`" + ` when a scenario already says what should happen, a
+  ` + "`Change`" + ` when the document itself has to change, a new feature when the behavior is genuinely new — or a bug
+  on the register when it is not repaired now.
+- Scaffold with ` + "`fdf new`" + `, ` + "`fdf adopt`" + `, ` + "`fdf practice`" + `,
+  ` + "`fdf debt`" + ` and ` + "`fdf bug`" + `, each taking ` + "`[<group>/…]<slug>`" + ` inside
+  its register; rename or move a document or a group with ` + "`fdf mv`" + `, never
+  by hand; validate with ` + "`fdf validate`" + `.
+- When ` + "`fdf validate`" + ` prints ` + "`FAIL`" + ` or ` + "`warn:`" + `, use the fdf-validate
+  skill before editing: fix each warning whose repair you know, ask the user
+  about the rest, and never delete a field, a scenario or a test case, or add
+  a time zone to a timestamp, just to clear a line — only where fdf-validate
+  names that as the repair.
+- Record what happened with ` + "`fdf log <id> '<entry>'`" + ` — single quotes,
+  because inside double quotes the shell runs anything between backticks. An
+  entry goes in the log of the document it is about (a feature's ` + "`slug.log.md`" + `,
+  created on first use), and only what concerns the whole bundle goes in the
+  root ` + "`LOG.md`" + `. A feature with an interface — a screen, an endpoint, a
+  command, an event — describes it in ` + "`slug.surface.md`" + `, kept current
+  like its Gherkin; one without says ` + "`surface: none`" + ` in its frontmatter.
+  Each test case is a ` + "`## <scenario name>`" + ` heading, matched exactly.
+- When you write a document or change its content or status, set its ` + "`timestamp`" + ` to
+  the output of ` + "`date -u +%Y-%m-%dT%H:%M:%SZ`" + `, run at that moment — never a
+  time you estimate, round or reuse, and never a local time with ` + "`Z`" + `
+  added; every date and time fdf writes is UTC too. A maintenance edit (a
+  lexicon fix, a reference or path repair) changes no substance and
+  leaves ` + "`timestamp`" + ` as it is; so does restoring a document from git, and a
+  malformed ` + "`timestamp`" + ` already committed is repaired as the fdf-validate
+  skill's F1 says — never set to now.
+- Once a feature is **done** or **adopted**, never edit its behavior in place and never fork
+  a second feature document for the same capability. Post-delivery work is a
+  document under ` + "`" + root + "/changes/`" + `: ` + "`fdf change`" + ` when the
+  feature must behave differently — its Gherkin, or an interface detail in its
+  ` + "`slug.surface.md`" + ` such as a message's wording — and ` + "`fdf fix`" + ` when the code
+  merely drifted from what the document already says. Both are written
+  through the fdf-change skill. Rule F10 will not let one reach
+  ` + "`done`" + ` until the features it claims to alter actually say so.
+- Code that changes behavior without touching the bundle makes the bundle
+  lie — record the feature first, then implement.
+- After a feature or a change, review the project-level documents: propose any
+  needed Context-doc update, and ask whether the work established a mechanism a
+  second feature has now repeated (a new practice), diverged from an existing
+  one (an ` + "`# Exceptions`" + ` entry), or knowingly left something undone (a
+  debt) or broken (a bug). Apply only on approval, logging the change.
+- Run the fdf-checkpoint skill regularly — before a release, and after
+  dependency, tooling or infrastructure work no feature recorded — to keep the
+  Context docs, ` + "`SPEC.md`" + ` and this file current, free of repetition, and
+  consistent with the code and each other. Never hand-edit this section:
+  ` + "`fdf install`" + ` owns it, and stops refreshing it once it is edited.
+`
+}
+
+// primerV10 is the primer shipped by the v1.0.0 release, kept so an upgrade
+// can recognize an untouched managed section and refresh it in place.
+func primerV10(root string) string {
+	return primerHeading + `
+
+Projects on this machine may document software features with FDF (Feature
+Document Format): the directory ` + "`" + root + "/`" + ` in a project is an FDF
+**bundle**. Its root holds the Context documents below, ` + "`INDEX.md`" + `,
+` + "`LOG.md`" + `, ` + "`SPEC.md`" + `, an optional ` + "`README.md`" + ` and six
+registers — ` + "`features/`" + `,
+` + "`changes/`" + `, ` + "`practices/`" + `, ` + "`debts/`" + `, ` + "`bugs/`" + ` and
+` + "`releases/`" + ` — and nothing else. Every feature is a Markdown + Gherkin
+document under ` + "`features/`" + `, filed flat or in groups nested to any depth,
+and its design spec, implementation plan, acceptance tests, and decision log
+live as stem-qualified trail siblings (` + "`slug.spec.md`" + `, ` + "`slug.plan.md`" + `,
+` + "`slug.test.md`" + `, optional ` + "`slug.surface.md`" + `/` + "`slug.log.md`" + `);
+tasks live only under a ` + "`slug/`" + ` directory. A document's ID is its path
+from the bundle root without ` + "`.md`" + `, register first:
+` + "`features/payments/instant-refunds`" + `. Feature frontmatter carries a
+status (draft → specified → planned → implementing → done → retired, or
+adopted → retired for a capability documented from code that predates the
+bundle) that must always reflect reality; the ` + "`fdf validate`" + ` CLI gates
+consistency and must exit 0 after any bundle edit. The full format rules ship inside the bundle at
 ` + "`" + root + "/SPEC.md`" + ` and are also printed by ` + "`fdf spec`" + ` — read
 either when you need exact frontmatter fields, casing, or validation
 semantics. ` + "`fdf help`" + ` documents every command with examples. fdf 1.x
@@ -1104,7 +1267,7 @@ Working in an FDF project:
 // Every release that changes primer() must append the superseded text here —
 // otherwise re-running `fdf install` upgrades the skills but leaves the
 // instruction file teaching the old format.
-var legacyPrimers = []func(root string) string{primerV03, primerV04, primerV05, primerV051, primerV06, primerV061, primerV062, primerV063, primerV07}
+var legacyPrimers = []func(root string) string{primerV03, primerV04, primerV05, primerV051, primerV06, primerV061, primerV062, primerV063, primerV07, primerV10}
 
 // primerV03 is the primer shipped by the v0.3-era CLI (paired-directory
 // layout, three Context docs). Kept verbatim for upgrade detection.
