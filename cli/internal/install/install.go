@@ -361,7 +361,7 @@ undone, and rules the code does not follow everywhere yet. ` + "`fdf debt`" + `
 reads the register and ` + "`fdf debt --open`" + ` shows what is outstanding;
 check it before diagnosing something, because a filed gap is not a discovery.
 When work knowingly leaves something behind, file it rather than rounding it
-off: ` + "`fdf debt [<group>/]<slug>`" + `.
+off: ` + "`fdf debt [<group>/…]<slug>`" + `.
 
 **Bug documents** under ` + "`" + root + "/bugs/`" + ` (` + "`type: Bug`" + `) record
 known defects — the software doing something observably wrong — that have

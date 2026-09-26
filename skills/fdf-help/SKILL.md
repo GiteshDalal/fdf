@@ -1,6 +1,6 @@
 ---
 name: fdf-help
-description: Use when starting any conversation in a project with an FDF bundle (docs/fdf/ or FDF_ROOT_DIR) — establishes how to route work to the fdf skills by feature status BEFORE writing any code, including "quick", "tiny", and "just do it" changes.
+description: Use when starting any conversation in a project with an FDF bundle (docs/fdf/, a docs/features/ from before 1.0, or FDF_ROOT_DIR) — establishes how to route work to the fdf skills by feature status BEFORE writing any code, including "quick", "tiny", and "just do it" changes.
 ---
 
 # Using FDF
@@ -8,22 +8,37 @@ description: Use when starting any conversation in a project with an FDF bundle 
 ## What is FDF
 
 FDF (Feature Document Format) documents software features as a directory of
-markdown files — the **bundle**, at `docs/fdf/` in this project. Each
-feature is one Markdown + Gherkin file with a lifecycle `status` in its YAML
-frontmatter. Its implementation trail lives as **stem-qualified siblings**
-beside it at the group level:
+markdown files — the **bundle**, at `docs/fdf/` in this project. Its root is
+closed: the five Context documents below, `INDEX.md` (which pins the spec
+version), `LOG.md`, `SPEC.md`, an optional `README.md`, and six
+**registers** — `features/`, `changes/`, `practices/`, `debts/`, `bugs/` and
+`releases/` — and nothing else. Free-form documentation (guides, ADRs,
+notes) belongs outside the bundle, in the rest of `docs/`. Every register but
+`releases/` files its documents flat or in groups, and groups nest to any
+depth. A document's **ID** is its path from the bundle root without `.md`,
+register first: `features/payments/instant-refunds`, `changes/refund-window`,
+`bugs/refund-split-capture`.
+
+Each feature is one Markdown + Gherkin file under `features/` with a
+lifecycle `status` in its YAML frontmatter. Its implementation trail lives as
+**stem-qualified siblings** beside it:
 
 | Role | Path | Required from |
 |---|---|---|
-| Spec | `<group>/<slug>.spec.md` | `specified` |
-| Plan | `<group>/<slug>.plan.md` | `planned` |
-| Test | `<group>/<slug>.test.md` | `planned` |
-| Surface | `<group>/<slug>.surface.md` | when the feature has an interface: screens, endpoints, commands, events |
-| Log | `<group>/<slug>.log.md` | its first entry (`fdf log <group>/<slug> "…"`) |
-| Tasks | `<group>/<slug>/NN-….md` | task directory only |
+| Spec | `features/…/<slug>.spec.md` | `specified` |
+| Plan | `features/…/<slug>.plan.md` | `planned` |
+| Test | `features/…/<slug>.test.md` | `planned` |
+| Surface | `features/…/<slug>.surface.md` | when the feature has an interface: screens, endpoints, commands, events |
+| Log | `features/…/<slug>.log.md` | its first entry (`fdf log <feature-id> "…"`) |
+| Tasks | `features/…/<slug>/NN-….md` | task directory only |
 
-Position and stem are the link — no frontmatter pointers. The task directory
-holds **only** ordered task files; trail documents never nest inside it.
+`…/` stands for the groups the feature is filed in: none for a flat feature
+(`features/onboarding.md`), one (`features/payments/instant-refunds.md`), or
+several (`features/platform/payouts/weekly-payouts.md`). Position and stem are
+the link — no frontmatter pointers. The directory named after a feature,
+beside it, is its task directory: it holds **only** ordered task files, and
+trail documents never nest inside it. So a flat feature and a group never
+share a name.
 
 A capability the software had **before** the bundle existed is an **adopted**
 feature (`status: adopted`): documented from the code as it stands, with its
@@ -89,11 +104,14 @@ You are not expected to know FDF. Two commands tell you everything:
 | What can the CLI do, with examples? | `fdf help` (or `fdf help <command>`) |
 
 The CLI keeps the bundle honest: `fdf validate` must exit 0 after any bundle
-edit. Scaffold with `fdf new <group>/<slug>`, `fdf change`, `fdf fix`. Record
-what happened with `fdf log <id> "<entry>"`, which writes to the log of the
-document the entry is about (the root `LOG.md` only for the bundle as a whole)
-and creates that log on first use. The rules the fdf skills cite by number
-(F1–F14, R1) are defined in the spec.
+edit. Scaffold with `fdf new [<group>/…]<slug>`, `fdf change`, `fdf fix`: a
+command that creates a document takes its path inside its register. One that
+names a document already there takes its full ID, as
+`fdf history features/payments/instant-refunds`, `fdf mv` and `--affects` do.
+Record what happened with `fdf log <id> "<entry>"`, which writes to the log of
+the document the entry is about (the root `LOG.md` only for the bundle as a
+whole) and creates that log on first use. The rules the fdf skills cite by
+number (F1–F14, R1) are defined in the spec.
 
 The bundle is the source of truth for what the software does. Code that
 changes behavior without touching the bundle makes the bundle lie — that is
@@ -150,6 +168,7 @@ repair a defect depends on what the defect turns out to be.
 
 | Bundle state | Skill |
 |---|---|
+| The bundle pins a version before 1.0 — `fdf validate` fails F1 and says to run `fdf migrate` | Upgrade it first: *A bundle from before 1.0*, below |
 | Context docs missing or still `<!-- fdf:stub -->` | fdf-init (fill them first) |
 | No feature file for this capability | fdf-brainstorm |
 | `draft` | fdf-brainstorm (finish the spec) |
@@ -248,10 +267,44 @@ its own `Feature:` block with its own As-a / I-want / So-that, it is a new
 feature, and it names the feature it builds on in `depends-on`. If it alters an
 existing capability's observable behavior, it is a Change.
 
+## A bundle from before 1.0
+
+fdf 1.x works on spec 1.x bundles only. A bundle that pins 0.x — often still
+at `docs/features/`, the default before 1.0 — fails `fdf validate` with F1,
+and every command that works on a bundle refuses it, pointing at
+`fdf migrate`. Nothing else proceeds until it is upgraded. The upgrade moves
+the bundle and rewrites the references to it across the project, so it is the
+user's decision: propose it, say what it does, and wait. Then:
+
+1. **Start clean.** Commit first: `fdf migrate` runs only on a clean tree,
+   and git is its undo.
+2. **`fdf migrate --dry-run`**, and read the plan with the user: what moves
+   where, the files outside the bundle it rewrites, and each mention of the
+   old path it leaves for a person to decide on. A file that must keep its
+   bytes, such as an applied SQL migration a tool checksums, is left as it is
+   with `--skip '<glob>'`. A refusal names what to fix first; nothing has been
+   written.
+3. **`fdf migrate`.** It validates the result and exits with the validator's
+   code. A bundle from before 0.7 may fail rules added since its version —
+   a test case is a `## <scenario name>` heading, a `timestamp` carries its
+   zone: clear them through fdf-validate.
+4. **`fdf install`** again for each agent the project uses (`--project` where
+   the skills are committed with the code), so the skills and the primer
+   teach 1.0.
+5. **Review** `git diff -M --stat` and what migrate listed, then commit. Its
+   report ends with the commands that back the migration out.
+6. **Run fdf-checkpoint.** An instruction file may still name a feature by
+   its old ID: outside the bundle, migrate cannot tell a bare ID from a code
+   path, and leaves it.
+
+A project that is not ready keeps fdf 0.7.x, and its skills, until it is (a
+version manager such as mise pins one per project). Never move files into
+1.0's layout, or edit the pin, by hand.
+
 ## "It's tiny, just do it"
 
 Size never routes around FDF. The minimal compliant path is cheap: `fdf new
-<group>/<slug>`, one `Feature:` fence, one `Scenario:` — minutes, and the
+[<group>/…]<slug>`, one `Feature:` fence, one `Scenario:` — minutes, and the
 skills scale down to match. State that cost once. If the user still
 explicitly opts out, their instruction wins — do the work, then say plainly
 that the bundle now lacks this change. The violation is the *silent* skip,
@@ -277,6 +330,8 @@ and so is the shortcut of doing it first and asking later.
 | "I'll rename this feature file and fix the links myself" | A hand rename misses an `affects`, a heading or a link somewhere. `fdf mv` repairs every reference and logs the move. |
 | "It's a known bug, so I'll just patch it and close the bug" | A bug is never repaired in place. The repair is a Fix or Change that names it in `resolves` — that is what leaves the regression case behind. |
 | "I'll add the back-link on the feature" | Don't. `affects:` is the whole link; `fdf history <feature>` computes the rest. A hand-written back-link drifts. |
+| "I'll keep this design note in the bundle, at its root" | The root is closed (F3). A document of an FDF type goes in its register; a free-form note goes outside the bundle, in the rest of `docs/`. |
+| "The bundle pins 0.7 — I'll just set the pin to 1.0" | 1.0 moved every feature into `features/` and gave every feature ID its register. `fdf migrate` does that in one run; a hand-edited pin claims a layout the bundle does not have. |
 
 ## Precedence
 

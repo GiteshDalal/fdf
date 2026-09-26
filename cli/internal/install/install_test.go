@@ -2,10 +2,14 @@ package install
 
 import (
 	"bytes"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
+
+	fdf "github.com/GiteshDalal/fdf"
 )
 
 func TestInstallClaudeCodePlacesSkillsPrimerAndUpgrades(t *testing.T) {
@@ -622,5 +626,31 @@ func TestInstallPrunesCommandsDirItEmptied(t *testing.T) {
 	}
 	if _, err := os.Stat(cmds); !os.IsNotExist(err) {
 		t.Fatalf("emptied commands dir should be pruned: %v", err)
+	}
+}
+
+// The skills and the primer teach 1.0's names: a feature's path and its ID
+// start with features/, and groups nest. These are 0.7's spellings, which
+// teach the old layout wherever one comes back.
+func TestSkillsAndPrimerTeachTheNamesOf10(t *testing.T) {
+	stale := []struct{ re, why string }{
+		{`\[<group>/\]<slug>`, "groups nest: [<group>/…]<slug>"},
+		{`(?:fdf log|fdf history|--affects) <group>/`, "a command names a feature by its full ID, features/…"},
+		{`(?:^|[^/])<group>/<slug>[./]`, "a feature's path starts with features/"},
+	}
+	for _, name := range append([]string{"primer"}, skillNames...) {
+		text := primer(defaultRoot)
+		if name != "primer" {
+			raw, err := fs.ReadFile(fdf.Assets, "skills/"+name+"/SKILL.md")
+			if err != nil {
+				t.Fatal(err)
+			}
+			text = string(raw)
+		}
+		for _, s := range stale {
+			if m := regexp.MustCompile(s.re).FindString(text); m != "" {
+				t.Errorf("%s writes %q — %s", name, m, s.why)
+			}
+		}
 	}
 }

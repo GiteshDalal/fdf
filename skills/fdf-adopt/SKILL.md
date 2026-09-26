@@ -66,11 +66,13 @@ every later piece of work find the capability it is about to touch.
    changed, without the other.
 2. **Propose a group at a time**: the capability list for one area, each with
    its proposed `<group>/<slug>`, a one-line purpose, and the paths it lives
-   in. Groups follow `ARCHITECTURE.md`'s map or the product's own areas. Wait
-   for approval before scaffolding — the names become IDs every later
-   document links to.
+   in. Groups follow `ARCHITECTURE.md`'s map or the product's own areas, and
+   nest where an area is large (`platform/payouts/<slug>`). Wait for approval
+   before scaffolding — the names become IDs every later document links to:
+   `payments/card-payments` is filed at `features/payments/card-payments.md`,
+   ID `features/payments/card-payments`.
 3. **Scaffold each** with
-   `fdf adopt --resource <path>[,<path>…] <group>/<slug>`. The paths must
+   `fdf adopt --resource <path>[,<path>…] [<group>/…]<slug>`. The paths must
    exist; prefer the directory or file that holds the capability over a whole
    module. A file every capability passes through — a route table, a wiring
    module — goes on each capability it registers, after the capability's own
@@ -100,9 +102,9 @@ every later piece of work find the capability it is about to touch.
    each finding with the command that would file it instead.
 6. **Log and gate**: one bundle-root `LOG.md` entry per batch, since a batch
    concerns the bundle rather than one feature —
-   `fdf log "**Adopted**: 14 capabilities mapped in payments/ and orders/."` —
-   then `fdf validate` exit 0. `fdf adopt` lists a new group in the root
-   `INDEX.md` itself.
+   `fdf log "**Adopted**: 14 capabilities mapped in features/payments/ and features/orders/."` —
+   then `fdf validate` exit 0. `fdf adopt` lists each new group in its
+   parent's `INDEX.md` itself — `features/INDEX.md` for a top-level one.
 
 ### Phase 2 — Backfill on touch
 
@@ -158,11 +160,11 @@ the proof that it already does it is part of the same edit.
 4. **Run it against the code as it stands.** No code change in this edit.
 5. **It passes** → keep both, set the feature's `timestamp` (and the test
    document's) to now, in UTC, and `fdf validate`. Log the batch in the
-   feature's own log: `fdf log <group>/<slug> "**Backfilled**: 3 scenarios, each proven by an existing test."`
+   feature's own log: `fdf log <feature-id> "**Backfilled**: 3 scenarios, each proven by an existing test."`
 6. **It fails** → stop. Either you misread the code (rewrite the scenario to
    what the code actually does, and run again), or you found a defect. A defect
    is never backfilled — not as it is, which would promise it, and not as it
-   should be, whose test fails. File it (`fdf bug --affects <group>/<slug> …`)
+   should be, whose test fails. File it (`fdf bug --affects <feature-id> …`)
    with its `# Symptom` and `# Expected`.
 
 Backfill only **adds**. Once written, a scenario is a promise like any other:

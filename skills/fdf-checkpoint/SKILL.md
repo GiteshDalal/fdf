@@ -63,22 +63,26 @@ it appears as a link to that home, not a copy.
 ## Process
 
 1. **Gate.** Run `fdf validate`. A Context document that is still a stub is
-   fdf-init's job; any other failure goes through fdf-validate first — audit a
-   bundle that validates. Its `warn:` lines are findings too: carry them into
-   the report — routed as fdf-validate says when they carry a rule code, and
-   simply listed when they do not. (Banned words are swept with a lexicon
-   fix, in every document that uses them — delivered features and finished
-   changes included — in fdf-validate's triage order: `fdf lexicon`, qualify
-   the other senses into `except:`, code-span the mentions, then
-   `fdf lexicon --term <Term> --fix`.)
-2. **Set the baseline** — a commit: the one that logged the last checkpoint,
-   or, with none, the oldest of the Context documents' last commits (the
-   widest window misses least). Then list what changed since:
+   fdf-init's job, and a bundle that pins a version before 1.0 is upgraded
+   first (fdf-help, *A bundle from before 1.0*); any other failure goes
+   through fdf-validate first — audit a bundle that validates. Its `warn:`
+   lines are findings too: carry them into the report — routed as
+   fdf-validate says when they carry a rule code, and simply listed when they
+   do not. (Banned words are swept with a lexicon fix, in every document that
+   uses them — delivered features and finished changes included — in
+   fdf-validate's triage order: `fdf lexicon`, qualify the other senses into
+   `except:`, code-span the mentions, then `fdf lexicon --term <Term> --fix`.)
+2. **Set the baseline** — a date: that of the last checkpoint, from the root
+   `LOG.md`, or, with none, the oldest `timestamp` of the Context documents
+   (the widest window misses least). Both are read from the bundle itself, so
+   they survive a move of it; git shows `fdf migrate`'s move of
+   `docs/features/` to `docs/fdf/` as the last change to every file in it.
+   Then list what changed since:
 
    ```bash
-   git log -1 --format=%H -S '**Checkpoint**' -- docs/fdf/LOG.md
-   for d in STACK ARCHITECTURE SURFACES INFRA DOMAIN; do git log -1 --format='%ct %H' -- docs/fdf/$d.md; done | sort -n | head -1
-   git log --name-only --format= <baseline>..HEAD | sort -u
+   awk '/^## /{d=$2} /\*\*Checkpoint\*\*/{print d; exit}' docs/fdf/LOG.md
+   for d in STACK ARCHITECTURE SURFACES INFRA DOMAIN; do awk '/^timestamp:/{print substr($2,1,10)}' docs/fdf/$d.md; done | sort | head -1
+   git log --name-only --format= --since=<baseline>T00:00:00Z | sort -u
    ```
 
    Manifests, lockfiles, CI and deploy config, and new top-level directories
@@ -147,9 +151,10 @@ it appears as a link to that home, not a copy.
 ## 1. Mechanical checks
 
 - **The pin.** `fdf_version` in the root `INDEX.md`, against the version
-  `fdf spec --list` marks current. An older pin is a proposal to run
-  `fdf migrate` — the user's call, because a new spec version can hold feature
-  work until a new Context document is filled.
+  `fdf spec --list` marks current. A 0.x pin has already stopped the gate,
+  and the upgrade comes first. An older 1.x pin is a proposal to run
+  `fdf migrate`, which moves the pin, re-vendors `SPEC.md` and adds the new
+  version's registers, editing no document — still the user's call.
 - **`SPEC.md`** is the pinned version's spec, vendored, and matches it exactly
   below its frontmatter:
 
@@ -238,7 +243,7 @@ Every mismatch has two readings, and they take opposite fixes:
   holds, and newer code ignores it. That is not a document edit; never rewrite
   a rule to match the worst code in the tree. Check `fdf debt --open` first —
   the gap may already be filed. If not, propose a debt
-  (`fdf debt [<group>/]<slug>`) naming the paths; and whatever part of the
+  (`fdf debt [<group>/…]<slug>`) naming the paths; and whatever part of the
   difference a user can observe goes through fdf-help as well.
 
 When the evidence does not say which reading is true, ask. A `DOMAIN.md`
@@ -319,11 +324,13 @@ one of these:
 Then check what the sections refer to:
 
 - **References resolve.** Every path the file names exists — the bundle root
-  above all, if the project moved it or sets `FDF_ROOT_DIR`. Every `fdf`
-  command it names exists (`fdf help` lists them), and every skill it names
-  is installed. The `/fdf-init`, `/fdf-new` and `/fdf-validate` slash
-  commands were removed when the skills replaced them; a file still teaching
-  them is stale.
+  above all, if the project moved it or sets `FDF_ROOT_DIR`. Every feature it
+  names by ID is written in full, `features/…`: `fdf migrate` rewrites the
+  bundle's path outside the bundle, but not a bare ID, which it cannot tell
+  from a code path. Every `fdf` command it names exists (`fdf help` lists
+  them), and every skill it names is installed. The `/fdf-init`, `/fdf-new`
+  and `/fdf-validate` slash commands were removed when the skills replaced
+  them; a file still teaching them is stale.
 - **No contradiction with the bundle.** "Tests run with `npm test`" where
   `INFRA.md` says pnpm is fixed at whichever end the evidence says is wrong.
 - **Two files, one source.** When `CLAUDE.md` and `AGENTS.md` both carry

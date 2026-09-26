@@ -44,7 +44,9 @@ Spec/Architecture territory.
 
 1. **Locate the bundle and read the stubs.** Run `fdf validate` (respects
    `--root`/`FDF_ROOT_DIR`). Read the five stub files so you match their
-   heading structure. If they don't exist yet, run `fdf init` first.
+   heading structure. If they don't exist yet, run `fdf init` first. A bundle
+   that pins a version before 1.0 is upgraded before anything else (fdf-help,
+   *A bundle from before 1.0*).
 2. **Survey what already exists.** If there's code, read enough to ground your
    questions — `README`, manifests (`package.json`, `go.mod`, `Cargo.toml`,
    `pyproject.toml`, `pom.xml`), lockfiles, CI config, Dockerfiles, IaC, OpenAPI
@@ -302,7 +304,7 @@ the software doing something wrong that someone could observe — is a bug, not
 a debt: `fdf bug`, with the evidence under `# Symptom` and what should happen
 under `# Expected`. Do not fix it inside this interview.
 
-`fdf debt [<group>/]<slug>` scaffolds it. `# Gap` is required and must be
+`fdf debt [<group>/…]<slug>` scaffolds it. `# Gap` is required and must be
 concrete enough for someone else to confirm — name files and counts, not
 impressions (F13). `resource` names the paths carrying the gap and is the whole
 link: the practice it violates is derived by intersecting those paths with the
@@ -324,7 +326,7 @@ perfectly valid, so there is no quota to fill.
   not a practice document claiming it is already how things are. File it as a
   debt if it is worth tracking, and move on.
 
-**Writing one.** `fdf practice [<group>/]<slug>` scaffolds it; fill it in:
+**Writing one.** `fdf practice [<group>/…]<slug>` scaffolds it; fill it in:
 
 ```markdown
 ---
@@ -362,7 +364,8 @@ and those paths must exist (R1); it is how later work is routed to the
 practice, since a feature never lists the practices it follows. A practice
 carries no Gherkin, no spec, no plan, no tasks. Get each one approved before
 writing it, exactly like a Context document. `fdf practice` lists it in
-`practices/INDEX.md`; give the listing a real description.
+`practices/INDEX.md`, or in its group's index; give the listing a real
+description.
 
 ## Closing (say this explicitly)
 
