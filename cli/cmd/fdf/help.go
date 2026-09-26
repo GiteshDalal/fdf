@@ -139,15 +139,18 @@ var helpTopics = []helpTopic{
 			"as it is, with a note. Installs into your home directory by default;\n" +
 			"--project installs into the current git project (nearest .git) so the\n" +
 			"setup is committed with the code. Re-run it after `fdf migrate` so the\n" +
-			"skills teach the new layout.",
+			"skills teach the new layout: a primer an earlier fdf wrote, untouched, is\n" +
+			"replaced, whether it named the root this install names, the root the\n" +
+			"skills' .fdf-version records, or docs/features, where every bundle was\n" +
+			"before 1.0.",
 		flags: []flagDoc{
 			{"--project", "install into the current git project instead of your home directory"},
-			{"--root <dir>", "bundle root the skills name (default docs/features, or FDF_ROOT_DIR)"},
+			{"--root <dir>", "bundle root the skills name (default docs/fdf, or FDF_ROOT_DIR)"},
 		},
 		examples: []string{
 			"fdf install claude-code",
 			"fdf install --project claude-code",
-			"fdf install --project --root docs/features codex",
+			"fdf install --project --root wiki/fdf codex",
 		},
 	},
 	{

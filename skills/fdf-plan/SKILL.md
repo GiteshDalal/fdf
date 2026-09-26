@@ -8,7 +8,7 @@ description: Use when an FDF feature is specified (slug.spec.md approved) and ha
 Turn an approved `slug.spec.md` into an executable plan with provable acceptance.
 
 New to FDF? The format is defined in the bundle itself at
-`docs/features/SPEC.md` — exact frontmatter fields, casing and position
+`docs/fdf/SPEC.md` — exact frontmatter fields, casing and position
 rules, and the F/R validation rules this skill cites. The fdf-help skill
 explains how the fdf skills fit together. Run `fdf spec` for the format rules
 and `fdf help` for the CLI.
@@ -160,7 +160,7 @@ with:
 
 ```text
 Use the fdf-execute skill on <group>/<slug> (status: planned).
-Plan: docs/features/<group>/<slug>.plan.md (<N> tasks). Batches from depends-on:
+Plan: docs/fdf/<group>/<slug>.plan.md (<N> tasks). Batches from depends-on:
   1. 01-…, 02-…   2. 03-…   3. 04-… (satisfies <slug>.test.md)
 Suggested models: 01, 02 mechanical → fast (e.g. Sonnet-class);
   03, 04 need judgment → most capable (e.g. Opus-class).

@@ -12,7 +12,7 @@ import (
 
 func runInstall(args []string, stdout io.Writer) int {
 	fs := newFlagSet("install")
-	rootFlag := fs.String("root", "", "bundle root to bake into the installed skills (default docs/features; FDF_ROOT_DIR is honored)")
+	rootFlag := fs.String("root", "", "bundle root to bake into the installed skills (default docs/fdf; FDF_ROOT_DIR is honored)")
 	project := fs.Bool("project", false, "install into the current git project instead of the user home directory")
 	rest, exit, ok := parseArgs(fs, args, stdout)
 	if !ok {

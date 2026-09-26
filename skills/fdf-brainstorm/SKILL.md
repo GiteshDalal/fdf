@@ -8,7 +8,7 @@ description: Use when a feature idea has no Feature document yet, or a draft FDF
 Turn a feature idea into a validated FDF feature document and approved design.
 
 New to FDF? Run `fdf spec` for the format rules (also vendored in the bundle
-at `docs/features/SPEC.md`) and `fdf help` for the CLI. The fdf-help skill
+at `docs/fdf/SPEC.md`) and `fdf help` for the CLI. The fdf-help skill
 explains how the fdf skills fit together.
 
 **This skill is for capabilities that do not exist yet.** If the capability is

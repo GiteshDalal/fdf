@@ -53,8 +53,8 @@ the lexicon bans and the documents therefore never use — and grep it for the f
 `resource:` line names the code that task produced:
 
 ```bash
-grep -rn "refund" docs/features --include='*.md'
-grep -rn "src/payments/refund.ts" docs/features   # which task built this?
+grep -rn "refund" docs/fdf --include='*.md'
+grep -rn "src/payments/refund.ts" docs/fdf   # which task built this?
 ```
 
 The report's word maps to the term through `instead-of`; the surface that

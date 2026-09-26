@@ -13,7 +13,7 @@ an agent builds *this* project's way; without it, it guesses. Take it slowly
 and do it thoroughly: it is the most leveraged conversation in the whole
 workflow.
 
-New to FDF? The format is defined in the bundle at `docs/features/SPEC.md`.
+New to FDF? The format is defined in the bundle at `docs/fdf/SPEC.md`.
 `fdf spec` prints the format rules and `fdf help` documents every command.
 
 The five Context docs live at the bundle root beside it; `fdf init` writes

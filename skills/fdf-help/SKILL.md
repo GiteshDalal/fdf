@@ -1,6 +1,6 @@
 ---
 name: fdf-help
-description: Use when starting any conversation in a project with an FDF bundle (docs/features/ or FDF_ROOT_DIR) — establishes how to route work to the fdf skills by feature status BEFORE writing any code, including "quick", "tiny", and "just do it" changes.
+description: Use when starting any conversation in a project with an FDF bundle (docs/fdf/ or FDF_ROOT_DIR) — establishes how to route work to the fdf skills by feature status BEFORE writing any code, including "quick", "tiny", and "just do it" changes.
 ---
 
 # Using FDF
@@ -8,7 +8,7 @@ description: Use when starting any conversation in a project with an FDF bundle 
 ## What is FDF
 
 FDF (Feature Document Format) documents software features as a directory of
-markdown files — the **bundle**, at `docs/features/` in this project. Each
+markdown files — the **bundle**, at `docs/fdf/` in this project. Each
 feature is one Markdown + Gherkin file with a lifecycle `status` in its YAML
 frontmatter. Its implementation trail lives as **stem-qualified siblings**
 beside it at the group level:
@@ -85,7 +85,7 @@ You are not expected to know FDF. Two commands tell you everything:
 
 | Question | Command |
 |---|---|
-| What are the exact format rules? | `fdf spec` (or read `docs/features/SPEC.md`) |
+| What are the exact format rules? | `fdf spec` (or read `docs/fdf/SPEC.md`) |
 | What can the CLI do, with examples? | `fdf help` (or `fdf help <command>`) |
 
 The CLI keeps the bundle honest: `fdf validate` must exit 0 after any bundle

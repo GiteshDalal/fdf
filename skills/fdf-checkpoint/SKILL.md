@@ -76,8 +76,8 @@ it appears as a link to that home, not a copy.
    widest window misses least). Then list what changed since:
 
    ```bash
-   git log -1 --format=%H -S '**Checkpoint**' -- docs/features/LOG.md
-   for d in STACK ARCHITECTURE SURFACES INFRA DOMAIN; do git log -1 --format='%ct %H' -- docs/features/$d.md; done | sort -n | head -1
+   git log -1 --format=%H -S '**Checkpoint**' -- docs/fdf/LOG.md
+   for d in STACK ARCHITECTURE SURFACES INFRA DOMAIN; do git log -1 --format='%ct %H' -- docs/fdf/$d.md; done | sort -n | head -1
    git log --name-only --format= <baseline>..HEAD | sort -u
    ```
 
@@ -154,7 +154,7 @@ it appears as a link to that home, not a copy.
   below its frontmatter:
 
   ```bash
-  diff <(fdf spec -v <pin>) <(awk 'f; /^---$/ && ++n==2 {f=1}' docs/features/SPEC.md | tail -n +2)
+  diff <(fdf spec -v <pin>) <(awk 'f; /^---$/ && ++n==2 {f=1}' docs/fdf/SPEC.md | tail -n +2)
   ```
 
   Any output means a hand edit or a copy vendored by an older fdf. Never
@@ -309,7 +309,7 @@ one of these:
 
 | It is… | Then |
 |---|---|
-| a pointer into the bundle ("Stack: see `docs/features/STACK.md`") | keep it — check that it resolves |
+| a pointer into the bundle ("Stack: see `docs/fdf/STACK.md`") | keep it — check that it resolves |
 | a harness or workflow note that lives nowhere else | keep it |
 | the managed `## Feature Document Format` primer | `fdf install` owns it — see *Mechanical checks* |
 | a fact whose home is a Context document or a practice: a stack list, build or test commands, an architecture sketch, a glossary, conventions | propose a one-line pointer instead. If the user wants it loaded into every session anyway, it may stay — but it must match its home exactly, and the home wins any disagreement |

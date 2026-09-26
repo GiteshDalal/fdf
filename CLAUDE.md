@@ -225,7 +225,10 @@ bundle is sent to that bundle.
   `## Feature Document Format` primer, idempotent, never clobbers user edits; each
   skill's `.fdf-version` reads `<version> skills=<digest> primer=<digest> root=<root>`, so
   another build of the same version upgrades, and a primer an earlier install recorded
-  counts as fdf's own; also removes the superseded slash commands by exact name;
+  counts as fdf's own, as does one some release shipped (`legacyPrimers`) written for
+  this install's root, a root a marker records, or `docs/features` (`legacyRoot`); the
+  skills name `docs/fdf` (`defaultRoot`) unless `--root` names another; also removes the
+  superseded slash commands by exact name;
   `MarkerFile`, `PrimerSection` and `InstructionFile` say what it manages, which
   `fdf migrate` leaves to it), and **`cli/internal/migrate`** (`fdf migrate`: any 0.x
   bundle, pinned 0.1 to 0.7 or not at all, to 1.0, its `target`, in one run, design §6.

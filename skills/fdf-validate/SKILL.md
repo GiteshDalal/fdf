@@ -1,6 +1,6 @@
 ---
 name: fdf-validate
-description: Use after any edit to a file under an FDF bundle (docs/features/), and whenever `fdf validate` exits non-zero or prints FAIL lines — turns rule codes (F1–F14, R1) into the correct fix, and never silences a rule by weakening content.
+description: Use after any edit to a file under an FDF bundle (docs/fdf/), and whenever `fdf validate` exits non-zero or prints FAIL lines — turns rule codes (F1–F14, R1) into the correct fix, and never silences a rule by weakening content.
 ---
 
 # FDF Validate
@@ -9,7 +9,7 @@ description: Use after any edit to a file under an FDF bundle (docs/features/), 
 how you clear it honestly.
 
 New to FDF? Run `fdf spec` for the format rules (also vendored in the bundle
-at `docs/features/SPEC.md`) and `fdf help` for the CLI. The fdf-help skill
+at `docs/fdf/SPEC.md`) and `fdf help` for the CLI. The fdf-help skill
 explains how the fdf skills fit together.
 
 ## When to run
