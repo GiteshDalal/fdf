@@ -251,7 +251,9 @@ be corrected in `INDEX.md`, and a root inside a pinned bundle is sent to that bu
   ignored whole named once), marks what it wrote with
   `git add --intent-to-add --ignore-removal` so that `git diff -M` shows each move, and
   prints the commands, each path quoted, that restore everything should it stop
-  partway: the bundle moved back first. Once done, its next steps print them too, after
+  partway: the bundle moved back first, and last the directories it made removed
+  whole (`made`, `parents`), with what git ignores in them, such as a Finder
+  `.DS_Store` that would stop the next run. Once done, its next steps print them too, after
   a `git reset` of what it marked (`backOut`), since git stash and git clean trip on
   those entries. `outside.go`
   rewrites the project's git-tracked text files — links into the bundle, and mentions

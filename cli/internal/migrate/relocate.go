@@ -393,18 +393,37 @@ func (p *plan) backOut(project string) []string {
 // there to restore. A bundle that moved goes back first: a plain directory
 // with mv, which takes back the files git ignores too, and a submodule with
 // git mv, then .gitmodules as it was. Then git restores what migrate
-// changed, and removes what it wrote.
+// changed, and removes what it wrote, and last the directories migrate made
+// go whole, the files git ignores in them too (git clean -x): nothing was
+// there before migrate made them.
 func (p *plan) undo(project string) []string {
 	q := quote
+	// clean removes, in the repository at dir, the directories migrate
+	// made in the bundle, at bundle from dir, and the paths in more.
+	clean := func(dir, bundle string, more ...string) []string {
+		var paths []string
+		for _, d := range p.made {
+			paths = append(paths, path.Join(bundle, d))
+		}
+		if paths = append(paths, more...); len(paths) == 0 {
+			return nil
+		}
+		return []string{fmt.Sprintf("git -C %s clean -fdx -- %s", q(dir), quoteAll(paths))}
+	}
+	var parents []string
+	for _, d := range p.parents {
+		parents = append(parents, relSlash(project, d))
+	}
 	switch {
 	case project == "":
 		return []string{"the bundle is not in a git repository: restore it from a copy"}
 	case project == p.root:
-		return []string{fmt.Sprintf("git -C %s checkout -- . && git -C %s clean -fd", q(project), q(project))}
+		return append([]string{fmt.Sprintf("git -C %s checkout -- . && git -C %s clean -fd", q(project), q(project))}, clean(project, "")...)
 	}
 	var lines []string
 	if p.submodule {
-		old := q(filepath.Join(project, filepath.FromSlash(p.old)))
+		abs := filepath.Join(project, filepath.FromSlash(p.old))
+		old := q(abs)
 		if p.relocated {
 			lines = append(lines, fmt.Sprintf("git -C %s mv %s %s", q(project), q(p.new), q(p.old)),
 				fmt.Sprintf("git -C %s checkout HEAD -- .gitmodules", q(project)))
@@ -412,13 +431,19 @@ func (p *plan) undo(project string) []string {
 		if len(p.outTexts) > 0 {
 			lines = append(lines, fmt.Sprintf("git -C %s checkout -- %s", q(project), quoteAll(sortedKeys(p.outTexts))))
 		}
-		return append(lines, fmt.Sprintf("git -C %s checkout -- . && git -C %s clean -fd", old, old))
+		lines = append(lines, fmt.Sprintf("git -C %s checkout -- . && git -C %s clean -fd", old, old))
+		lines = append(lines, clean(abs, "")...)
+		if len(parents) > 0 {
+			lines = append(lines, fmt.Sprintf("git -C %s clean -fdx -- %s", q(project), quoteAll(parents)))
+		}
+		return lines
 	}
 	if p.relocated {
 		lines = append(lines, fmt.Sprintf("mv %s %s", q(p.dest()), q(p.root)))
 	}
-	return append(lines, fmt.Sprintf("git -C %s checkout -- %s", q(project), quoteAll(append([]string{p.old}, sortedKeys(p.outTexts)...))),
+	lines = append(lines, fmt.Sprintf("git -C %s checkout -- %s", q(project), quoteAll(append([]string{p.old}, sortedKeys(p.outTexts)...))),
 		fmt.Sprintf("git -C %s clean -fd -- %s", q(project), q(p.old)))
+	return append(lines, clean(project, p.old, parents...)...)
 }
 
 // quote writes s as one word of a POSIX shell command: as it is when no

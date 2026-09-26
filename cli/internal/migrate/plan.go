@@ -108,6 +108,13 @@ type plan struct {
 	// them as they are, and lists what they say of the bundle.
 	skip    []string
 	skipped map[string]bool
+
+	// made are the directories migrate makes that were not there, which an
+	// undo removes whole: in the bundle, by path once migrated, features/
+	// or each group's place in it, and each register it writes an index
+	// into; and parents, the directories above the destination that
+	// relocate makes, absolute, the deepest first.
+	made, parents []string
 }
 
 // rootWrites are the files at the bundle root that migrate writes whatever
@@ -243,7 +250,40 @@ func newPlan(root, pin, project, dest string, skip []string) (p *plan, problems 
 	if problems, err := p.ignored(); err != nil || len(problems) > 0 {
 		return nil, problems, err
 	}
+	p.findMade(dest)
 	return p, nil, nil
+}
+
+// findMade finds the directories migrate makes that are not there now,
+// which an undo removes whole once git has put the rest back, with any
+// hidden file a person's tools have left in them since, such as a Finder
+// .DS_Store: one left in a group's place in features/ would stop the next
+// run, which finds that place taken. In the bundle they are features/, or
+// each group's place in it when features/ is there already, and each
+// register migrate writes an index into; above the destination, the
+// directories relocate makes to hold it.
+func (p *plan) findMade(dest string) {
+	if _, err := os.Lstat(filepath.Join(p.root, "features")); err != nil {
+		p.made = append(p.made, "features")
+	} else {
+		for _, g := range p.groups {
+			p.made = append(p.made, "features/"+g)
+		}
+	}
+	for _, reg := range layout.Registers {
+		if _, err := os.Lstat(filepath.Join(p.root, reg)); err != nil && reg != "features" && p.exists(reg+"/INDEX.md") {
+			p.made = append(p.made, reg)
+		}
+	}
+	if !p.relocates() {
+		return
+	}
+	for d := filepath.Dir(dest); filepath.Dir(d) != d; d = filepath.Dir(d) {
+		if _, err := os.Lstat(d); err == nil {
+			break
+		}
+		p.parents = append(p.parents, d)
+	}
 }
 
 // refusals are what 1.0 has no place for, and migrate cannot move for the

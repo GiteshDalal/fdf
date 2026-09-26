@@ -1908,13 +1908,17 @@ func TestMigrateSaysHowToUndoAStoppedMigration(t *testing.T) {
 // stops at them, and git clean leaves them. So the next steps also print the
 // commands that back it out, the first of which takes the marks back, in the
 // repository that holds them, and the commands do put everything back: for
-// a plain directory and for a submodule, with a file outside the bundle
-// rewritten, and for a bundle that is its own repository.
+// a plain directory, moved beside itself or --to a new place, and for a
+// submodule, with a file outside the bundle rewritten, and for a bundle that
+// is its own repository. That includes the directories migrate made, with
+// what a person's tools have left in them since, such as a Finder .DS_Store
+// git ignores: one left in a group's place in features/ would stop the next
+// run.
 func TestMigrateSaysHowToBackOutAMigration(t *testing.T) {
 	const says = "      to back the migration out instead, run these commands; the first takes back the\n" +
 		"      marks of `git add -N`, on which git stash and git clean would trip:\n"
-	for _, kind := range []string{"a plain directory", "a submodule", "its own repository"} {
-		var project, root string
+	for _, kind := range []string{"a plain directory", "a plain directory moved --to a new place", "a submodule", "its own repository"} {
+		var project, root, to, dest string
 		switch kind {
 		case "a submodule":
 			project = gitSuperproject(t, "valid-bugs-v07")
@@ -1924,23 +1928,44 @@ func TestMigrateSaysHowToBackOutAMigration(t *testing.T) {
 			gitIn(t, project, "init", "-q")
 			gitIn(t, project, "add", "-A")
 			gitIn(t, project, "commit", "-qm", "bundle")
-			root = project
+			root, dest = project, project
 		default:
 			project = gitProject(t, "valid-bugs-v07")
 		}
 		if root == "" {
-			root = filepath.Join(project, "docs", "features")
+			root, dest = filepath.Join(project, "docs", "features"), filepath.Join(project, "docs", "fdf")
 			write(t, project, "README.md", "# Project\n\nThe bundle is in docs/features.\n")
 			gitIn(t, project, "commit", "-qam", "readme")
 		}
+		if kind == "a plain directory moved --to a new place" {
+			to = filepath.Join(project, "handbook", "fdf")
+			dest = to
+		}
 		before := worktree(t, project)
 		var out bytes.Buffer
-		if code := Run(Options{Root: root, Project: project}, &out); code != 0 {
+		if code := Run(Options{Root: root, Project: project, To: to}, &out); code != 0 {
 			t.Fatalf("%s: migrate exit %d\n%s", kind, code, out.String())
 		}
 		if root != project {
-			if readme := string(mustRead(t, filepath.Join(project, "README.md"))); !strings.Contains(readme, "docs/fdf") {
+			if readme := string(mustRead(t, filepath.Join(project, "README.md"))); !strings.Contains(readme, "docs/fdf") && !strings.Contains(readme, "handbook/fdf") {
 				t.Fatalf("%s: the test needs a file outside the bundle rewritten:\n%s", kind, readme)
+			}
+		}
+		// Finder leaves a .DS_Store, which git ignores, in a directory it
+		// shows: a group's place in features/, a register migrate made, and
+		// the directory --to made to hold the bundle.
+		shown := []string{filepath.Join(dest, "features", "venues"), filepath.Join(dest, "practices")}
+		if to != "" {
+			shown = append(shown, filepath.Dir(to))
+		}
+		for _, dir := range shown {
+			write(t, dir, ".DS_Store", "Finder")
+			exclude := strings.TrimSpace(gitIn(t, dir, "rev-parse", "--git-path", "info/exclude"))
+			if !filepath.IsAbs(exclude) {
+				exclude = filepath.Join(dir, exclude)
+			}
+			if err := os.WriteFile(exclude, []byte(".DS_Store\n"), 0o644); err != nil {
+				t.Fatal(err)
 			}
 		}
 		_, rest, ok := strings.Cut(out.String(), says)
@@ -1964,12 +1989,15 @@ func TestMigrateSaysHowToBackOutAMigration(t *testing.T) {
 			}
 		}
 		if after := worktree(t, project); after != before {
-			t.Errorf("%s: the commands put everything back:\n%s", kind, strings.Join(cmds, "\n"))
+			t.Errorf("%s: the commands put everything back:\n%s\n%s", kind, strings.Join(cmds, "\n"), after)
 		}
 		for _, dir := range []string{project, root} {
 			if status := gitIn(t, dir, "status", "--porcelain", "--untracked-files=all", "--ignored"); status != "" {
 				t.Errorf("%s: git status is clean again in %s:\n%s", kind, dir, status)
 			}
+		}
+		if _, err := os.Stat(filepath.Join(project, "handbook")); kind == "a plain directory moved --to a new place" && err == nil {
+			t.Errorf("%s: the directory migrate made above the destination is gone:\n%s", kind, strings.Join(cmds, "\n"))
 		}
 	}
 }
