@@ -388,6 +388,13 @@ func Init(root string, out io.Writer) int {
 		fmt.Fprintf(out, "error: %s holds %s but no INDEX.md, and fdf init starts a bundle only where there is none — %s; move anything else out first\n", root, file, route)
 		return 1
 	}
+	// Nor is docs/fdf beside a docs/features whose INDEX.md pins nothing, as
+	// a bundle's from before 1.0 may: fdf migrate moves such a bundle here
+	// (fdfroot.Beside).
+	if old := fdfroot.Beside(root); old != "" {
+		fmt.Fprintf(out, "error: %s beside %s holds an INDEX.md that pins no version, as a bundle's from before 1.0 may, and fdf init starts no bundle where fdf migrate would move that one — %s; if that is no bundle, rename its INDEX.md, and run fdf init again\n", old, root, fdfroot.Upgrading("it", old))
+		return 1
+	}
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		fmt.Fprintln(out, "error:", err)
 		return 1

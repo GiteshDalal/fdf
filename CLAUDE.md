@@ -74,7 +74,8 @@ command's usage line, its group and summary in the overview, `fdf help <command>
 is documented. A command that works on a bundle stops with `fdfroot.NoBundle` when the root
 holds no `INDEX.md`, which sends a root that holds Markdown nonetheless to `fdf migrate`,
 not `fdf init` (`fdfroot.Unindexed`: a v0.1 bundle's `index.md` as it is, any other once
-it has an `INDEX.md`). Every command but `validate`, `migrate` and `serve` works on spec 1.x
+it has an `INDEX.md`), and names a `docs/features` beside a `docs/fdf` root whose
+`INDEX.md` pins nothing, as a bundle's from before 1.0 may (`fdfroot.Beside`). Every command but `validate`, `migrate` and `serve` works on spec 1.x
 bundles only: `scaffold.RequireSupported` stops it on a bundle that pins 0.x, which it
 points at `fdf migrate`, the user's decision (`fdfroot.Upgrading`), or no version, which
 is to be pinned, or migrated; a pin that is not a `MAJOR.MINOR` version, or a 0.x version
@@ -92,10 +93,11 @@ pinned bundle is sent to that bundle.
   directory above a root whose `INDEX.md` pins a version: a root whose own `INDEX.md` pins
   nothing below one, such as `--root docs/fdf/features`, is a register or group of that
   bundle, which the commands' gate and `fdf migrate` refuse in `InsideBundle`'s words.
-  The pin errors of the validator and the commands name the upgrade of a bundle from
-  before 1.0 as the user's decision, with its dry run (`Upgrading`): `fdf migrate` moves
-  the bundle's documents and rewrites references to them across the project, and fdf
-  0.7's skills told an agent to run it whenever a pin was not supported.
+  Every message that sends a bundle from before 1.0 to `fdf migrate` — the pin errors of
+  the validator and the commands, `NoBundle`'s and `fdf init`'s — names the upgrade as
+  the user's decision, with its dry run (`Upgrading`): `fdf migrate` moves the bundle's
+  documents and rewrites references to them across the project, and fdf 0.7's skills
+  told an agent to run it whenever a pin was not supported.
   `Pin` (and `PinOf`, for a bundle's root) is the one reader of a pin — the
   `fdf_version` key of the root `INDEX.md`'s frontmatter, read line by line, so a line
   of it that does not parse hides no pin, and one written in the body is none — which
@@ -226,7 +228,8 @@ pinned bundle is sent to that bundle.
   gate, `RequireSupported`, a pin among `Supported()`, which `fdf init` asks too; `Init`
   starts a bundle only where there is none, and refuses a directory that holds Markdown
   but no `INDEX.md` (`fdfroot.Unindexed`), such as a bundle from before 1.0 that never
-  had one, which is `fdf migrate`'s; `listing.go` keeps the indexes: `EnsureIndex` for a register's, `ListEntry`/`Unlist`
+  had one, which is `fdf migrate`'s, and `docs/fdf` beside a `docs/features` whose
+  `INDEX.md` pins nothing (`fdfroot.Beside`), where migrate would move that bundle; `listing.go` keeps the indexes: `EnsureIndex` for a register's, `ListEntry`/`Unlist`
   for a document, listing each new group on the way in its parent's index, `ListGroup`
   for a group, and `ListRegister` for a register in the root `INDEX.md`, over
   `WithRegisterListing`; `IndexText`, `ContextStub`, `SpecDoc`, `RegisterLine` and

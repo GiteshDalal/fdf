@@ -16,25 +16,49 @@ import (
 // so a wrong --root reads the same whichever command met it first. A root
 // that holds Markdown nonetheless, such as a bundle from before 1.0 that
 // never had an INDEX.md, is sent to fdf migrate, not to fdf init, which
-// refuses it (Unindexed).
+// refuses it (Unindexed), and so is docs/fdf beside a docs/features whose
+// INDEX.md pins nothing, which fdf init refuses too (Beside).
 func NoBundle(root string) error {
 	if file, route := Unindexed(root); file != "" {
 		return fmt.Errorf("no bundle at %s (no INDEX.md), though it holds %s — %s; or point --root at the bundle", root, file, route)
 	}
+	if old := Beside(root); old != "" {
+		return fmt.Errorf("no bundle at %s (no INDEX.md), and %s beside it holds an INDEX.md that pins no version, as a bundle's from before 1.0 may — %s, and migrate moves the bundle here; if that is no bundle, rename its INDEX.md, then run `fdf init`, or point --root at the bundle", root, old, Upgrading("it", old))
+	}
 	return fmt.Errorf("no bundle at %s (no INDEX.md) — run `fdf init` first, or point --root at the bundle", root)
+}
+
+// Beside returns the docs/features beside a root at docs/fdf when its
+// INDEX.md, spelled so, pins no version, as a bundle's from before 1.0 may:
+// fdf 0.7 read such a bundle there, the default now passes it over
+// (Default), and fdf migrate moves it to docs/fdf. It returns "" otherwise:
+// a documentation site's docs/features, which may hold Markdown, is no
+// bundle, and has no INDEX.md spelled so.
+func Beside(root string) string {
+	if filepath.Base(root) != "fdf" || filepath.Base(filepath.Dir(root)) != "docs" {
+		return ""
+	}
+	old := filepath.Join(filepath.Dir(root), "features")
+	entries, _ := os.ReadDir(old)
+	for _, e := range entries {
+		if e.Name() == "INDEX.md" && !pinned(old) {
+			return old
+		}
+	}
+	return ""
 }
 
 // Unindexed returns a Markdown file in the directory at root, which holds no
 // INDEX.md, by its path from root, and how fdf migrate takes the bundle from
-// before 1.0 that the file makes it: a v0.1 bundle's index.md, which migrate
-// renames, as it is, and any other once it has an INDEX.md, which need not
-// pin a version. Both are "" when root holds no Markdown but its README.md;
-// what is hidden is passed over.
+// before 1.0 that the file makes it, on the user's decision (Upgrading): a
+// v0.1 bundle's index.md, which migrate renames, as it is, and any other
+// once it has an INDEX.md, which need not pin a version. Both are "" when
+// root holds no Markdown but its README.md; what is hidden is passed over.
 func Unindexed(root string) (file, route string) {
 	entries, _ := os.ReadDir(root)
 	for _, e := range entries {
 		if e.Name() == "index.md" {
-			return "index.md", fmt.Sprintf("run `fdf migrate --root %s`, which renames a v0.1 bundle's index.md", root)
+			return "index.md", "a v0.1 bundle's index.md counts as its INDEX.md, and " + Upgrading("the bundle", root)
 		}
 	}
 	filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
@@ -58,7 +82,7 @@ func Unindexed(root string) (file, route string) {
 	if file == "" {
 		return "", ""
 	}
-	return file, fmt.Sprintf("a bundle from before 1.0 needs an INDEX.md, which need not pin a version, committed where git tracks it, and then `fdf migrate --root %s`", root)
+	return file, "a bundle from before 1.0 needs an INDEX.md, which need not pin a version, committed where git tracks it, and " + Upgrading("it", root)
 }
 
 // InsideBundle is what every command, fdf migrate included, says when root is

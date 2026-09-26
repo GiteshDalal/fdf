@@ -45,8 +45,10 @@ Spec/Architecture territory.
 1. **Locate the bundle and read the stubs.** Run `fdf validate` (respects
    `--root`/`FDF_ROOT_DIR`). Read the five stub files so you match their
    heading structure. If they don't exist yet, run `fdf init` first. A bundle
-   that pins a version before 1.0 is upgraded before anything else (fdf-help,
-   *A bundle from before 1.0*).
+   from before 1.0 — one that pins a 0.x version, or a `docs/features/` whose
+   `INDEX.md` pins none, which `fdf validate` names — is upgraded before
+   anything else, on the user's decision (fdf-help, *A bundle from before
+   1.0*).
 2. **Survey what already exists.** If there's code, read enough to ground your
    questions — `README`, manifests (`package.json`, `go.mod`, `Cargo.toml`,
    `pyproject.toml`, `pom.xml`), lockfiles, CI config, Dockerfiles, IaC, OpenAPI

@@ -241,8 +241,8 @@ func TestNoBundleSendsMarkdownToMigrate(t *testing.T) {
 		"":                          "",
 		"README.md":                 "",
 		".notes/x.md":               "",
-		"wdise/example.md":          "though it holds wdise/example.md — a bundle from before 1.0 needs an INDEX.md, which need not pin a version, committed where git tracks it, and then `fdf migrate --root ROOT`; or point --root at the bundle",
-		"index.md wdise/example.md": "though it holds index.md — run `fdf migrate --root ROOT`, which renames a v0.1 bundle's index.md; or point --root at the bundle",
+		"wdise/example.md":          "though it holds wdise/example.md — a bundle from before 1.0 needs an INDEX.md, which need not pin a version, committed where git tracks it, and upgrading it is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --root ROOT --dry-run` shows the plan; or point --root at the bundle",
+		"index.md wdise/example.md": "though it holds index.md — a v0.1 bundle's index.md counts as its INDEX.md, and upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --root ROOT --dry-run` shows the plan; or point --root at the bundle",
 	} {
 		root := t.TempDir()
 		for _, f := range strings.Fields(files) {
@@ -259,6 +259,44 @@ func TestNoBundleSendsMarkdownToMigrate(t *testing.T) {
 		}
 		if got := NoBundle(root).Error(); got != want {
 			t.Errorf("with %q:\n got %s\nwant %s", files, got, want)
+		}
+	}
+}
+
+// fdf 0.7 read docs/features as the bundle, pinned or not, and the default
+// now passes over one whose INDEX.md pins nothing: a command that finds no
+// bundle at docs/fdf beside it names it, with its upgrade, the user's
+// decision, which moves it to docs/fdf. A docs/features with no INDEX.md
+// spelled so, such as a documentation site's, or with one that pins a
+// version, is not named, nor is one beside a root anywhere else.
+func TestNoBundleNamesAnUnpinnedDocsFeaturesBesideIt(t *testing.T) {
+	for _, tc := range []struct {
+		root, file, text string
+		named            bool
+	}{
+		{"docs/fdf", "INDEX.md", "# Features\n", true},
+		{"docs/fdf", "INDEX.md", "---\ntitle: Features\n---\n", true},
+		{"docs/fdf", "INDEX.md", "---\nfdf_version: \"0.7\"\n---\n", false},
+		{"docs/fdf", "index.md", "# Features\n", false},
+		{"docs/fdf", "guide.md", "# Guide\n", false},
+		{"wiki/fdf", "INDEX.md", "# Features\n", false},
+	} {
+		dir := t.TempDir()
+		root, old := filepath.Join(dir, tc.root), filepath.Join(dir, filepath.Dir(tc.root), "features")
+		if err := os.MkdirAll(filepath.Join(old, "wdise"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for rel, text := range map[string]string{tc.file: tc.text, "wdise/example.md": "# Example\n"} {
+			if err := os.WriteFile(filepath.Join(old, rel), []byte(text), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		want := "no bundle at " + root + " (no INDEX.md) — run `fdf init` first, or point --root at the bundle"
+		if tc.named {
+			want = "no bundle at " + root + " (no INDEX.md), and " + old + " beside it holds an INDEX.md that pins no version, as a bundle's from before 1.0 may — upgrading it is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --root " + old + " --dry-run` shows the plan, and migrate moves the bundle here; if that is no bundle, rename its INDEX.md, then run `fdf init`, or point --root at the bundle"
+		}
+		if got := NoBundle(root).Error(); got != want {
+			t.Errorf("%s beside %s, holding %s %q:\n got %s\nwant %s", tc.root, old, tc.file, tc.text, got, want)
 		}
 	}
 }

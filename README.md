@@ -312,8 +312,10 @@ a bundle. A bundle there with no pin, or no `INDEX.md` at all — fdf 0.7
 validated either under 0.2's rules — is upgraded with
 `fdf migrate --root docs/features` once it has an `INDEX.md`, committed: an
 empty one will do, since migrate writes it, and a v0.1 bundle's `index.md`
-counts as one. Don't run `fdf init` there: it starts a new bundle, and
-refuses a directory that already holds Markdown.
+counts as one. Don't run `fdf init` there, nor in `docs/fdf/`, where migrate
+moves the bundle: it starts a new one, and refuses a directory that already
+holds Markdown, and `docs/fdf/` beside a `docs/features/INDEX.md` that pins
+nothing.
 
 **What `fdf migrate` 1.0.0 leaves to you:**
 

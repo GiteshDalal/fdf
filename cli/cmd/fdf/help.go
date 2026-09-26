@@ -120,9 +120,10 @@ var helpTopics = []helpTopic{
 			"one it points you to `fdf migrate`. A directory inside a bundle, one of\n" +
 			"its registers or groups, is refused, and so is one that holds Markdown\n" +
 			"but no INDEX.md, such as a bundle from before 1.0 that never had one,\n" +
-			"which is `fdf migrate`'s. Fill the Context stubs with the fdf-init skill\n" +
-			"before feature work: once a feature exists, F9 fails while any of them\n" +
-			"is still a stub.",
+			"which is `fdf migrate`'s, and docs/fdf beside a docs/features whose\n" +
+			"INDEX.md pins no version, where migrate would move that bundle. Fill the\n" +
+			"Context stubs with the fdf-init skill before feature work: once a\n" +
+			"feature exists, F9 fails while any of them is still a stub.",
 		flags:    []flagDoc{rootFlagDoc},
 		examples: []string{"fdf init", "fdf init --root wiki/fdf"},
 	},

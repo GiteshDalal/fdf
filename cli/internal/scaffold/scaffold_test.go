@@ -515,7 +515,7 @@ func TestInitRefusesADirectoryThatHoldsMarkdown(t *testing.T) {
 	}
 	before := tree(t, root)
 	var out bytes.Buffer
-	if code := Init(root, &out); code != 1 || !strings.Contains(out.String(), "but no INDEX.md") || !strings.Contains(out.String(), "`fdf migrate --root "+root+"`") {
+	if code := Init(root, &out); code != 1 || !strings.Contains(out.String(), "but no INDEX.md") || !strings.Contains(out.String(), "is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --root "+root+" --dry-run` shows the plan; move anything else out first\n") {
 		t.Errorf("init refuses and names fdf migrate: exit %d\n%s", code, out.String())
 	}
 	if tree(t, root) != before {
@@ -533,6 +533,38 @@ func TestInitRefusesADirectoryThatHoldsMarkdown(t *testing.T) {
 		if code := Init(dir, &out); code != 0 {
 			t.Errorf("init beside %s: exit %d\n%s", rel, code, out.String())
 		}
+	}
+}
+
+// fdf migrate moves a bundle from before 1.0 at docs/features to docs/fdf,
+// so init starts none there while docs/features beside it holds an
+// INDEX.md that pins nothing, as such a bundle's may. A documentation
+// site's docs/features, with no INDEX.md spelled so, stops nothing.
+func TestInitRefusesDocsFdfBesideAnUnpinnedBundle(t *testing.T) {
+	docs := filepath.Join(t.TempDir(), "docs")
+	root, old := filepath.Join(docs, "fdf"), filepath.Join(docs, "features")
+	if err := os.MkdirAll(filepath.Join(old, "wdise"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for rel, text := range map[string]string{"INDEX.md": "# Features\n", "wdise/example.md": "# Example\n"} {
+		if err := os.WriteFile(filepath.Join(old, rel), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var out bytes.Buffer
+	want := "error: " + old + " beside " + root + " holds an INDEX.md that pins no version, as a bundle's from before 1.0 may, and fdf init starts no bundle where fdf migrate would move that one — upgrading it is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --root " + old + " --dry-run` shows the plan; if that is no bundle, rename its INDEX.md, and run fdf init again\n"
+	if code := Init(root, &out); code != 1 || out.String() != want {
+		t.Errorf("init beside an unpinned docs/features: exit %d\n got: %q\nwant: %q", code, out.String(), want)
+	}
+	if _, err := os.Stat(root); !os.IsNotExist(err) {
+		t.Errorf("a refused init writes nothing: %v", err)
+	}
+	if err := os.Remove(filepath.Join(old, "INDEX.md")); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if code := Init(root, &out); code != 0 {
+		t.Errorf("init beside a docs/features with no INDEX.md: exit %d\n%s", code, out.String())
 	}
 }
 
