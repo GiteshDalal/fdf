@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -253,6 +254,31 @@ func firstLine(s string) string {
 func TestDevVersionDefaultsAgree(t *testing.T) {
 	if install.Version != version {
 		t.Errorf("install.Version default %q does not match main.version %q", install.Version, version)
+	}
+}
+
+// fdf X.Y.z ships spec X.Y as current, and the plugin manifest carries the
+// CLI's version, so a release moves the three together.
+func TestTheReleaseVersionMatchesTheSpecAndThePlugin(t *testing.T) {
+	parts := strings.SplitN(version, ".", 3)
+	if len(parts) < 3 {
+		t.Fatalf("main.version %q is not MAJOR.MINOR.PATCH", version)
+	}
+	if mm := parts[0] + "." + parts[1]; mm != scaffold.CurrentVersion() {
+		t.Errorf("fdf %s ships spec %s as current; want spec %s", version, scaffold.CurrentVersion(), mm)
+	}
+	raw, err := os.ReadFile("../../../.claude-plugin/plugin.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.Version != version {
+		t.Errorf(".claude-plugin/plugin.json has version %q; want main.version, %q", manifest.Version, version)
 	}
 }
 

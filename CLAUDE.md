@@ -377,13 +377,22 @@ describe the case they lock in (e.g. `done-with-open-task`, `depends-on-cycle`,
 them; the current version is **1.0**: `fdf init` pins it, and every command reads and
 writes it. `fdf migrate` upgrades any 0.x bundle to 1.0 (`target` in `migrate.go`), and
 the validator checks 1.0 alone: a 0.x bundle fails F1, which sends it to `fdf migrate`.
-`currentVersion` is defined in
-`cli/internal/scaffold/scaffold.go`. A bundle vendors a copy of its pinned spec at its own
-root (`docs/fdf/SPEC.md`), so bundles are self-describing. Bumping the spec means: add
-`spec/<new>.md`, extend `supportedVersions` in `validate.go`, add a `migrate` path, update
-`currentVersion`, add fixtures for the new rules, and refresh **skills + install primer +
-README** so agents teach the new layout (re-run `fdf install` after users migrate). The
-primer's superseded text must be appended to `legacyPrimers` so an upgrade can recognize and
-replace an untouched managed section, and the new skill must be added to `skillNames`.
-Prefer referencing `currentVersion` over a version literal in tests — the 0.5 bump had to
-de-hardcode a dozen of them.
+`currentVersion` is defined in `cli/internal/scaffold/scaffold.go`, and fdf X.Y.z ships spec
+X.Y as current: `main.version`, `install.Version` and the version in
+`.claude-plugin/plugin.json` move with it (`TestTheReleaseVersionMatchesTheSpecAndThePlugin`).
+A bundle vendors a copy of its pinned spec at its own root (`docs/fdf/SPEC.md`), so bundles
+are self-describing. Bumping the spec means: add `spec/<new>.md` and list it as current in
+`SPEC.md` and `spec/README.md` (a test reads both), extend `supportedVersions` in
+`validate.go`, update `currentVersion`, add fixtures for the new rules, and refresh
+**skills + install primer + README** so agents teach it (re-run `fdf install` after users
+migrate). A **minor** version only adds: gate each addition by the bundle's pin, so that a
+bundle pinned to 1.0 is still checked as 1.0, and give `fdf migrate` the minor path (move
+the pin, re-vendor `SPEC.md`, create any new register's `INDEX.md`, edit no document). A
+**major** version may break, and ships a `fdf migrate` from the major before it. A new
+Context document or register goes into `layout` (`ContextDocs`, `Registers`), which a test
+holds to the current spec's *Casing* section, and scaffold then needs its stub or its index
+(`TestEveryRegisterAndContextDocumentHasItsText`). The primer's superseded text must be
+appended to `legacyPrimers` so an upgrade can recognize and replace an untouched managed
+section, and a new skill must be added to `skillNames`. Prefer referencing
+`currentVersion` over a version literal in tests — the 0.5 bump had to de-hardcode a dozen
+of them.
