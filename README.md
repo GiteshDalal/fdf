@@ -15,9 +15,10 @@ silently drift.
 
 ```
 docs/fdf/
-├── INDEX.md                      # bundle root (pins fdf_version: "1.0")
+├── INDEX.md                      # bundle root (pins fdf_version: "1.1")
 ├── LOG.md
 ├── SPEC.md                       # the format spec, shipped in the bundle
+├── SPEC.examples.md              # one example of each document, beside it
 ├── STACK.md                      # Context: technology stack
 ├── ARCHITECTURE.md               # Context: architecture & principles
 ├── SURFACES.md                   # Context: interface principles (all surfaces)
@@ -186,7 +187,7 @@ go install github.com/GiteshDalal/fdf/cli/cmd/fdf@latest
 ## Use
 
 ```bash
-fdf init                     # scaffold docs/fdf/ + SPEC.md + context stubs (or FDF_ROOT_DIR / --root)
+fdf init                     # scaffold docs/fdf/ + SPEC.md + SPEC.examples.md + context stubs (or FDF_ROOT_DIR / --root)
                              #   then run the fdf-init skill to fill STACK/ARCHITECTURE/SURFACES/INFRA/DOMAIN
 fdf new payments/instant-refunds  # features/payments/instant-refunds.md; `fdf new onboarding` files one flat
 fdf validate                 # F1-F14 + R1; exit 1 on any violation
@@ -207,7 +208,8 @@ fdf lexicon                  # every banned domain word, with file:line:col
 fdf lexicon --term Venue --fix --dry-run  # …sweep one term, reviewing the diff first
 fdf log features/payments/instant-refunds '**Specified**: design approved.'  # into the feature's own log, created on first use
 fdf log '**Checkpoint**: Context documents current.'  # the root LOG.md: bundle-wide events only
-fdf spec                     # print the format spec (-v 0.7 for an older one)
+fdf spec                     # print the format spec (-v 1.0 for an older one)
+fdf spec --examples          # …its examples, one of each document (--full: the spec, then them)
 fdf help                     # every command with examples (fdf <command> --help for one)
 fdf serve                    # browse the bundle (bun x mdts)
 
@@ -221,7 +223,7 @@ fdf install claude-code      # user-level skills + "## Feature Document Format" 
 fdf install codex            #   (a primer you edited is left alone; one fdf wrote is upgraded)
 fdf install opencode
 fdf install --project claude-code   # project-level: skills under .claude/, primer in ./CLAUDE.md
-fdf migrate                  # upgrade a bundle from before 1.0 (see Upgrading to 1.0)
+fdf migrate                  # upgrade a 1.0 bundle to 1.1, or one from before 1.0 (see Upgrading)
 ```
 
 `fdf install` defaults to **user-level** (under your home directory). Prefer
@@ -257,11 +259,22 @@ Works the same everywhere: the bundle may be a plain directory or a git
 submodule mounted at the same path — `resource:` paths always verify against
 the **project** root.
 
-### Upgrading to 1.0
+### Upgrading from 1.0 to 1.1
+
+fdf 1.1 validates and works on 1.0 bundles as they are, so there is no hurry.
+1.1 only adds: the spec's examples leave `SPEC.md` for `SPEC.examples.md`
+beside it. To take it up, commit first, then run `fdf migrate` (`--dry-run`
+first, if you like):
+it moves the pin, re-vendors `SPEC.md`, writes `SPEC.examples.md`, restores
+any missing register index or Context stub, and logs one entry in `LOG.md` —
+nothing moves and no document is edited. Then re-run `fdf install` for each
+harness you use, review `git diff`, and commit.
+
+### Upgrading from 0.x
 
 fdf 1.x works on spec 1.x bundles only. A bundle that pins 0.x fails
 `fdf validate` (F1), and every command that works on a bundle refuses it,
-pointing at `fdf migrate`, which upgrades any 0.x bundle to 1.0 in one run.
+pointing at `fdf migrate`, which upgrades any 0.x bundle to 1.1 in one run.
 Upgrade fdf and the bundle together: until `fdf install` runs again, an agent
 works from 0.7's skills, which tell it to run `fdf migrate` whenever a pin is
 not supported, and 1.0's `fdf migrate` moves the bundle and rewrites
@@ -284,7 +297,7 @@ stays on 0.7.x (*Not ready yet?*, below). To upgrade:
 3. **`fdf migrate`**, with the dry run's `--skip` flags, which validates the
    result and exits with the validator's code.
 4. **Re-run `fdf install`** for each harness you use, so the skills and the
-   primer teach 1.0. A primer an earlier fdf wrote that nobody edited is
+   primer teach 1.x. A primer an earlier fdf wrote that nobody edited is
    replaced, even one written for `docs/features/`.
 5. **Review `git diff -M --stat`** — each move shows as a rename — **and
    commit.** Then run the `fdf-checkpoint` skill: an instruction file may
@@ -477,11 +490,14 @@ puts one name in place of another. Never rename a bundle file by hand.
 ## Spec
 
 FDF is defined by versioned specs under [`spec/`](spec/) — current
-[v1.0](spec/1.0.md); the 0.x versions, [v0.7](spec/0.7.md) /
+[v1.1](spec/1.1.md), with its examples in
+[spec/1.1.examples.md](spec/1.1.examples.md), and [v1.0](spec/1.0.md) before
+it; the 0.x versions, [v0.7](spec/0.7.md) /
 [v0.6](spec/0.6.md) / [v0.5](spec/0.5.md) / [v0.4](spec/0.4.md) /
 [v0.3](spec/0.3.md) / [v0.2](spec/0.2.md), are kept as history: fdf 1.x does
 not validate them, and `fdf migrate` upgrades a bundle from any of them.
 [SPEC.md](SPEC.md) indexes them. Each is normative for the bundles pinning
 its version, and every bundle vendors its pinned version's spec at
-`docs/fdf/SPEC.md`. `testdata/` fixtures are the executable conformance
+`docs/fdf/SPEC.md`, and from 1.1 on its examples at
+`docs/fdf/SPEC.examples.md`. `testdata/` fixtures are the executable conformance
 contract. MIT licensed.

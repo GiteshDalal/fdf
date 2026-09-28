@@ -1,0 +1,3 @@
+exit: 1
+contains: FAIL: SPEC.examples.md: the examples have a file of their own from spec 1.1, and this bundle pins 1.0, whose SPEC.md holds them — remove it, or move the pin with `fdf migrate`, which writes it (F3)
+contains: checked; 1 error(s),

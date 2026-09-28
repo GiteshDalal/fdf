@@ -5,6 +5,7 @@
 package specver
 
 import (
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -83,3 +84,27 @@ func Sort(vs []string) {
 		}
 	})
 }
+
+// Prose writes versions as a message names them: "1.0", "1.0 and 1.1",
+// "1.0, 1.1 and 1.2".
+func Prose(vs []string) string {
+	if len(vs) < 2 {
+		return strings.Join(vs, "")
+	}
+	return strings.Join(vs[:len(vs)-1], ", ") + " and " + vs[len(vs)-1]
+}
+
+// Meant is the MAJOR.MINOR version a pin that is not one most likely means,
+// for a message that asks for it to be corrected: 1.0 for "1.0.0" or "v1.0",
+// 0.7 for "0.7.1"; or fallback when it starts with no version, or with a 0.x
+// version FDF never had ("0.9.1").
+func Meant(pin, fallback string) string {
+	if m := meantRe.FindStringSubmatch(pin); m != nil {
+		if v, ok := Parse(m[1]); ok && (v.Major != 0 || Known0x(m[1])) {
+			return m[1]
+		}
+	}
+	return fallback
+}
+
+var meantRe = regexp.MustCompile(`^[vV]?(\d+\.\d+)`)

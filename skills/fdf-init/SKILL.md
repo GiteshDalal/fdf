@@ -285,8 +285,9 @@ sense becomes an `except:` phrase. Never reword a document only to hide a
 ban. F12 rejects a duplicate term,
 a term with no definition, a banned word that is itself a term, and a word
 claimed by two terms. A banned word is reported wherever the bundle chooses its
-words — every document except `SPEC.md`, `DOMAIN.md`, `slug.test.md` and
-`slug.surface.md`, and every group, slug and task name — as a warning;
+words — every document except `SPEC.md`, `SPEC.examples.md`, `DOMAIN.md`,
+`slug.test.md` and `slug.surface.md`, and every group, slug and task name —
+as a warning;
 `strict: true` in `DOMAIN.md`'s frontmatter makes them errors in every
 validation (step 10 asks about it).
 

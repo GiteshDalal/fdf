@@ -118,8 +118,9 @@ type plan struct {
 }
 
 // rootWrites are the files at the bundle root that migrate writes whatever
-// they hold — INDEX.md, LOG.md and SPEC.md — and the names v0.1 gave them.
-var rootWrites = map[string]bool{"INDEX.md": true, "LOG.md": true, "SPEC.md": true, "index.md": true, "log.md": true, "spec.md": true}
+// they hold — INDEX.md, LOG.md, SPEC.md and SPEC.examples.md — and the
+// names v0.1 gave them.
+var rootWrites = map[string]bool{"INDEX.md": true, "LOG.md": true, layout.Spec: true, layout.Examples: true, "index.md": true, "log.md": true, "spec.md": true}
 
 // newPlan reads the bundle at root, pinned to pin, and works out its
 // migration to target, the bundle ending at dest, in the project at project
@@ -164,8 +165,9 @@ func newPlan(root, pin, project, dest string, skip []string) (p *plan, problems 
 		// A symlink moves as the link it is: migrate never writes through
 		// it into the file it names, names again a relative target that the
 		// move would change, and lists an absolute one it breaks (relink).
-		// It writes the root's INDEX.md, LOG.md and SPEC.md whatever they
-		// hold, so one of them that is a link is refused.
+		// It writes the root's INDEX.md, LOG.md, SPEC.md and
+		// SPEC.examples.md whatever they hold, so one of them that is a
+		// link is refused.
 		if d.Type()&os.ModeSymlink != 0 {
 			to, _ := os.Readlink(q)
 			if rootWrites[rel] {
@@ -691,13 +693,14 @@ func isLog(rel string) bool {
 // a code block, such as a Gherkin step or a shell sample, keeps its words —
 // and, in a git repository the bundle is part of, every mention of the
 // bundle's path follows the move (as outside the bundle): a reference repair
-// after a move, which reaches frozen documents too. The vendored SPEC.md,
-// which migrate replaces, is left to it, and a file that goes is left alone.
+// after a move, which reaches frozen documents too. The vendored SPEC.md and
+// SPEC.examples.md, which migrate replaces, are left to it, and a file that
+// goes is left alone.
 func (p *plan) repair() {
 	mv := p.move()
 	for _, f := range p.files {
 		text, ok := p.texts0[f]
-		if !ok || f == "SPEC.md" || p.goes(f) {
+		if !ok || layout.Vendored(f) || p.goes(f) {
 			continue
 		}
 		shaped, to := p.after(f), p.to(f)
@@ -867,7 +870,10 @@ func (p *plan) indexes() error {
 	if err != nil {
 		return err
 	}
-	p.write("SPEC.md", string(doc), "")
+	p.write(layout.Spec, string(doc), "")
+	if ex, ok := scaffold.ExamplesDoc(target); ok {
+		p.write(layout.Examples, string(ex), "")
+	}
 	return nil
 }
 

@@ -1,14 +1,15 @@
 package bundle
 
 // The lexicon scan. F12 reads every document the bundle writes in its own
-// words — all but SPEC.md, DOMAIN.md, slug.test.md and slug.surface.md,
-// which quote someone else's vocabulary — and every group, slug and task
-// name. Inside a scanned document, text that quotes rather than chooses is
-// masked first: code spans and non-Gherkin code blocks, link targets, URLs,
-// HTML comments, double-quoted text outside Gherkin, and a declaration's
-// `## <feature-id>` headings and regression-case verifications. Masking
-// blanks bytes in place, so every finding keeps its exact position; that is
-// what lets `fdf lexicon` report file:line:col and fix a word where it stands.
+// words — all but SPEC.md, SPEC.examples.md, DOMAIN.md, slug.test.md and
+// slug.surface.md, which quote someone else's vocabulary — and every group,
+// slug and task name. Inside a scanned document, text that quotes rather than
+// chooses is masked first: code spans and non-Gherkin code blocks, link
+// targets, URLs, HTML comments, double-quoted text outside Gherkin, and a
+// declaration's `## <feature-id>` headings and regression-case verifications.
+// Masking blanks bytes in place, so every finding keeps its exact position;
+// that is what lets `fdf lexicon` report file:line:col and fix a word where
+// it stands.
 
 import (
 	"fmt"
@@ -244,13 +245,14 @@ func (l *Lexicon) scan(text string) []hit {
 }
 
 // DomainScanned reports whether F12 reads a document's text: every
-// document except the four that quote another vocabulary — the vendored
-// SPEC.md, DOMAIN.md itself, and the slug.test.md and slug.surface.md that
-// quote what a surface shows. README.md at the root is not an FDF document.
+// document except those that quote another vocabulary — the vendored
+// SPEC.md and SPEC.examples.md, DOMAIN.md itself, and the slug.test.md and
+// slug.surface.md that quote what a surface shows. README.md at the root is
+// not an FDF document.
 func DomainScanned(rel string) bool {
 	rel = filepath.ToSlash(rel)
-	switch rel {
-	case "SPEC.md", "DOMAIN.md", "README.md":
+	switch {
+	case layout.Vendored(rel), rel == "DOMAIN.md", rel == "README.md":
 		return false
 	}
 	base := path.Base(rel)

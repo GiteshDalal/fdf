@@ -39,7 +39,7 @@ func TestPinProblemNamesTheFix(t *testing.T) {
 		{"0.1", "— upgrading the bundle is the user's decision"},
 		{"0.8", `fdf_version "0.8" is no 0.x version this fdf knows (0.1 to 0.7) — correct the pin (F1)`},
 		{"0.0", "— correct the pin (F1)"},
-		{"1.0.0", `is not a MAJOR.MINOR version such as "` + newestSupported() + `" — correct the pin (F1)`},
+		{"1.0.0", `is not a MAJOR.MINOR version such as "1.0" — correct the pin (F1)`},
 		{"v1.0", "— correct the pin (F1)"},
 		{"", "INDEX.md: pins no fdf_version — the version of the spec a bundle follows is pinned in its frontmatter, as fdf_version: \"" + newestSupported() + "\"; upgrading a bundle from before 1.0 is the user's decision"},
 	} {

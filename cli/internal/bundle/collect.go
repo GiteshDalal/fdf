@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/GiteshDalal/fdf/cli/internal/layout"
 	"github.com/GiteshDalal/fdf/cli/internal/links"
 )
 
@@ -53,6 +54,7 @@ type collection struct {
 	bugTrails      map[string]string // bug ID -> rel of its .log.md
 	texts          map[string]string // every .md file's text, for F12's scan
 	contextDocs    map[string]bool   // a root Context document -> whether it is still a stub (F9)
+	pin            string            // the version the bundle pins, which decides what a minor version added
 }
 
 func (c *collection) fail(format string, a ...any) {
@@ -85,7 +87,7 @@ func (c *collection) resource(rel, field string, v any, toBuild bool) {
 func (c *collection) read(rel string, raw []byte) string {
 	text := strings.TrimPrefix(string(raw), "\uFEFF")
 	c.texts[filepath.ToSlash(rel)] = string(raw) // F12 reads it again, from here
-	if rel != "SPEC.md" && (placeholderRe.MatchString(linkScanText(text)) || gherkinPlaceholderRe.MatchString(text)) {
+	if !layout.Vendored(rel) && (placeholderRe.MatchString(linkScanText(text)) || gherkinPlaceholderRe.MatchString(text)) {
 		c.warn("%s: still holds a scaffold's placeholder text (`TODO —`, `- TODO.`, `<role>`) — fill it in, or delete what does not apply", rel)
 	}
 	for _, l := range links.Find(text) {
@@ -152,9 +154,9 @@ func (c *collection) document(rel, text string) (doc, bool) {
 	return d, true
 }
 
-// root checks a document at the bundle root: a Context document, or SPEC.md,
-// the vendored spec, which takes none of the types that have positions of
-// their own.
+// root checks a document at the bundle root: a Context document, or SPEC.md
+// or SPEC.examples.md, the vendored spec and its examples, which take none of
+// the types that have positions of their own.
 func (c *collection) root(rel, name string, isContext bool, d doc, text string) {
 	switch {
 	case isContext:
@@ -163,9 +165,9 @@ func (c *collection) root(rel, name string, isContext bool, d doc, text string) 
 		}
 		c.contextDocs[name] = isStub(text)
 	case d.docType == "Context":
-		c.fail("%s: `type: Context` is reserved for STACK/ARCHITECTURE/SURFACES/INFRA/DOMAIN.md — the vendored spec is `type: Reference` (F3)", rel)
+		c.fail("%s: `type: Context` is reserved for STACK/ARCHITECTURE/SURFACES/INFRA/DOMAIN.md — the vendored spec and its examples are `type: Reference` (F3)", rel)
 	case structural[d.docType]:
-		c.fail("%s: `type: %s` has a position of its own, which is not the bundle root — the vendored spec is `type: Reference` (F3)", rel, d.docType)
+		c.fail("%s: `type: %s` has a position of its own, which is not the bundle root — the vendored spec and its examples are `type: Reference` (F3)", rel, d.docType)
 	}
 }
 
