@@ -350,7 +350,7 @@ func rewriteAll(rootAbs string, p *plan) (map[string]*edit, error) {
 			return nil
 		}
 		rel := relSlash(rootAbs, q)
-		if !strings.HasSuffix(rel, ".md") || rel == "SPEC.md" {
+		if !strings.HasSuffix(rel, ".md") || layout.Vendored(rel) {
 			return nil
 		}
 		raw, rerr := os.ReadFile(q)

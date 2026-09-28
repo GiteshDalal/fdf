@@ -1,13 +1,13 @@
-// Package layout knows where everything goes in an FDF 1.0 bundle: what the
+// Package layout knows where everything goes in an FDF 1.x bundle: what the
 // root holds, what each directory inside a register is, and so the position
 // and ID of every Markdown file. The validator asks it, and so will every
 // command that writes to a bundle, so that none of them keeps its own copy of
 // these rules.
 //
-// The rules, from spec 1.0:
+// The rules, from spec 1.0 and 1.1:
 //   - The root is closed. Its Markdown files are INDEX.md, LOG.md, SPEC.md,
-//     README.md and the five Context documents, and its directories that hold
-//     Markdown are the six registers.
+//     SPEC.examples.md (from 1.1), README.md and the five Context documents,
+//     and its directories that hold Markdown are the six registers.
 //   - releases/ is flat. Every other register files its documents flat or in
 //     groups, and groups nest to any depth.
 //   - A directory beside a document of the same name belongs to it: beside a
@@ -35,6 +35,24 @@ var Registers = []string{"features", "changes", "practices", "debts", "bugs", "r
 // ContextDocs are the five Context documents at the bundle root.
 var ContextDocs = []string{"STACK.md", "ARCHITECTURE.md", "SURFACES.md", "INFRA.md", "DOMAIN.md"}
 
+// Spec and Examples are the vendored copies of the pinned version's
+// specification and, from 1.1 on, of its examples, at the bundle root.
+const (
+	Spec     = "SPEC.md"
+	Examples = "SPEC.examples.md"
+)
+
+// ExamplesSince is the spec version that added Examples: a bundle pinned
+// before it keeps its examples inside SPEC.md, and one there is an error
+// until its pin moves. The validator, which knows the pin, says so.
+const ExamplesSince = "1.1"
+
+// Vendored reports whether rel, a slash-separated path from the bundle
+// root, is a vendored copy of the spec or its examples: a Reference
+// document, written by fdf init and fdf migrate and never edited, that
+// quotes another bundle's vocabulary and samples.
+func Vendored(rel string) bool { return rel == Spec || rel == Examples }
+
 // IsRegister reports whether name is one of the registers.
 func IsRegister(name string) bool { return in(Registers, name) }
 
@@ -48,7 +66,7 @@ const (
 	Index     Kind = "index"          // INDEX.md: the root's, a register's or a group's
 	Log       Kind = "log"            // LOG.md: the root's, a register's or a group's
 	Readme    Kind = "readme"         // README.md at the root, which FDF ignores
-	Reference Kind = "reference"      // SPEC.md at the root, the vendored specification
+	Reference Kind = "reference"      // SPEC.md or SPEC.examples.md at the root: the vendored spec and its examples
 	Context   Kind = "context"        // one of the five Context documents
 	Document  Kind = "document"       // a register's document
 	Trail     Kind = "trail"          // <slug>.<role>.md beside the document it belongs to
@@ -111,7 +129,7 @@ func CaseTwin(name string) string {
 }
 
 const (
-	rootFileProblem = "the bundle root holds only INDEX.md, LOG.md, SPEC.md, README.md and the five Context documents — file it in a register, or move it out of the bundle"
+	rootFileProblem = "the bundle root holds only INDEX.md, LOG.md, SPEC.md, SPEC.examples.md (from spec 1.1), README.md and the five Context documents — file it in a register, or move it out of the bundle"
 	rootDirProblem  = "the bundle root holds only the registers features/, changes/, practices/, debts/, bugs/ and releases/ — a feature group belongs under features/; file anything else in its register, or move it out of the bundle"
 	taskDirProblem  = "task directories may contain only NN-slug.md tasks"
 )
@@ -350,7 +368,7 @@ func rootFile(name string) Position {
 		return Position{Kind: Log}
 	case name == "README.md":
 		return Position{Kind: Readme}
-	case name == "SPEC.md":
+	case Vendored(name):
 		return Position{Kind: Reference}
 	case IsContext(name):
 		return Position{Kind: Context}

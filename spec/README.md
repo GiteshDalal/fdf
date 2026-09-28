@@ -3,7 +3,15 @@
 One file per spec version; each is the normative text for bundles pinning that
 version. The current version is the highest-numbered file.
 
-- [`1.0.md`](1.0.md) — current. Features become a register: feature documents
+- [`1.1.md`](1.1.md) — current. Its examples are in
+  [`1.1.examples.md`](1.1.examples.md). Only adds to 1.0: the examples leave
+  the specification for a companion file, which a bundle vendors beside
+  `SPEC.md` as `SPEC.examples.md`, so the spec holds the rules alone; the
+  three statements only the examples made are stated in the text. A 1.0 bundle
+  takes it up with `fdf migrate`, which moves the pin, re-vendors the spec and
+  logs the upgrade, and edits no document. The file's *Changes from 1.0* lists every difference.
+- [`1.0.md`](1.0.md) — validated by fdf 1.x; upgrade with `fdf migrate`.
+  Features become a register: feature documents
   live in `features/`, flat or in groups, and a feature's ID starts with
   `features/`. The bundle root is closed — its own files, the five Context
   documents and six registers — so a later version can add a register without
@@ -52,8 +60,10 @@ version. The current version is the highest-numbered file.
 - [`0.2.md`](0.2.md) — not validated by fdf 1.x; upgrade with `fdf migrate`.
 
 `fdf init` and `fdf migrate` vendor the pinned version's spec into the bundle
-at `docs/fdf/SPEC.md`, so a spec also lives inside every bundle that pins it,
-and `fdf spec -v <version>` prints any of them. Do not edit a released
+at `docs/fdf/SPEC.md`, and from 1.1 on its examples at
+`docs/fdf/SPEC.examples.md`, so a spec also lives inside every bundle that pins
+it. `fdf spec -v <version>` prints any of them, and `--examples` a version's
+examples. A version's examples file is released with it and is frozen like it. Do not edit a released
 version's file; add a new one instead.
 The one exception is an **erratum**: a correction that resolves a
 contradiction in the text by relaxing a rule, so that no bundle which

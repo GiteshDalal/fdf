@@ -6,7 +6,6 @@ package scaffold
 import (
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/GiteshDalal/fdf/cli/internal/fdfroot"
 	"github.com/GiteshDalal/fdf/cli/internal/specver"
@@ -56,7 +55,7 @@ func RequireSupported(root string, out io.Writer) bool {
 			return false
 		}
 	}
-	list := strings.Join(supported, ", ")
+	list := specver.Prose(supported)
 	newest, _ := specver.Parse(supported[len(supported)-1])
 	switch v, ok := specver.Parse(pin); {
 	case fdfroot.Unclosed(root):
@@ -64,7 +63,7 @@ func RequireSupported(root string, out io.Writer) bool {
 	case pin == "":
 		fmt.Fprintf(out, "error: this bundle's INDEX.md pins no fdf_version; fdf's commands work on spec %s bundles — pin the version it was written for, as fdf_version: \"%s\"; %s\n", list, currentVersion, fdfroot.Upgrading("a bundle from before 1.0", ""))
 	case !ok:
-		fmt.Fprintf(out, "error: this bundle pins fdf_version %s, which is not a MAJOR.MINOR version such as %s — correct the pin in INDEX.md\n", pin, currentVersion)
+		fmt.Fprintf(out, "error: this bundle pins fdf_version %s, which is not a MAJOR.MINOR version such as %s — correct the pin in INDEX.md\n", pin, specver.Meant(pin, currentVersion))
 	case newest.Less(v):
 		fmt.Fprintf(out, "error: this bundle pins fdf_version %s, newer than any spec this fdf knows (%s) — upgrade fdf\n", pin, list)
 	case v.Major == 0 && !specver.Known0x(pin):

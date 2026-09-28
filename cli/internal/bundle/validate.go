@@ -82,17 +82,20 @@ var releaseStatuses = []string{"planned", "shipped"}
 
 // supportedVersions are the spec versions this validator checks: those of
 // spec 1. A bundle pinned to any other is not validated (pinProblem).
-var supportedVersions = map[string]bool{"1.0": true}
+var supportedVersions = map[string]bool{"1.0": true, "1.1": true}
 
 // supportedList renders supportedVersions for error messages, so adding a
 // version never leaves a stale literal behind.
-func supportedList() string {
+func supportedList() string { return specver.Prose(supportedSorted()) }
+
+// supportedSorted lists supportedVersions oldest first.
+func supportedSorted() []string {
 	vs := make([]string, 0, len(supportedVersions))
 	for v := range supportedVersions {
 		vs = append(vs, v)
 	}
 	specver.Sort(vs)
-	return strings.Join(vs, ", ")
+	return vs
 }
 
 // pinProblem is F1's error for a root INDEX.md whose pin this validator
@@ -109,7 +112,7 @@ func pinProblem(pin string) string {
 	case pin == "":
 		return fmt.Sprintf("INDEX.md: pins no fdf_version — the version of the spec a bundle follows is pinned in its frontmatter, as fdf_version: \"%s\"; %s (F1)", newestSupported(), fdfroot.Upgrading("a bundle from before 1.0", ""))
 	case !ok:
-		return fmt.Sprintf("INDEX.md: fdf_version %q is not a MAJOR.MINOR version such as %q — correct the pin (F1)", pin, newestSupported())
+		return fmt.Sprintf("INDEX.md: fdf_version %q is not a MAJOR.MINOR version such as %q — correct the pin (F1)", pin, specver.Meant(pin, newestSupported()))
 	case v.Major == 0 && !specver.Known0x(pin):
 		return fmt.Sprintf("INDEX.md: fdf_version %q is no 0.x version this fdf knows (0.1 to 0.7) — correct the pin (F1)", pin)
 	}
@@ -123,7 +126,7 @@ func pinProblem(pin string) string {
 
 // newestSupported is the newest version this validator checks.
 func newestSupported() string {
-	vs := strings.Split(supportedList(), ", ")
+	vs := supportedSorted()
 	return vs[len(vs)-1]
 }
 
@@ -276,6 +279,7 @@ func Validate(root string, opts Options) int {
 		features: features, featureDeps: featureDeps, pairs: pairs, releases: releases, changes: changes,
 		practices: practices, practiceTrails: practiceTrails, debts: debts, debtTrails: debtTrails,
 		bugs: bugs, bugTrails: bugTrails, texts: texts, contextDocs: contextDocs,
+		pin: pinnedVer,
 	}
 	c.walk(rootAbs)
 

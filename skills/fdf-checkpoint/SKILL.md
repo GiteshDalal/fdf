@@ -6,7 +6,8 @@ description: Use periodically and before a release — and after dependency, too
 # FDF Checkpoint
 
 Audit the documents every agent reads before it works — the five Context
-documents, the vendored `SPEC.md`, and the agent instruction files
+documents, the vendored `SPEC.md` and `SPEC.examples.md`, and the agent
+instruction files
 (`CLAUDE.md`, `AGENTS.md`) — against the code and against each other, and
 propose the edits that make them true again.
 
@@ -22,8 +23,9 @@ edited by hand is reviewed by nobody. Stale context is worse than none —
 every later feature is designed against it. This is the sweep that finds it.
 
 It **proposes; the user decides.** Nothing is edited without explicit
-approval. It edits documents, never code. It never writes into `SPEC.md` or the
-managed primer — `fdf migrate` and `fdf install` rewrite them. And it touches
+approval. It edits documents, never code. It never writes into `SPEC.md`,
+`SPEC.examples.md` or the managed primer — `fdf migrate` and `fdf install`
+rewrite them. And it touches
 episodic documents — `slug.spec.md`, plans, tasks, changes and logs — only for
 a maintenance edit (a lexicon fix, a reference repair by `fdf mv`, a path
 repair): they record the past, and a past that disagrees with today is not
@@ -78,6 +80,7 @@ it appears as a link to that home, not a copy.
 | Build, test, package and deploy commands; CI; environments; targets; where services and data stores are hosted | `INFRA.md` |
 | Canonical names, the words banned in their place, how each appears in code | `DOMAIN.md` |
 | The FDF format rules | `SPEC.md` — vendored, never edited |
+| One example of each FDF document | `SPEC.examples.md` (from spec 1.1) — vendored, never edited |
 | How agents work in this repository: harness notes, pointers into the bundle | `CLAUDE.md` / `AGENTS.md` |
 | Why one feature was built the way it was | that feature's `slug.spec.md` — frozen |
 
@@ -170,7 +173,7 @@ it appears as a link to that home, not a copy.
    ## 2026-09-23
    * **Checkpoint**: STACK.md — Node 22 (was 18); CLAUDE.md — stack list
      replaced by a pointer to STACK.md. ARCHITECTURE, SURFACES, INFRA,
-     DOMAIN and SPEC.md current.
+     DOMAIN, SPEC.md and SPEC.examples.md current.
    ```
 
    Then `fdf validate` exit 0 — fdf-validate on failure.
@@ -180,8 +183,10 @@ it appears as a link to that home, not a copy.
 - **The pin.** `fdf_version` in the root `INDEX.md`, against the version
   `fdf spec --list` marks current. A 0.x pin has already stopped the gate,
   and the upgrade comes first. An older 1.x pin is a proposal to run
-  `fdf migrate`, which moves the pin, re-vendors `SPEC.md` and adds the new
-  version's registers, editing no document — still the user's call.
+  `fdf migrate`, which moves the pin, re-vendors `SPEC.md` (and, from 1.1,
+  `SPEC.examples.md`) and adds any register the new version has, editing no
+  document — still the user's call (fdf-help, *A bundle on an older 1.x
+  version*).
 - **`SPEC.md`** is the pinned version's spec, vendored, and matches it exactly
   below its frontmatter:
 
@@ -189,10 +194,29 @@ it appears as a link to that home, not a copy.
   diff <(fdf spec -v <pin>) <(awk 'f; /^---$/ && ++n==2 {f=1}' docs/fdf/SPEC.md | tail -n +2)
   ```
 
-  Any output means a hand edit or a copy vendored by an older fdf. Never
-  repair it by editing lines: copy any project content found in it to its
-  home first, then — with the pin already current — propose `fdf migrate`,
-  which rewrites the whole copy and changes nothing else.
+- **`SPEC.examples.md`** is the pinned version's examples, vendored, and
+  matches them the same way — **only when the pin is `1.1` or later**:
+
+  ```bash
+  diff <(fdf spec -v <pin> --examples) <(awk 'f; /^---$/ && ++n==2 {f=1}' docs/fdf/SPEC.examples.md | tail -n +2)
+  ```
+
+  When the pin is `1.0`, skip this command: a 1.0 bundle has no
+  `SPEC.examples.md` (its examples are inside its `SPEC.md`), so the command
+  would only print an error, and `fdf validate` has already failed F3 if the
+  file is there.
+
+  Any output from either command means a hand edit or a copy vendored by an
+  older fdf; so does a missing `SPEC.examples.md` when the pin is `1.1` or
+  later. Never repair a copy by editing lines: copy any project content found
+  in it to its home first, then propose the repair for the pin:
+  - the pin is the version `fdf spec --list` marks current → `fdf migrate`,
+    which rewrites both copies and changes nothing else;
+  - any older 1.x pin → remove each copy that differs (`rm docs/fdf/SPEC.md`,
+    `rm docs/fdf/SPEC.examples.md`), then `fdf init`, which writes the pinned
+    version's copies back and overwrites nothing. `fdf migrate` would rewrite
+    them too, but only by taking the bundle up to the current version: offer
+    that as the user's choice, never as the repair.
 - **Installed skills.** Each installed fdf skill has a `.fdf-version` file
   beside its `SKILL.md` — in a project install under `.claude/skills/`,
   `.codex/skills/` or `.opencode/skills/` — reading
@@ -398,8 +422,8 @@ question bank), draft the whole document, and get it approved as a whole.
 - Documents only. Code that breaks a rule the project still holds is a debt or
   routed work, never a reason to weaken the document.
 - One home per fact; everywhere else, a link.
-- Never write into `SPEC.md` or the managed primer — `fdf migrate` and
-  `fdf install` rewrite them. Deleting an edited primer section so
+- Never write into `SPEC.md`, `SPEC.examples.md` or the managed primer —
+  `fdf migrate` and `fdf install` rewrite them. Deleting an edited primer section so
   `fdf install` can write it fresh is the one hand step.
 - Never drop a line inside a rewrite without saying so.
 - Never edit an episodic document to agree with today — except a maintenance

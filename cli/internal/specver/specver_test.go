@@ -68,3 +68,13 @@ func TestKnown0xIsEachVersionBefore1(t *testing.T) {
 		}
 	}
 }
+
+// A pin that is no MAJOR.MINOR version is corrected to the one it most
+// likely means, never to a newer one it does not name.
+func TestMeantReadsTheVersionAPinStartsWith(t *testing.T) {
+	for pin, want := range map[string]string{"1.0.0": "1.0", "v1.0": "1.0", "V1.1.2": "1.1", "0.7.1": "0.7", "0.9.1": "1.1", "latest": "1.1", "": "1.1"} {
+		if got := Meant(pin, "1.1"); got != want {
+			t.Errorf("Meant(%q) = %q, want %q", pin, got, want)
+		}
+	}
+}

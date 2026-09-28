@@ -17,7 +17,7 @@ import (
 	"github.com/GiteshDalal/fdf/cli/internal/specver"
 )
 
-const currentVersion = "1.0"
+const currentVersion = "1.1"
 const specURL = "https://github.com/GiteshDalal/fdf/blob/main/spec/" + currentVersion + ".md"
 
 // contextDocs are the bundle-root Context documents fdf init scaffolds as
@@ -70,8 +70,27 @@ func SpecDoc(version string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	fm := fmt.Sprintf("---\ntype: Reference\ntitle: Feature Document Format spec\ndescription: The FDF v%s specification this bundle conforms to.\ntimestamp: %s\n---\n\n", version, time.Now().UTC().Format("2006-01-02T15:04:05Z"))
-	return append([]byte(fm), raw...), nil
+	return referenceDoc("Feature Document Format spec", fmt.Sprintf("The FDF v%s specification this bundle conforms to.", version), raw), nil
+}
+
+// ExamplesDoc renders the embedded examples of a version as the
+// bundle-root Reference document /SPEC.examples.md, beside the spec, and
+// reports whether the version has examples of their own: from 1.1 on, a
+// version publishes its examples beside the spec, while 1.0 and every 0.x
+// version keep theirs inside it.
+func ExamplesDoc(version string) ([]byte, bool) {
+	raw, ok := ExamplesText(version)
+	if !ok {
+		return nil, false
+	}
+	return referenceDoc("Feature Document Format examples", fmt.Sprintf("One example of each document of the FDF v%s specification.", version), raw), true
+}
+
+// referenceDoc is a vendored text under the frontmatter of a Reference
+// document, stamped now.
+func referenceDoc(title, description string, raw []byte) []byte {
+	fm := fmt.Sprintf("---\ntype: Reference\ntitle: %s\ndescription: %s\ntimestamp: %s\n---\n\n", title, description, time.Now().UTC().Format("2006-01-02T15:04:05Z"))
+	return append([]byte(fm), raw...)
 }
 
 // stubSentinel marks an unfilled Context document; it MUST match
@@ -79,24 +98,38 @@ func SpecDoc(version string) ([]byte, error) {
 const stubSentinel = "<!-- fdf:stub -->"
 
 // EnsureSpec writes the spec of version, the one the bundle pins, to
-// /SPEC.md when the bundle has none (init): a bundle restores the spec its
-// pin names, not the current one, which a later minor would make newer.
-// fdf migrate vendors the spec it pins with SpecDoc.
+// /SPEC.md, and its examples, when the version has a file of them, to
+// /SPEC.examples.md, each when the bundle has none (init): a bundle restores
+// the spec its pin names, not the current one, which a later minor would
+// make newer. fdf migrate vendors the spec it pins with SpecDoc and
+// ExamplesDoc.
 func EnsureSpec(root, version string, out io.Writer) int {
-	specPath := filepath.Join(root, "SPEC.md")
-	if _, err := os.Stat(specPath); err == nil {
-		return 0
-	}
 	doc, err := SpecDoc(version)
 	if err != nil {
 		fmt.Fprintln(out, "error:", err)
 		return 1
 	}
-	if err := os.WriteFile(specPath, doc, 0o644); err != nil {
+	if code := ensureFile(root, layout.Spec, doc, fmt.Sprintf("FDF v%s spec copy", version), out); code != 0 {
+		return code
+	}
+	if ex, ok := ExamplesDoc(version); ok {
+		return ensureFile(root, layout.Examples, ex, fmt.Sprintf("FDF v%s examples copy", version), out)
+	}
+	return 0
+}
+
+// ensureFile writes doc to name at the bundle root unless a file is there,
+// and says so, naming what it is.
+func ensureFile(root, name string, doc []byte, what string, out io.Writer) int {
+	p := filepath.Join(root, name)
+	if _, err := os.Stat(p); err == nil {
+		return 0
+	}
+	if err := os.WriteFile(p, doc, 0o644); err != nil {
 		fmt.Fprintln(out, "error:", err)
 		return 1
 	}
-	fmt.Fprintf(out, "wrote SPEC.md (FDF v%s spec copy)\n", version)
+	fmt.Fprintf(out, "wrote %s (%s)\n", name, what)
 	return 0
 }
 
@@ -187,6 +220,17 @@ func SpecVersions() []string {
 	}
 	specver.Sort(out)
 	return out
+}
+
+// ExamplesText returns the embedded examples of a spec version, exactly as
+// spec/<version>.examples.md holds them, and whether the version has a file
+// of them: 1.0 and every 0.x version keep their examples inside the spec.
+func ExamplesText(version string) ([]byte, bool) {
+	if _, ok := specver.Parse(version); !ok {
+		return nil, false
+	}
+	raw, err := fs.ReadFile(fdf.Assets, "spec/"+version+".examples.md")
+	return raw, err == nil
 }
 
 // SpecText returns the embedded normative text of a spec version, exactly as
@@ -342,7 +386,8 @@ here without `+"`.md`"+`, such as `+"`features/payments/instant-refunds`"+`.
 
 %s* [Stack](/STACK.md), [Architecture](/ARCHITECTURE.md), [Surfaces](/SURFACES.md),
   [Infrastructure](/INFRA.md), [Domain](/DOMAIN.md) - the project's context.
-* [Format reference](/SPEC.md) - the spec this bundle pins ([upstream](%s)).
+* [Format reference](/SPEC.md) - the spec this bundle pins ([upstream](%s)), and
+  [its examples](/SPEC.examples.md).
 
 Validate with `+"`fdf validate`"+`; [LOG.md](/LOG.md) records what happened to the bundle.
 `, currentVersion, currentVersion, registers.String(), specURL)
@@ -419,7 +464,7 @@ func Init(root string, out io.Writer) int {
 		return code
 	}
 	fmt.Fprintf(out, "\ndone: initialized FDF bundle at %s\n", root)
-	fmt.Fprintf(out, "  pinned fdf_version %s; wrote INDEX.md, LOG.md, SPEC.md, %d Context stub(s) and the registers' indexes\n", currentVersion, len(contextDocs))
+	fmt.Fprintf(out, "  pinned fdf_version %s; wrote INDEX.md, LOG.md, SPEC.md, SPEC.examples.md, %d Context stub(s) and the registers' indexes\n", currentVersion, len(contextDocs))
 	fmt.Fprintln(out, "next: run the fdf-init skill to fill "+contextDocNames()+" before adding features.")
 	fmt.Fprintln(out, "      `fdf validate` warns about them now, and fails F9 once a feature exists while any is unfilled.")
 	fmt.Fprintln(out, "      On an existing codebase, map what it already does with `fdf adopt` (the fdf-adopt skill).")

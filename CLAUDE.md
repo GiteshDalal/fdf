@@ -142,8 +142,10 @@ pinned bundle is sent to that bundle.
   `fdf mv`, `fdf migrate` and the validator use it (`sectionTargets` also skips a
   heading line that starts in `Code`).
 
-- **`cli/internal/layout`** — the one source of 1.0 positions: the closed root (its own
-  files, the five Context documents and the six `Registers`), groups nested to any depth in
+- **`cli/internal/layout`** — the one source of 1.x positions: the closed root (its own
+  files — `Spec` and, from 1.1, `Examples`, the two `Vendored` copies, which the validator
+  gates by the pin with `ExamplesSince` — the five Context documents and the six
+  `Registers`), groups nested to any depth in
   every register but `releases/`, and the directory rule (a directory beside a feature,
   Change or Fix is its task directory; beside a practice, debt or bug it is an error; any
   other is a group). A directory that holds no Markdown is outside FDF wherever it is
@@ -165,7 +167,7 @@ pinned bundle is sent to that bundle.
   - A directory with no `INDEX.md` is no bundle (`fdfroot.NoBundle`). The pin is read
     *before* the walk (`fdfroot.PinOf`): it decides whether the bundle is checked at all,
     and a line of the root `INDEX.md`'s frontmatter that does not parse is F1, as in any
-    document. The validator checks spec **1.0** (`supportedVersions`); a
+    document. The validator checks spec **1.0 and 1.1** (`supportedVersions`); a
     missing pin, one that is not a `MAJOR.MINOR` version or is a 0.x version FDF never
     had, an older one (a 0.x bundle, for `fdf migrate`, the user's decision) or a newer
     one (for a newer fdf) is an F1 error that names the fix (`pinProblem`), and the
@@ -197,8 +199,8 @@ pinned bundle is sent to that bundle.
     parsing `DOMAIN.md`'s `# Terms` grammar (`readLexicon`: consistency, `except:` and
     `strict` checks). **`lexicon.go`** is F12's scan (`checkDomain`), exported for
     `fdf lexicon` and `fdf migrate`: `LoadLexicon`, `ScanBundle`, `ScanDocument`,
-    `DomainScanned`. It reads every document but `SPEC.md`, `DOMAIN.md`, `slug.test.md`
-    and `slug.surface.md`, frozen ones included, since a *lexicon fix* (banned word →
+    `DomainScanned`. It reads every document but `SPEC.md`, `SPEC.examples.md`,
+    `DOMAIN.md`, `slug.test.md` and `slug.surface.md`, frozen ones included, since a *lexicon fix* (banned word →
     term) may edit any document, and every group, slug and task name. It masks quoting
     text byte for byte (so every `Occurrence` keeps file:line:col) — never a
     `## <feature-id>` heading or a verification, which quote an ID, a path or surface
@@ -244,7 +246,10 @@ pinned bundle is sent to that bundle.
   superseded slash commands by exact name;
   `MarkerFile`, `PrimerSection` and `InstructionFile` say what it manages, which
   `fdf migrate` leaves to it), and **`cli/internal/migrate`** (`fdf migrate`: any 0.x
-  bundle, pinned 0.1 to 0.7 or not at all, to 1.0, its `target`, in one run, design §6.
+  bundle, pinned 0.1 to 0.7 or not at all, to 1.1, its `target`, in one run, design §6;
+  a 1.x bundle takes the `repair` path, where one pinned before `target` takes it up as
+  a minor version: the pin moves, `SPEC.md` and `SPEC.examples.md` are vendored, one
+  root `LOG.md` entry says so, nothing moves and no document is edited.
   `plan.go` works out the whole migration in memory before anything is written, and
   `report.go` prints it; `--dry-run` stops there. The older layouts become 0.7-shaped
   first: 0.1's case renames and its vendored `fdf-spec.md` gone, 0.3's trail lift with
@@ -283,9 +288,10 @@ pinned bundle is sent to that bundle.
   and skipping `.gitmodules` and what `fdf install` manages, which it counts; a bundle
   that is its own repository has no outside. Refused before anything is written: a
   root inside a pinned bundle, or one that is a symbolic link, or whose `INDEX.md`,
-  `LOG.md` or `SPEC.md` is one; a pin that is not a version, a newer one or an unknown
-  0.x one, or none in a bundle written for 1.0 (`laidOut1`: its `features/INDEX.md`,
-  or a `SPEC.md` that is 1.0's), which needs only its pin; a v0.1 rename (`caseRenames`) or a 0.3 lift (`liftTrails`) onto a file that
+  `LOG.md`, `SPEC.md` or `SPEC.examples.md` is one; a pin that is not a version, a newer
+  one or an unknown 0.x one, or none in a bundle written for 1.x (`laidOut1`: its
+  `features/INDEX.md`, or a `SPEC.md` that is a 1.x version's, whose pin it asks for),
+  which needs only its pin; a v0.1 rename (`caseRenames`) or a 0.3 lift (`liftTrails`) onto a file that
   is there; a stray root Markdown file, a document named `index.md` or `log.md`, a
   practice, debt or bug beside a directory of Markdown, a group whose place in
   `features/` is taken or a register's taken by a file (`registerFile`: a `features`,
@@ -295,7 +301,7 @@ pinned bundle is sent to that bundle.
   inside `.git`, or behind a file; a tree that is not clean; a place git would ignore;
   and a `--skip` glob that names no file git tracks outside the bundle, or any where
   migrate reads nothing outside it: outside git, in a bundle that is its own
-  repository, or at 1.0. A bundle at 1.0 moves nothing: its spec copy,
+  repository, or at 1.x. A bundle at 1.x moves nothing: its spec and examples copies,
   indexes and Context stubs are restored, and one it would write through a symbolic
   link, the file's or its register's, is refused first. Validation runs with
   `FreshStubsAdvisory`, and a bundle from before 0.7 hears 0.7's F12, F8, surface and
@@ -340,8 +346,9 @@ pinned bundle is sent to that bundle.
 
 ```
 docs/fdf/
-├── INDEX.md                  # pins fdf_version: "1.0"; lists the Context docs and registers
+├── INDEX.md                  # pins fdf_version: "1.1"; lists the Context docs and registers
 ├── LOG.md, SPEC.md           # and README.md, optional and ignored
+├── SPEC.examples.md          # from 1.1: the spec's examples, vendored beside it
 ├── STACK.md, ARCHITECTURE.md, SURFACES.md, INFRA.md, DOMAIN.md   # type: Context
 ├── features/                 # flat or in groups, nested to any depth
 │   ├── INDEX.md
@@ -385,9 +392,13 @@ describe the case they lock in (e.g. `done-with-open-task`, `depends-on-cycle`,
 ### Specs and versioning
 
 `spec/<version>.md` files are normative. `spec/README.md` and the top-level `SPEC.md` index
-them; the current version is **1.0**: `fdf init` pins it, and every command reads and
-writes it. `fdf migrate` upgrades any 0.x bundle to 1.0 (`target` in `migrate.go`), and
-the validator checks 1.0 alone: a 0.x bundle fails F1, which sends it to `fdf migrate`.
+them; the current version is **1.1**: `fdf init` pins it, and every command reads and
+writes 1.0 and 1.1 bundles. `fdf migrate` upgrades any 0.x bundle, and takes a 1.0 one
+up, to 1.1 (`target` in `migrate.go`), and the validator checks 1.0 and 1.1: a 0.x
+bundle fails F1, which sends it to `fdf migrate`. From 1.1 on, a version's examples are a
+file of their own, `spec/<version>.examples.md` (`scaffold.ExamplesText`), vendored as
+`SPEC.examples.md` (`ExamplesDoc`); `fdf spec` prints what a bundle vendors as `SPEC.md`,
+`--examples` the examples and `--full` both.
 `currentVersion` is defined in `cli/internal/scaffold/scaffold.go`, and fdf X.Y.z ships spec
 X.Y as current: `main.version`, `install.Version` and the version in
 `.claude-plugin/plugin.json` move with it (`TestTheReleaseVersionMatchesTheSpecAndThePlugin`).
@@ -397,8 +408,9 @@ are self-describing. Bumping the spec means: add `spec/<new>.md` and list it as 
 `validate.go`, update `currentVersion`, add fixtures for the new rules, and refresh
 **skills + install primer + README** so agents teach it (re-run `fdf install` after users
 migrate). A **minor** version only adds: gate each addition by the bundle's pin, so that a
-bundle pinned to 1.0 is still checked as 1.0, and give `fdf migrate` the minor path (move
-the pin, re-vendor `SPEC.md`, create any new register's `INDEX.md`, edit no document). A
+bundle pinned to 1.0 is still checked as 1.0, and give `fdf migrate` the minor path
+(`repair`: move the pin, re-vendor `SPEC.md` and `SPEC.examples.md`, create any new
+register's `INDEX.md`, edit no document). A
 **major** version may break, and ships a `fdf migrate` from the major before it. A new
 Context document or register goes into `layout` (`ContextDocs`, `Registers`), which a test
 holds to the current spec's *Casing* section, and scaffold then needs its stub or its index

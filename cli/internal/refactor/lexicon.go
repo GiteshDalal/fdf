@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/GiteshDalal/fdf/cli/internal/bundle"
+	"github.com/GiteshDalal/fdf/cli/internal/layout"
 	"github.com/GiteshDalal/fdf/cli/internal/logs"
 	"github.com/GiteshDalal/fdf/cli/internal/scaffold"
 )
@@ -394,14 +395,15 @@ func fixLexicon(rootAbs string, lex *bundle.Lexicon, occ []bundle.Occurrence, te
 		start, repl := withArticle(text, o.Start, replacement(o))
 		byFile[o.Rel] = append(byFile[o.Rel], span{start, o.End, repl})
 	}
-	// Join renames reach every document but the vendored spec and the lexicon.
+	// Join renames reach every document but the vendored spec, its examples and
+	// the lexicon.
 	if len(renames) > 0 {
 		filepath.WalkDir(rootAbs, func(q string, d os.DirEntry, err error) error {
 			if err != nil || d.IsDir() || !strings.HasSuffix(q, ".md") {
 				return nil
 			}
 			rel := relSlash(rootAbs, q)
-			if rel == "SPEC.md" || rel == "DOMAIN.md" {
+			if layout.Vendored(rel) || rel == "DOMAIN.md" {
 				return nil
 			}
 			text := textOf(rel)

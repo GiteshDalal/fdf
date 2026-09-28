@@ -61,7 +61,7 @@ FAIL: ARCHITECTURE.md: still an unfilled stub; ... (F9)
 warn: features/payments/refunds.md: missing recommended `description`
 
 6 document(s), 1 feature(s), 0 release(s) checked; 4 error(s), 1 warning(s).
-Bundle is NOT conformant with FDF v1.0.
+Bundle is NOT conformant with FDF v1.1.
 ```
 
 - **Read the whole line.** The rule code — usually at the end, sometimes
@@ -123,19 +123,23 @@ Bundle is NOT conformant with FDF v1.0.
   it.
 - **A log date that is not `## YYYY-MM-DD`** → correct the heading.
 - **The `fdf_version` pin** in the root `INDEX.md`. First decide which version
-  the bundle was written for: **1.0 when it has `features/INDEX.md`**,
-  otherwise the 0.x version it was written for.
+  the bundle was written for: **1.1 when it has `SPEC.examples.md`**, **1.0
+  when it has `features/INDEX.md` but no `SPEC.examples.md`**, otherwise the
+  0.x version it was written for.
   - it pins `0.x` → the bundle predates 1.0: its upgrade is the user's
     decision (fdf-help, *A bundle from before 1.0*). Never edit a 0.x pin to
-    `"1.0"` by hand.
+    `"1.0"` or `"1.1"` by hand.
   - it is missing, or is not a `MAJOR.MINOR` version (`1.0.0`, `v1.0`,
     `0.7.1`), or is a 0.x version FDF never had (after 0.7) → correct it to
-    the version the bundle was written for: `"1.0"`, or its 0.x version
-    (`0.7.1` → `"0.7"`) — and a bundle written for 0.x is then upgraded
-    (fdf-help, *A bundle from before 1.0*). When you cannot tell which 0.x
-    version, `fdf migrate --dry-run` works from any 0.x layout: show the user
-    its plan.
+    the version the bundle was written for: `"1.1"`, `"1.0"`, or its 0.x
+    version (`0.7.1` → `"0.7"`) — and a bundle written for 0.x is then
+    upgraded (fdf-help, *A bundle from before 1.0*). When you cannot tell
+    which 0.x version, `fdf migrate --dry-run` works from any 0.x layout: show
+    the user its plan.
   - it is newer than this fdf supports → upgrade fdf.
+  - A `1.0` pin is no error: fdf validates every 1.x bundle. Never edit it to
+    `"1.1"` by hand; taking up 1.1 is `fdf migrate`, the user's decision
+    (fdf-help, *A bundle on an older 1.x version*).
 
 ## F3
 
@@ -146,6 +150,30 @@ Bundle is NOT conformant with FDF v1.0.
   of `docs/`; a trail document goes beside its feature,
   `features/…/<slug>.<role>.md`. Then fix the links `fdf validate` reports as
   `broken cross-link`.
+- **`SPEC.examples.md` in a bundle that pins 1.0** — the file came with spec
+  1.1. First check which spec the bundle's `SPEC.md` is:
+
+  ```bash
+  diff <(fdf spec -v 1.1) <(awk 'f; /^---$/ && ++n==2 {f=1}' docs/fdf/SPEC.md | tail -n +2)
+  ```
+
+  - **No output** → `SPEC.md` is 1.1's: the bundle was at 1.1, and its pin
+    was set back to `"1.0"`. Change nothing yet. Tell the user, and ask
+    which version the bundle should follow — the pin is theirs to decide.
+    Never edit the pin by hand, whatever they answer:
+    - **1.1** → run `fdf migrate`. It moves the pin to `"1.1"` and logs it;
+      here it writes only `INDEX.md` and `LOG.md`.
+    - **1.0** → remove `SPEC.examples.md` (below), then put 1.0's spec back:
+      `rm docs/fdf/SPEC.md`, then `fdf init`, which writes 1.0's copy and
+      overwrites nothing.
+  - **Any output** → it is a 1.0 bundle, which keeps its examples inside its
+    `SPEC.md`. Remove `SPEC.examples.md`: it is a vendored copy, never a
+    document anyone wrote. Use `git rm docs/fdf/SPEC.examples.md` when
+    `git ls-files docs/fdf/SPEC.examples.md` prints the path, and
+    `rm docs/fdf/SPEC.examples.md` when it prints nothing. Fix any
+    `broken cross-link` to it that `fdf validate` then reports. Tell the user
+    that `fdf migrate` would take the bundle up to 1.1 and write the file
+    again, if they want that (fdf-help, *A bundle on an older 1.x version*).
 - **A document whose `type:` does not match its register** — a `type: Feature`
   file under `practices/` — has an ID, but `fdf mv` moves documents across
   registers only between `debts/` and `bugs/` (`fdf mv <debt-id>
@@ -155,8 +183,8 @@ Bundle is NOT conformant with FDF v1.0.
   reports as `broken cross-link`. Within one register, `fdf mv <id> <new-id>`
   renames or regroups a document and repairs every reference to it.
 - **Casing** → directories and file names are lowercase; uppercase is only for
-  the reserved files (`INDEX.md`, `LOG.md`, `SPEC.md`, `README.md`, the
-  Context documents). No document is named `index.md` or `log.md`.
+  the reserved files (`INDEX.md`, `LOG.md`, `SPEC.md`, `SPEC.examples.md`,
+  `README.md`, the Context documents). No document is named `index.md` or `log.md`.
 - **Roles**: beside a feature, `spec`, `plan`, `test`, `surface` and `log`;
   beside a Change or Fix only `spec`, `plan` and `log` (its `test` and
   `surface` belong to the affected feature); beside a practice, debt or bug
@@ -252,8 +280,8 @@ needs the user's approval. Do not resolve it by deleting a term someone still
 uses.
 
 **A banned word reached a document or a name the bundle chose.** F12 reads
-every document except `SPEC.md`, `DOMAIN.md`, `slug.test.md` and
-`slug.surface.md` — features, specs, plans, tasks, changes, practices, debts,
+every document except `SPEC.md`, `SPEC.examples.md`, `DOMAIN.md`,
+`slug.test.md` and `slug.surface.md` — features, specs, plans, tasks, changes, practices, debts,
 bugs, logs, indexes, Context documents, finished work included — plus every
 group, slug and task name. It skips what quotes rather than chooses: code
 spans, non-Gherkin code blocks, link targets, URLs, HTML comments,
@@ -398,7 +426,7 @@ validate, and all make the bundle lie:
 | Invent a zone or a time for a timestamp | It now claims a moment nobody recorded. Keep the date. |
 | Bump a test document's `timestamp` with its case untouched, to clear the "predates" warning | It claims the case now catches the defect. First make the test fail without the fix. |
 | Write plausible-sounding STACK.md text to clear F9 | Invented context is worse than none — every later feature is designed against it. |
-| Hand-edit a 0.x `fdf_version` pin to `"1.0"` | The pin says which rules the bundle follows. `fdf migrate` moves a bundle into 1.0's layout and then pins it; a hand-edited pin claims a layout the bundle does not have. |
+| Hand-edit a 0.x `fdf_version` pin to `"1.0"`, or a `"1.0"` pin to `"1.1"` | The pin says which rules the bundle follows, and the vendored spec is that version's. `fdf migrate` moves a bundle into 1.0's layout and then pins it, and takes a 1.0 bundle up to 1.1 with its `SPEC.md` and `SPEC.examples.md`; a hand-edited pin claims a layout or a spec copy the bundle does not have. |
 | Give a free-form note an FDF type so the closed root stops rejecting it | It becomes a document the bundle vouches for. Move free-form documentation out of the bundle. |
 | Delete the file the error names | The error was about the file's content, not its existence — unless the file should not exist at all (a Change against an undelivered feature). |
 | Drop an `instead-of` word so an F12 warning goes away | The synonym drift is the thing the lexicon exists to catch; you deleted the detector, not the problem. |

@@ -10,7 +10,9 @@ description: Use when starting any conversation in a project with an FDF bundle 
 FDF (Feature Document Format) documents software features as a directory of
 Markdown files — the **bundle**, at `docs/fdf/` in this project. Its root is
 closed: it holds the five Context documents below, `INDEX.md` (which pins the
-spec version), `LOG.md`, `SPEC.md`, an optional `README.md`, and six
+spec version), `LOG.md`, `SPEC.md` (the format rules) and, from spec 1.1,
+`SPEC.examples.md` (one example of each document), an optional `README.md`,
+and six
 **registers** — `features/`, `changes/`, `practices/`, `debts/`, `bugs/` and
 `releases/` — and nothing else. Free-form documentation (guides, ADRs, notes)
 belongs outside the bundle, in the rest of `docs/`. Every register but
@@ -142,7 +144,9 @@ failure FDF exists to prevent, and tiny changes are where it happens.
   that need a decision.
 - **Rule codes** (F1–F14, R1) are defined in `docs/fdf/SPEC.md`. It is long:
   read the section you need (`grep -n '^#' docs/fdf/SPEC.md` lists them)
-  rather than all of it.
+  rather than all of it. One example of each document, all from one bundle,
+  is in `docs/fdf/SPEC.examples.md`; a bundle that pins 1.0 has no such file
+  and keeps them inside its `SPEC.md`, under `# Document examples`.
 
 ## Living and episodic documents
 
@@ -371,12 +375,38 @@ propose it, say what it does, and wait.
   4. **`fdf install` again**, once for each agent the project uses, naming it
      and the bundle root: `fdf install --project --root docs/fdf claude-code`
      (or `codex`, `opencode`; leave out `--project` for a copy installed in
-     your home directory). The skills and the primer then teach 1.0.
+     your home directory). The skills and the primer then teach the spec
+     this fdf ships, the version migrate has just pinned.
   5. **Review** `git diff -M --stat` and what migrate listed, then commit. Its
      report ends with the commands that back the migration out.
   6. **Run fdf-checkpoint.** An instruction file may still name a feature by
      its old ID: outside the bundle, migrate cannot tell a bare ID from a code
      path, and leaves it.
+
+## A bundle on an older 1.x version
+
+fdf 1.x validates and works on every 1.x bundle, so a bundle that pins 1.0
+keeps working as it is: nothing waits on an upgrade. Taking up 1.1 is still
+**the user's decision** — propose it when it comes up (fdf-checkpoint does),
+and wait. 1.1 only adds: its examples moved out of `SPEC.md` into
+`SPEC.examples.md`.
+
+- **If the user agrees:**
+  1. **Start clean.** Commit first, so that `git diff` then shows the
+     upgrade alone: unlike the 0.x migration, this one does not require it.
+  2. **`fdf migrate --dry-run`** lists what it would write: `INDEX.md` (the
+     pin), `LOG.md` (one entry), `SPEC.md`, `SPEC.examples.md`, and any
+     register index or Context stub that is missing. Nothing moves, and no
+     document is edited.
+  3. **`fdf migrate`.** It validates the result, and marks the files it
+     writes new with `git add -N`, so that `git diff` shows them.
+  4. **`fdf install` again**, once for each agent the project uses, naming it
+     and the bundle root: `fdf install --project --root docs/fdf claude-code`
+     (or `codex`, `opencode`; leave out `--project` for a copy installed in
+     your home directory).
+  5. **Review** `git diff`, then commit.
+- Never edit the pin by hand: the pin and the vendored `SPEC.md` and
+  `SPEC.examples.md` move together.
 
 ## "It's tiny, just do it"
 
@@ -419,6 +449,7 @@ violation is the *silent* skip — and so is doing it first and asking later.
 | "I'll add a back-link on the feature" | Don't. `affects:` is the whole link; `fdf history <feature-id>` computes the rest. |
 | "I'll keep this design note in the bundle, at its root" | The root is closed (F3). A document of an FDF type goes in its register; a free-form note goes outside the bundle, in the rest of `docs/`. |
 | "The bundle pins 0.7 — I'll just set the pin to 1.0" | 1.0 moved every feature into `features/` and gave every feature ID its register. `fdf migrate` does that in one run; a hand-edited pin claims a layout the bundle does not have. |
+| "The bundle pins 1.0 — I'll just set the pin to 1.1" | Its `SPEC.md` would still be 1.0's and its `SPEC.examples.md` missing. `fdf migrate` moves the pin and vendors both — and taking up 1.1 is the user's call. |
 | "I know roughly what time it is" | You don't. `date -u +%Y-%m-%dT%H:%M:%SZ`. |
 
 ## Precedence

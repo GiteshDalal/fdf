@@ -167,6 +167,42 @@ func TestSpecUnknownVersionExits2(t *testing.T) {
 	}
 }
 
+// fdf spec prints what a bundle pinning the version vendors as SPEC.md:
+// from 1.1 on, the rules alone. --examples prints what it vendors as
+// SPEC.examples.md, and --full the one after the other. 1.0 keeps its
+// examples inside its spec, so -v 1.0 prints them by default, and
+// --examples says where they are.
+func TestSpecPrintsTheExamplesApart(t *testing.T) {
+	cur := scaffold.CurrentVersion()
+	var spec, examples, full bytes.Buffer
+	if exit := runSpec(nil, &spec); exit != 0 || strings.Contains(spec.String(), "\n# Document examples\n") {
+		t.Fatalf("fdf spec prints the rules alone: exit %d\n%.200s", exit, spec.String())
+	}
+	if exit := runSpec([]string{"--examples"}, &examples); exit != 0 || !strings.HasPrefix(examples.String(), "# Feature Document Format (FDF) — v"+cur+" examples\n") {
+		t.Fatalf("--examples prints the examples: exit %d\n%.200s", exit, examples.String())
+	}
+	if exit := runSpec([]string{"--full"}, &full); exit != 0 || full.String() != spec.String()+"\n"+examples.String() {
+		t.Fatalf("--full prints the spec, then the examples: exit %d", exit)
+	}
+	var old bytes.Buffer
+	if exit := runSpec([]string{"-v", "1.0"}, &old); exit != 0 || !strings.Contains(old.String(), "\n# Document examples\n") {
+		t.Fatalf("-v 1.0 prints 1.0 whole, its examples included: exit %d", exit)
+	}
+	for _, tc := range []struct {
+		args []string
+		says string
+	}{
+		{[]string{"-v", "1.0", "--examples"}, "error: spec 1.0 has no examples file: its examples are inside the spec, under `# Document examples` — `fdf spec -v 1.0` prints it\n"},
+		{[]string{"-v", "0.3", "--examples"}, "error: spec 0.3 has no examples\n"},
+		{[]string{"--examples", "--full"}, "error: --examples prints the examples alone and --full the spec with them — pass one\n"},
+	} {
+		var out bytes.Buffer
+		if exit := runSpec(tc.args, &out); exit != 2 || out.String() != tc.says {
+			t.Errorf("fdf spec %s: exit %d, want 2 saying %q:\n%s", strings.Join(tc.args, " "), exit, tc.says, out.String())
+		}
+	}
+}
+
 func TestSpecListMarksCurrent(t *testing.T) {
 	var out bytes.Buffer
 	if exit := runSpec([]string{"--list"}, &out); exit != 0 {
@@ -436,7 +472,7 @@ func TestLogGatesTheBundleBeforeItReadsIt(t *testing.T) {
 	os.WriteFile(filepath.Join(root, "INDEX.md"), []byte(strings.Replace(string(index), `fdf_version: "1.0"`, `fdf_version: "0.7"`, 1)), 0o644)
 	var out bytes.Buffer
 	if code := runLog([]string{"--root", root, "features/venues/opening-hours"}, &out); code != 1 ||
-		!strings.HasSuffix(out.String(), "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n") {
+		!strings.HasSuffix(out.String(), "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0 and 1.1 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n") {
 		t.Errorf("fdf log on a 0.7 bundle: exit %d\n%s", code, out.String())
 	}
 }

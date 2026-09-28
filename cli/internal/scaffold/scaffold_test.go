@@ -98,8 +98,8 @@ func TestInitIdempotentAndMigrateHint(t *testing.T) {
 	}{
 		{"'" + currentVersion + "'", "up to date (fdf_version " + currentVersion + ")", 0},
 		{currentVersion, "up to date (fdf_version " + currentVersion + ")", 0},
-		{`"0.1"`, "pins fdf_version 0.1; fdf's commands work on spec 1.0 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan", 1},
-		{`"1.3"`, "pins fdf_version 1.3, newer than any spec this fdf knows (1.0) — upgrade fdf", 1},
+		{`"0.1"`, "pins fdf_version 0.1; fdf's commands work on spec 1.0 and 1.1 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan", 1},
+		{`"1.3"`, "pins fdf_version 1.3, newer than any spec this fdf knows (1.0 and 1.1) — upgrade fdf", 1},
 	} {
 		os.WriteFile(idx, bytes.Replace(raw, []byte(`"`+currentVersion+`"`), []byte(tc.pin), 1), 0o644)
 		out.Reset()
@@ -400,15 +400,15 @@ func TestWriteNewNeverOverwrites(t *testing.T) {
 // the frontmatter when no `---` line closes it.
 func TestScaffoldsPointA0xBundleAtMigrate(t *testing.T) {
 	for _, tc := range []struct{ pin, says string }{
-		{"0.7", "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n"},
-		{"0.5", "error: this bundle pins fdf_version 0.5; fdf's commands work on spec 1.0 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n"},
-		{"", "error: this bundle's INDEX.md pins no fdf_version; fdf's commands work on spec 1.0 bundles — pin the version it was written for, as fdf_version: \"" + currentVersion + "\"; upgrading a bundle from before 1.0 is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n"},
+		{"0.7", "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0 and 1.1 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n"},
+		{"0.5", "error: this bundle pins fdf_version 0.5; fdf's commands work on spec 1.0 and 1.1 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n"},
+		{"", "error: this bundle's INDEX.md pins no fdf_version; fdf's commands work on spec 1.0 and 1.1 bundles — pin the version it was written for, as fdf_version: \"" + currentVersion + "\"; upgrading a bundle from before 1.0 is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n"},
 		// A 0.x pin FDF never had is a mistake, and migrate refuses it too.
 		{"0.8", "error: this bundle pins fdf_version 0.8, which is no 0.x version this fdf knows (0.1 to 0.7) — correct the pin in INDEX.md\n"},
-		{"1.3", "error: this bundle pins fdf_version 1.3, newer than any spec this fdf knows (1.0) — upgrade fdf\n"},
+		{"1.3", "error: this bundle pins fdf_version 1.3, newer than any spec this fdf knows (1.0 and 1.1) — upgrade fdf\n"},
 		// A pin that is almost 1.0 is no 0.x version to migrate.
-		{"1.0.0", "error: this bundle pins fdf_version 1.0.0, which is not a MAJOR.MINOR version such as " + currentVersion + " — correct the pin in INDEX.md\n"},
-		{"v1.0", "error: this bundle pins fdf_version v1.0, which is not a MAJOR.MINOR version such as " + currentVersion + " — correct the pin in INDEX.md\n"},
+		{"1.0.0", "error: this bundle pins fdf_version 1.0.0, which is not a MAJOR.MINOR version such as 1.0 — correct the pin in INDEX.md\n"},
+		{"v1.0", "error: this bundle pins fdf_version v1.0, which is not a MAJOR.MINOR version such as 1.0 — correct the pin in INDEX.md\n"},
 	} {
 		for name, run := range map[string]func(root string, out *bytes.Buffer) int{
 			"new": func(root string, out *bytes.Buffer) int { return New(root, "payments/refunds", out) },
@@ -571,19 +571,41 @@ func TestInitRefusesDocsFdfBesideAnUnpinnedBundle(t *testing.T) {
 // A bundle's spec copy is the spec its pin names, which a later minor makes
 // older than the current one: EnsureSpec writes the version it is given,
 // and init gives it the pin, and writes nothing over a copy that is there.
+// The examples have a file of their own from 1.1 on, and 1.0 keeps them in
+// its spec, so a bundle pinned to 1.0 gets no SPEC.examples.md.
 func TestEnsureSpecWritesTheVersionItIsGiven(t *testing.T) {
 	root := t.TempDir()
 	var out bytes.Buffer
-	if code := EnsureSpec(root, "0.7", &out); code != 0 {
+	if code := EnsureSpec(root, "1.0", &out); code != 0 {
 		t.Fatalf("EnsureSpec: exit %d\n%s", code, out.String())
 	}
 	spec, err := os.ReadFile(filepath.Join(root, "SPEC.md"))
-	if err != nil || !strings.Contains(string(spec), "The FDF v0.7 specification this bundle conforms to.") || !strings.Contains(out.String(), "wrote SPEC.md (FDF v0.7 spec copy)") {
-		t.Errorf("SPEC.md is the 0.7 spec: %v\n%s", err, out.String())
+	if err != nil || !strings.Contains(string(spec), "The FDF v1.0 specification this bundle conforms to.") || !strings.Contains(out.String(), "wrote SPEC.md (FDF v1.0 spec copy)") {
+		t.Errorf("SPEC.md is the 1.0 spec: %v\n%s", err, out.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, "SPEC.examples.md")); err == nil || strings.Contains(out.String(), "SPEC.examples.md") {
+		t.Errorf("1.0 keeps its examples in its spec, so there is no SPEC.examples.md:\n%s", out.String())
 	}
 	out.Reset()
-	if code := EnsureSpec(root, CurrentVersion(), &out); code != 0 || out.String() != "" {
+	if code := EnsureSpec(root, "1.0", &out); code != 0 || out.String() != "" {
 		t.Errorf("a copy that is there is kept: exit %d\n%s", code, out.String())
+	}
+
+	root = t.TempDir()
+	out.Reset()
+	if code := EnsureSpec(root, "1.1", &out); code != 0 {
+		t.Fatalf("EnsureSpec: exit %d\n%s", code, out.String())
+	}
+	examples, err := os.ReadFile(filepath.Join(root, "SPEC.examples.md"))
+	if err != nil || !strings.Contains(string(examples), "type: Reference") || !strings.Contains(string(examples), "# Feature Document Format (FDF) — v1.1 examples") || !strings.Contains(out.String(), "wrote SPEC.examples.md (FDF v1.1 examples copy)") {
+		t.Errorf("SPEC.examples.md holds 1.1's examples as a Reference document: %v\n%s", err, out.String())
+	}
+	if spec, _ := os.ReadFile(filepath.Join(root, "SPEC.md")); strings.Contains(string(spec), "\n# Document examples\n") {
+		t.Error("1.1's SPEC.md holds the rules alone")
+	}
+	out.Reset()
+	if code := EnsureSpec(root, "1.1", &out); code != 0 || out.String() != "" {
+		t.Errorf("copies that are there are kept: exit %d\n%s", code, out.String())
 	}
 }
 

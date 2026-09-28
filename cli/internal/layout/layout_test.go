@@ -91,7 +91,7 @@ func TestFileStray(t *testing.T) {
 	for _, tc := range []struct {
 		rel, where, problem string
 	}{
-		{"notes.md", "notes.md", "the bundle root holds only INDEX.md, LOG.md, SPEC.md, README.md"},
+		{"notes.md", "notes.md", "the bundle root holds only INDEX.md, LOG.md, SPEC.md, SPEC.examples.md (from spec 1.1), README.md"},
 		{"drafts/idea.md", "drafts/", "a feature group belongs under features/"},
 		{"features/onboarding/INDEX.md", "features/onboarding/INDEX.md", "task directories may contain only NN-slug.md tasks — features/onboarding/ is the task directory of features/onboarding.md"},
 		{"features/onboarding/sub/02-x.md", "features/onboarding/sub/", "task directories may contain only NN-slug.md tasks, and no directory — features/onboarding/ is the task directory of features/onboarding.md"},

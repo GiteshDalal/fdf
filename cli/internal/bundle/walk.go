@@ -12,7 +12,15 @@ import (
 	"strings"
 
 	"github.com/GiteshDalal/fdf/cli/internal/layout"
+	"github.com/GiteshDalal/fdf/cli/internal/specver"
 )
+
+// pinned reads the bundle's pin, which the validator has checked before the
+// walk, as a version.
+func pinned(pin string) specver.Version {
+	v, _ := specver.Parse(pin)
+	return v
+}
 
 // walk visits every Markdown file of the bundle at rootAbs.
 func (c *collection) walk(rootAbs string) {
@@ -42,6 +50,13 @@ func (c *collection) walk(rootAbs string) {
 				c.fail("%s: %s (F3)", pos.Where, pos.Problem)
 			}
 			return nil
+		case layout.Reference:
+			// 1.1 added the examples file; a bundle pinned before it keeps
+			// its examples inside SPEC.md.
+			if since, _ := specver.Parse(layout.ExamplesSince); rel == layout.Examples && pinned(c.pin).Less(since) {
+				c.fail("%s: the examples have a file of their own from spec %s, and this bundle pins %s, whose SPEC.md holds them — remove it, or move the pin with `fdf migrate`, which writes it (F3)", rel, layout.ExamplesSince, c.pin)
+				return nil
+			}
 		}
 		raw, rerr := os.ReadFile(p)
 		if rerr != nil {

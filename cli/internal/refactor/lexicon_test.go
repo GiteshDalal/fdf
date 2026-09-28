@@ -230,7 +230,27 @@ func TestLexiconPointsA0xBundleAtMigrate(t *testing.T) {
 	pinTo(t, root, "0.7")
 	var out bytes.Buffer
 	if code := Lexicon(root, LexiconOptions{}, &out); code != 1 ||
-		out.String() != "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n" {
+		out.String() != "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0 and 1.1 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n" {
 		t.Fatalf("exit %d\n%s", code, out.String())
 	}
+}
+
+// The vendored spec and its examples quote another bundle, and fdf migrate
+// and fdf install alone write them: a lexicon fix, a scenario rename across
+// its joins and a move's reference repair all leave them as they are.
+func TestTheVendoredSpecAndExamplesAreLeftAlone(t *testing.T) {
+	root := lexiconBundle(t)
+	pinTo(t, root, "1.1")
+	quoted := "\nA shop owner's scenario, \"Shop owner sets hours\", in features/venues/opening-hours: [hours](/features/venues/opening-hours.md).\n"
+	for _, rel := range []string{"SPEC.md", "SPEC.examples.md"} {
+		write(t, root, rel, "---\ntype: Reference\ntitle: Vendored\ndescription: A vendored copy.\ntimestamp: 2026-09-23T00:00:00Z\n---\n"+quoted)
+	}
+	lexicon(t, root, LexiconOptions{Term: "Venue", Fix: true})
+	move(t, root, "features/venues/opening-hours", "features/venues/hours")
+	for _, rel := range []string{"SPEC.md", "SPEC.examples.md"} {
+		if s := read(t, root, rel); !strings.HasSuffix(s, quoted) {
+			t.Errorf("%s is left as it is:\n%s", rel, s)
+		}
+	}
+	validates(t, root)
 }
