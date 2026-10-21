@@ -26,13 +26,17 @@ func Title(slug string) string {
 // same place. It returns the full ID, or says why nothing can be filed there
 // (layout's Place) and returns "".
 func NewID(root, reg, name string, out io.Writer) string {
-	id := reg + "/" + strings.TrimPrefix(name, reg+"/")
+	id := IDIn(reg, name)
 	if problem := layout.New(os.DirFS(root)).Place(id); problem != "" {
 		fmt.Fprintln(out, "error: "+problem)
 		return ""
 	}
 	return id
 }
+
+// IDIn is the full ID the name a command was given, [<group>/…]<slug> or the
+// full ID itself, files a new document of register reg at.
+func IDIn(reg, name string) string { return reg + "/" + strings.TrimPrefix(name, reg+"/") }
 
 // WriteNew writes the new document id.md under root, and never over a file
 // that is there. The file system decides, so on a disk that ignores case it

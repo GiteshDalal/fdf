@@ -60,6 +60,7 @@ func TestFile(t *testing.T) {
 		{"README.md", Position{Kind: Readme}},
 		{"SPEC.md", Position{Kind: Reference}},
 		{"STACK.md", Position{Kind: Context}},
+		{"TAGS.md", Position{Kind: TagsDoc}},
 		{"features/INDEX.md", Position{Kind: Index, Register: "features", ID: "features"}},
 		{"features/onboarding.md", Position{Kind: Document, Register: "features", ID: "features/onboarding"}},
 		{"features/onboarding.spec.md", Position{Kind: Trail, Register: "features", ID: "features/onboarding", Role: "spec"}},
@@ -91,7 +92,7 @@ func TestFileStray(t *testing.T) {
 	for _, tc := range []struct {
 		rel, where, problem string
 	}{
-		{"notes.md", "notes.md", "the bundle root holds only INDEX.md, LOG.md, SPEC.md, SPEC.examples.md (from spec 1.1), README.md"},
+		{"notes.md", "notes.md", "the bundle root holds only INDEX.md, LOG.md, SPEC.md, SPEC.examples.md (from spec 1.1), TAGS.md (from spec 1.2), README.md"},
 		{"drafts/idea.md", "drafts/", "a feature group belongs under features/"},
 		{"features/onboarding/INDEX.md", "features/onboarding/INDEX.md", "task directories may contain only NN-slug.md tasks — features/onboarding/ is the task directory of features/onboarding.md"},
 		{"features/onboarding/sub/02-x.md", "features/onboarding/sub/", "task directories may contain only NN-slug.md tasks, and no directory — features/onboarding/ is the task directory of features/onboarding.md"},
@@ -107,6 +108,9 @@ func TestFileStray(t *testing.T) {
 		{"features/index.md", "features/index.md", "no document is named index.md: a disk that ignores case reads it as the INDEX.md beside it"},
 		{"debts/a/log.md", "debts/a/log.md", "no document is named log.md: a disk that ignores case reads it as the LOG.md beside it"},
 		{"releases/index.md", "releases/index.md", "no document is named index.md"},
+		// TAGS.md is reserved at the root only: elsewhere it is a name in
+		// uppercase, which no document takes.
+		{"features/TAGS.md", "features/TAGS.md", "uppercase is reserved for INDEX/LOG/SPEC/STACK/ARCHITECTURE/SURFACES/INFRA/DOMAIN/TAGS.md"},
 	} {
 		got := sample.File(tc.rel)
 		if got.Kind != Stray || got.Where != tc.where || !strings.Contains(got.Problem, tc.problem) {

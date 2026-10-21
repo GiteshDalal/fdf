@@ -1,0 +1,2 @@
+exit: 1
+contains: FAIL: tag `refund` is listed under `instead-of` of `refunds` in TAGS.md, and 2 documents carry it (bugs/split-capture.md, debts/rounding.md) — carry `refunds` instead: `fdf tag --merge refund refunds` (F15)

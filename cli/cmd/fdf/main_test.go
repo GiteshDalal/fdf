@@ -472,7 +472,7 @@ func TestLogGatesTheBundleBeforeItReadsIt(t *testing.T) {
 	os.WriteFile(filepath.Join(root, "INDEX.md"), []byte(strings.Replace(string(index), `fdf_version: "1.0"`, `fdf_version: "0.7"`, 1)), 0o644)
 	var out bytes.Buffer
 	if code := runLog([]string{"--root", root, "features/venues/opening-hours"}, &out); code != 1 ||
-		!strings.HasSuffix(out.String(), "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0 and 1.1 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n") {
+		!strings.HasSuffix(out.String(), "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0, 1.1 and 1.2 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n") {
 		t.Errorf("fdf log on a 0.7 bundle: exit %d\n%s", code, out.String())
 	}
 }

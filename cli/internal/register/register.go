@@ -19,9 +19,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/GiteshDalal/fdf/cli/internal/bundle"
 	"github.com/GiteshDalal/fdf/cli/internal/layout"
 	"github.com/GiteshDalal/fdf/cli/internal/logs"
 	"github.com/GiteshDalal/fdf/cli/internal/scaffold"
+	"github.com/GiteshDalal/fdf/cli/internal/specver"
 )
 
 var (
@@ -41,22 +43,68 @@ type Kind struct {
 	Type     string // the document type: "Debt" or "Bug"
 	noun     string
 	logTitle string
-	template func(title, now string, affects, resources []string) string
-	next     func(id string, affects, resources []string) string
+	template func(title, now string, f Filing) string
+	next     func(id string, f Filing) string
+}
+
+// Filing is what a new entry is filed with. Cost and Effort are -1 when not
+// given, and Rated says whether the bundle's pin takes them at all: spec 1.2
+// gave an entry its cost and effort.
+type Filing struct {
+	Affects, Resources []string
+	Cost, Effort       int
+	Rated              bool
+}
+
+// Unrated is a Cost or Effort not given.
+const Unrated = -1
+
+// scoreLine writes a `cost` or `effort` line, or, when none was given, a
+// commented one that says what the number means — only for a bundle whose
+// pin takes them.
+func scoreLine(f Filing, field string, v int, what string) string {
+	switch {
+	case !f.Rated:
+		return ""
+	case v != Unrated:
+		return fmt.Sprintf("%s: %d\n", field, v)
+	}
+	// The explanation has a line of its own: frontmatter has no comment after
+	// a value, so uncommenting `# cost: 4   # …` would make the comment the
+	// value's.
+	return fmt.Sprintf("# %s, from SPEC.md's Cost and effort table:\n# %s: <0-9>\n", what, field)
+}
+
+// scoreLines are an entry's cost and effort lines.
+func scoreLines(f Filing) string {
+	return scoreLine(f, "cost", f.Cost, "What it costs while it stays, 0 negligible to 9 an emergency") +
+		scoreLine(f, "effort", f.Effort, "The work to close it, 0 minutes to 9 longer than a quarter")
+}
+
+// costHint is the `# Cost` placeholder: from 1.2 on, the reasoning behind
+// the cost number.
+func costHint(f Filing, noun string) string {
+	if f.Rated {
+		return "TODO — what carrying this costs, and what it risks: why `cost` is the number it is. The highest level of the scale in SPEC.md, *Cost and effort*, that is true of it is its cost."
+	}
+	if noun == "bug" {
+		return "TODO — what the defect costs while it stays. Optional, but it is what lets the register be prioritized."
+	}
+	return "TODO — what carrying this costs, and what it risks. Optional, but it is what lets the register be prioritized without a priority field."
 }
 
 // Debt is the debt register.
 var Debt = Kind{
 	Dir: "debts", Type: "Debt", noun: "debt",
 	logTitle: "# Debt Log\n\nDebts retired from the register by `fdf debt --cleanup`.\nThe register itself is the files beside this one; this is what they became.\n",
-	template: func(title, now string, _, resources []string) string {
+	template: func(title, now string, f Filing) string {
 		return fmt.Sprintf(`---
 type: Debt
 status: open
 title: %s
 description: TODO — one sentence on what is missing.
 %s
-timestamp: %s
+%stimestamp: %s
 ---
 
 # Gap
@@ -65,14 +113,15 @@ TODO — what is not as it should be, concretely enough that someone else could 
 
 # Cost
 
-TODO — what carrying this costs, and what it risks. Optional, but it is what lets the register be prioritized without a priority field.
-`, title, resourceLine(resources, "the paths carrying the gap"), now)
+%s
+`, title, resourceLine(f.Resources, "the paths carrying the gap"), scoreLines(f), now, costHint(f, "debt"))
 	},
-	next: func(_ string, _, resources []string) string {
-		if len(resources) > 0 {
-			return "next: fill `# Gap` — concretely enough that someone else could confirm it."
+	next: func(_ string, f Filing) string {
+		next := "next: fill `# Gap` — concretely enough that someone else could confirm it."
+		if len(f.Resources) == 0 {
+			next = "next: fill `# Gap` and set `resource` to the paths that carry it — that is how work finds this debt."
 		}
-		return "next: fill `# Gap` and set `resource` to the paths that carry it — that is how work finds this debt."
+		return next + rateHint(f)
 	},
 }
 
@@ -80,10 +129,10 @@ TODO — what carrying this costs, and what it risks. Optional, but it is what l
 var Bug = Kind{
 	Dir: "bugs", Type: "Bug", noun: "bug",
 	logTitle: "# Bug Log\n\nBugs retired from the register by `fdf bug --cleanup`.\nThe register itself is the files beside this one; the Fix or Change that\nrepaired each one is its permanent record.\n",
-	template: func(title, now string, affects, resources []string) string {
+	template: func(title, now string, f Filing) string {
 		affectsLine := "# affects: [features/group/slug]     # the features it shows up in (each must exist)"
-		if len(affects) > 0 {
-			affectsLine = "affects: [" + strings.Join(affects, ", ") + "]"
+		if len(f.Affects) > 0 {
+			affectsLine = "affects: [" + strings.Join(f.Affects, ", ") + "]"
 		}
 		return fmt.Sprintf(`---
 type: Bug
@@ -92,7 +141,7 @@ title: %s
 description: TODO — one sentence on what the software does wrong.
 %s
 %s
-timestamp: %s
+%stimestamp: %s
 ---
 
 # Symptom
@@ -117,15 +166,15 @@ TODO — the one-sentence diagnosis, with its file:line: a line of the code or o
 
 # Cost
 
-TODO — what the defect costs while it stays. Optional, but it is what lets the register be prioritized.
-`, title, affectsLine, resourceLine(resources, "the paths carrying it"), now)
+%s
+`, title, affectsLine, resourceLine(f.Resources, "the paths carrying it"), scoreLines(f), now, costHint(f, "bug"))
 	},
-	next: func(id string, affects, resources []string) string {
+	next: func(id string, f Filing) string {
 		var missing []string
-		if len(affects) == 0 {
+		if len(f.Affects) == 0 {
 			missing = append(missing, "`affects`")
 		}
-		if len(resources) == 0 {
+		if len(f.Resources) == 0 {
 			missing = append(missing, "`resource`")
 		}
 		set := ""
@@ -134,13 +183,26 @@ TODO — what the defect costs while it stays. Optional, but it is what lets the
 		}
 		return "next: fill `# Symptom` and `# Expected`" + set + ". When a scenario already promises the expected\n" +
 			"      behavior, cite it under `# Violates` and the repair is `fdf fix --from " + id + " …`; when no\n" +
-			"      scenario covers it, the repair is `fdf change --from " + id + " …`, and someone decides first."
+			"      scenario covers it, the repair is `fdf change --from " + id + " …`, and someone decides first." +
+			rateHint(f)
 	},
+}
+
+// rateHint is the line a new entry's next steps end with while it has no
+// cost: an entry nobody has rated is untriaged.
+func rateHint(f Filing) string {
+	if !f.Rated || f.Cost != Unrated {
+		return ""
+	}
+	return "\n      rate it: set `cost` from 0 to 9, the highest level in SPEC.md's *Cost and effort* that is true\n" +
+		"      of it, and say why under `# Cost`; set `effort` once the work to close it is understood."
 }
 
 type entry struct {
 	id, path, status, title, timestamp string
 	resolution                         string
+	cost, effort                       int // -1 when the entry has none
+	tags                               []string
 }
 
 // pinned reports whether the commands work on the bundle's pin, and says why
@@ -193,6 +255,11 @@ func (k Kind) scan(root string) ([]entry, error) {
 			e.timestamp = strings.Trim(m[1], `"'`)
 		}
 		e.resolution = firstParagraphOf(s, "Resolution")
+		e.cost, e.effort = Unrated, Unrated
+		if data, _, ok := bundle.Frontmatter(s); ok {
+			e.cost, e.effort = bundle.Score(data["cost"]), bundle.Score(data["effort"])
+			e.tags = bundle.DocumentTags(data)
+		}
 		out = append(out, e)
 		return nil
 	})
@@ -246,10 +313,36 @@ func day(ts string) string {
 	return ts
 }
 
-// List prints the register as a table. filter is "" for everything, or one of
-// Statuses.
-func (k Kind) List(root, filter string, out io.Writer) int {
+// ListOptions narrows and orders a listing.
+type ListOptions struct {
+	Status    string // "" for every status, or one of Statuses
+	Tag       string // "" for every entry, or only those that carry this tag
+	MinCost   int    // 0 for every entry, or only those whose cost is at least this
+	Untriaged bool   // only the open and accepted entries with no cost
+	ByValue   bool   // order by cost − effort instead of by cost
+}
+
+// rated reports whether the bundle at root takes cost and effort: spec 1.2
+// gave them to an entry.
+func rated(root string) bool { return specver.Since(scaffold.Pin(root), layout.CostSince) }
+
+// untriaged reports whether an entry still waits for its cost: open or
+// accepted, and not rated.
+func untriaged(e entry) bool {
+	return e.cost == Unrated && (e.status == "open" || e.status == "accepted")
+}
+
+// List prints the register as a table. From spec 1.2 on it leads with each
+// entry's cost and effort, costliest first and, among equal costs, cheapest
+// to close first; opts.ByValue orders by cost − effort instead, which on two
+// scales that each multiply step by step compares harm against work.
+func (k Kind) List(root string, opts ListOptions, out io.Writer) int {
 	if !k.pinned(root, out) {
+		return 1
+	}
+	scored := rated(root)
+	if !scored && (opts.Untriaged || opts.ByValue || opts.MinCost > 0) {
+		fmt.Fprintf(out, "error: --untriaged, --min-cost and --sort value read `cost` and `effort`, which spec %s gave an entry, and this bundle pins %s — `fdf migrate` moves the pin, the user's decision\n", layout.CostSince, scaffold.Pin(root))
 		return 1
 	}
 	entries, err := k.scan(root)
@@ -259,17 +352,35 @@ func (k Kind) List(root, filter string, out io.Writer) int {
 	}
 	var rows []entry
 	for _, e := range entries {
-		if filter == "" || e.status == filter {
+		switch {
+		case opts.Status != "" && e.status != opts.Status:
+		case opts.Tag != "" && !carries(e, opts.Tag):
+		case opts.MinCost > 0 && e.cost < opts.MinCost:
+		case opts.Untriaged && !untriaged(e):
+		default:
 			rows = append(rows, e)
 		}
 	}
 	if len(rows) == 0 {
-		what := k.noun
-		if filter != "" {
-			what = filter + " " + k.noun
+		var what []string
+		if opts.Untriaged {
+			what = append(what, "untriaged")
 		}
-		fmt.Fprintf(out, "no %s on the register.\n", what)
+		if opts.Status != "" {
+			what = append(what, opts.Status)
+		}
+		what = append(what, k.noun)
+		if opts.Tag != "" {
+			what = append(what, "tagged "+opts.Tag)
+		}
+		if opts.MinCost > 0 {
+			what = append(what, fmt.Sprintf("with a cost of %d or more", opts.MinCost))
+		}
+		fmt.Fprintf(out, "no %s on the register.\n", strings.Join(what, " "))
 		return 0
+	}
+	if scored {
+		order(rows, opts.ByValue)
 	}
 
 	head := strings.ToUpper(k.noun)
@@ -282,21 +393,98 @@ func (k Kind) List(root, filter string, out io.Writer) int {
 			wStatus = len(e.status)
 		}
 	}
-	fmt.Fprintf(out, "%-*s  %-*s  %-10s  %s\n", wStatus, "STATUS", wID, head, "FILED", "TITLE")
+	lead, leadHead := func(entry) string { return "" }, ""
+	if scored {
+		leadHead = "COST  EFFORT  "
+		if opts.ByValue {
+			leadHead = "COST  EFFORT  VALUE  "
+		}
+		lead = func(e entry) string {
+			s := fmt.Sprintf("%4s  %6s  ", score(e.cost), score(e.effort))
+			if opts.ByValue {
+				v := "-"
+				if e.cost != Unrated && e.effort != Unrated {
+					v = fmt.Sprint(e.cost - e.effort)
+				}
+				s += fmt.Sprintf("%5s  ", v)
+			}
+			return s
+		}
+	}
+	// UPDATED is the UTC date of the entry's timestamp: when it last changed
+	// in substance — when it was filed, until it is amended or rated.
+	fmt.Fprintf(out, "%s%-*s  %-*s  %-10s  %s\n", leadHead, wStatus, "STATUS", wID, head, "UPDATED", "TITLE")
 	for _, e := range rows {
-		fmt.Fprintf(out, "%-*s  %-*s  %-10s  %s\n", wStatus, e.status, wID, e.id, day(e.timestamp), e.title)
+		fmt.Fprintf(out, "%s%-*s  %-*s  %-10s  %s\n", lead(e), wStatus, e.status, wID, e.id, day(e.timestamp), e.title)
 	}
 
-	counts := map[string]int{}
+	counts, waiting := map[string]int{}, 0
 	for _, e := range entries {
 		counts[e.status]++
+		if untriaged(e) {
+			waiting++
+		}
 	}
 	fmt.Fprintf(out, "\n%d shown; register holds %d open, %d accepted, %d resolved.\n",
 		len(rows), counts["open"], counts["accepted"], counts["resolved"])
-	if counts["resolved"] > 0 && filter != "resolved" {
+	if scored && waiting > 0 && !opts.Untriaged {
+		fmt.Fprintf(out, "%d open or accepted %s(s) have no `cost` yet: `fdf %s --untriaged` lists them, and SPEC.md's *Cost and effort* says how to rate one.\n", waiting, k.noun, k.noun)
+	}
+	if counts["resolved"] > 0 && opts.Status != "resolved" {
 		fmt.Fprintf(out, "run `fdf %s --cleanup` to fold the resolved ones into %s/LOG.md and clear them.\n", k.noun, k.Dir)
 	}
 	return 0
+}
+
+// carries reports whether e carries tag.
+func carries(e entry, tag string) bool {
+	for _, t := range e.tags {
+		if t == tag {
+			return true
+		}
+	}
+	return false
+}
+
+// score is a cost or effort as the table shows it.
+func score(v int) string {
+	if v == Unrated {
+		return "-"
+	}
+	return fmt.Sprint(v)
+}
+
+// order sorts a register's rows for reading. By cost: highest cost first,
+// then lowest effort, an entry with none of either after those that have
+// one. By value: the entries with both numbers first, highest cost − effort
+// first and then highest cost; then those with a cost alone, by cost; then
+// the untriaged. Ties keep the ID order scan gave them.
+func order(rows []entry, byValue bool) {
+	rank := func(v int) int { // higher first; an unrated one last
+		if v == Unrated {
+			return -100
+		}
+		return v
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		a, b := rows[i], rows[j]
+		if byValue {
+			va, vb := a.cost != Unrated && a.effort != Unrated, b.cost != Unrated && b.effort != Unrated
+			switch {
+			case va != vb:
+				return va
+			case va && a.cost-a.effort != b.cost-b.effort:
+				return a.cost-a.effort > b.cost-b.effort
+			}
+		}
+		if rank(a.cost) != rank(b.cost) {
+			return rank(a.cost) > rank(b.cost)
+		}
+		if ea, eb := a.effort == Unrated, b.effort == Unrated; ea != eb {
+			return !ea
+		}
+		return a.effort < b.effort
+	})
 }
 
 // Cleanup retires resolved entries from the register: each is recorded in
@@ -547,6 +735,13 @@ func resourceLine(resources []string, what string) string {
 // names the features the defect shows up in, by their full IDs; each must
 // exist. resources are the project-relative paths carrying the entry.
 func (k Kind) New(root, name string, affects, resources []string, out io.Writer) int {
+	return k.File(root, name, Filing{Affects: affects, Resources: resources, Cost: Unrated, Effort: Unrated}, out)
+}
+
+// File is New with everything an entry may be filed with: from spec 1.2 on,
+// its cost and effort too, each from 0 to 9. f.Rated is the bundle's to
+// decide, by its pin.
+func (k Kind) File(root, name string, f Filing, out io.Writer) int {
 	if !k.pinned(root, out) {
 		return 1
 	}
@@ -556,9 +751,20 @@ func (k Kind) New(root, name string, affects, resources []string, out io.Writer)
 			return 1
 		}
 	}
-	for _, f := range affects {
-		if !scaffold.IsFeature(root, f) {
-			fmt.Fprintf(out, "error: --affects names %s, which is not a feature in this bundle%s\n", f, scaffold.FeatureHint(root, f))
+	f.Rated = rated(root)
+	if !f.Rated && (f.Cost != Unrated || f.Effort != Unrated) {
+		fmt.Fprintf(out, "error: --cost and --effort set fields spec %s gave an entry, and this bundle pins %s — `fdf migrate` moves the pin, the user's decision\n", layout.CostSince, scaffold.Pin(root))
+		return 1
+	}
+	for _, v := range []int{f.Cost, f.Effort} {
+		if v != Unrated && (v < 0 || v > 9) {
+			fmt.Fprintf(out, "error: --cost and --effort take a whole number from 0 to 9, got %d — SPEC.md's *Cost and effort* says what each level means\n", v)
+			return 2
+		}
+	}
+	for _, a := range f.Affects {
+		if !scaffold.IsFeature(root, a) {
+			fmt.Fprintf(out, "error: --affects names %s, which is not a feature in this bundle%s\n", a, scaffold.FeatureHint(root, a))
 			return 1
 		}
 	}
@@ -572,7 +778,7 @@ func (k Kind) New(root, name string, affects, resources []string, out io.Writer)
 		return 1
 	}
 	title := scaffold.Title(path.Base(id))
-	body := k.template(title, time.Now().UTC().Format("2006-01-02T15:04:05Z"), affects, resources)
+	body := k.template(title, time.Now().UTC().Format("2006-01-02T15:04:05Z"), f)
 	if err := scaffold.WriteNew(root, id, body); err != nil {
 		fmt.Fprintln(out, "error:", err)
 		return 1
@@ -584,6 +790,6 @@ func (k Kind) New(root, name string, affects, resources []string, out io.Writer)
 	if code := scaffold.ListEntry(root, k.Dir, strings.TrimPrefix(id, k.Dir+"/"), title, "TODO", out); code != 0 {
 		return code
 	}
-	fmt.Fprintln(out, k.next(id, affects, resources))
+	fmt.Fprintln(out, k.next(id, f))
 	return 0
 }

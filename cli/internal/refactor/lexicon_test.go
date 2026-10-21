@@ -230,7 +230,7 @@ func TestLexiconPointsA0xBundleAtMigrate(t *testing.T) {
 	pinTo(t, root, "0.7")
 	var out bytes.Buffer
 	if code := Lexicon(root, LexiconOptions{}, &out); code != 1 ||
-		out.String() != "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0 and 1.1 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n" {
+		out.String() != "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0, 1.1 and 1.2 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n" {
 		t.Fatalf("exit %d\n%s", code, out.String())
 	}
 }
@@ -253,4 +253,25 @@ func TestTheVendoredSpecAndExamplesAreLeftAlone(t *testing.T) {
 		}
 	}
 	validates(t, root)
+}
+
+// A tag is not reworded by a lexicon fix: the term it would write is no tag
+// (F15). A banned word in `tags`, or a `## <tag>` heading of TAGS.md, is left
+// for a tag fix, and listed with it.
+func TestLexiconFixLeavesTagsToATagFix(t *testing.T) {
+	root := lexiconBundle(t)
+	write(t, root, "INDEX.md", strings.Replace(read(t, root, "INDEX.md"), `fdf_version: "1.0"`, `fdf_version: "1.2"`, 1))
+	write(t, root, "TAGS.md", "---\ntype: Tags\ntitle: Tags\ndescription: The tags.\ntimestamp: 2026-09-23T00:00:00Z\n---\n\n# Tags\n\n## shop\nEverything about a shop's hours.\n")
+	spec := read(t, root, "features/venues/opening-hours.spec.md")
+	write(t, root, "features/venues/opening-hours.spec.md", strings.Replace(spec, "timestamp:", "tags:\n  - shop\ntimestamp:", 1))
+	out := lexicon(t, root, LexiconOptions{Term: "Venue", Fix: true})
+	if got := read(t, root, "features/venues/opening-hours.spec.md"); !strings.Contains(got, "tags:\n  - shop\n") {
+		t.Errorf("the tag is left as it is:\n%s", got)
+	}
+	if got := read(t, root, "TAGS.md"); !strings.Contains(got, "## shop\nEverything about a Venue's hours.\n") {
+		t.Errorf("the heading is left, and the definition fixed:\n%s", got)
+	}
+	if !strings.Contains(out, "[a tag — its fix is a tag fix, `fdf tag --merge <tag> <new tag>`") {
+		t.Errorf("the tags are listed for a tag fix:\n%s", out)
+	}
 }

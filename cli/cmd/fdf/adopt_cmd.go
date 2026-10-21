@@ -17,6 +17,7 @@ func runAdopt(args []string, stdout io.Writer) int {
 	fs := newFlagSet("adopt")
 	resource := fs.String("resource", "", "comma-separated project-relative path(s) of the code the capability lives in (required when mapping one)")
 	depth := fs.Int("depth", 2, "how many directory levels the unclaimed code is grouped by in the report")
+	tagList := fs.String("tags", "", "comma-separated tags the adopted feature carries (when mapping one)")
 	r, rest, exit, ok := resolveRootSource(fs, args, stdout)
 	if !ok {
 		return exit
@@ -35,8 +36,8 @@ func runAdopt(args []string, stdout io.Writer) int {
 		printUsage(stdout, "adopt")
 		return 2
 	}
-	if len(rest) == 0 && *resource != "" {
-		fmt.Fprintln(stdout, "usage: --resource names the code of the capability being mapped: fdf adopt --resource <paths> [<group>/…]<slug>")
+	if len(rest) == 0 && (*resource != "" || *tagList != "") {
+		fmt.Fprintln(stdout, "usage: --resource and --tags apply to the capability being mapped: fdf adopt --resource <paths> [--tags <tags>] [<group>/…]<slug>")
 		return 2
 	}
 	projectRoot := ""
@@ -48,7 +49,9 @@ func runAdopt(args []string, stdout io.Writer) int {
 		return 1
 	}
 	if len(rest) == 1 {
-		return scaffold.Adopt(root, projectRoot, rest[0], splitList(*resource), stdout)
+		return tagged(root, "features", rest[0], splitList(*tagList), func() int {
+			return scaffold.Adopt(root, projectRoot, rest[0], splitList(*resource), stdout)
+		}, stdout)
 	}
 	return adopt.Map(root, projectRoot, *depth, stdout)
 }

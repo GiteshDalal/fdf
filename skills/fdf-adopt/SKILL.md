@@ -104,7 +104,8 @@ carry no scenarios yet; backfilling is Phase 2 and 3.
    `fdf adopt --resource <path>[,<path>…] [<group>/…]<slug>` —
    `fdf adopt --resource internal/payments/card.go payments/card-payments`
    writes `features/payments/card-payments.md`, ID
-   `features/payments/card-payments`. Every path must exist. Prefer the
+   `features/payments/card-payments`. Every path must exist. Add
+   `--tags <tag>,…` when tags `fdf tag` lists fit (fdf-help, *Cost, effort and tags*). Prefer the
    directory or file that holds the capability over a whole module. A file
    every capability passes through — a route table, a wiring module — goes on
    each capability it registers, after the capability's own code. An entry
@@ -129,7 +130,8 @@ carry no scenarios yet; backfilling is Phase 2 and 3.
      a promise made to them — it is a defect. Whether it was intended is the
      user's call, so `# Expected` asks. Reproduce it if you can, then file
      it:
-     `fdf bug --affects <feature-id> --resource <path> [<group>/…]<slug>`.
+     `fdf bug --affects <feature-id> --resource <path> --cost <0-9> [<group>/…]<slug>`,
+     rated as fdf-help's *Cost, effort and tags* says.
      `--resource` names the paths the defect runs through, so work that
      touches them finds the bug. Fill it in: `# Symptom` — the commands, their
      output and `Reproduced.`, or the code path at `<file>:<line>`, the input

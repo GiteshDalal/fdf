@@ -1,0 +1,4 @@
+exit: 0
+contains: warn: TAGS.md: no document carries tag `payouts` — remove it, or tag the documents it gathers
+not-contains: look like one tag
+not-contains: (F15)

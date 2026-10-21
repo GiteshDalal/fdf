@@ -19,9 +19,12 @@ under a `slug/` directory. Five bundle-root Context docs (`STACK.md`, `ARCHITECT
 `changes/` as a `Change` (alters what a delivered feature does) or a `Fix` (the code drifted
 from what the document already says). Recurring mechanisms are `Practice` under
 `practices/`, known gaps are `Debt` under `debts/`, and known defects not repaired yet are
-`Bug` under `bugs/`. A capability that predates the bundle is an `adopted` feature: no build
-trail, its code named in `resource`. The bundle root is closed: its own files, the Context
-docs and six registers (those five directories and `releases/`), and nothing else.
+`Bug` under `bugs/`; from spec 1.2 each debt and bug may carry `cost` and `effort`, two
+numbers from 0 to 9 the registers are ordered by. A capability that predates the bundle is an
+`adopted` feature: no build trail, its code named in `resource`. From 1.2, `TAGS.md` at the
+root is the tag dictionary: once a bundle has one, every tag a document carries is defined
+there (F15). The bundle root is closed: its own files, the Context docs, `TAGS.md` and six
+registers (those five directories and `releases/`), and nothing else.
 This repo ships:
 
 1. A Go CLI (`cli/cmd/fdf`) that scaffolds and **validates** those bundles.
@@ -63,7 +66,7 @@ goreleaser (`.goreleaser.yaml`) on tag push.
 ## Architecture
 
 The CLI is a flat command dispatcher (`cli/cmd/fdf/main.go`: a `map[string]func` over
-`validate|init|new|practice|debt|bug|adopt|mv|lexicon|log|install|serve|migrate|spec|help|change|fix|history|release|version`).
+`validate|init|new|practice|debt|bug|adopt|mv|lexicon|tag|log|install|serve|migrate|spec|help|change|fix|history|release|version`).
 Each command is a thin wrapper around one
 `cli/internal/` package. Commands write usage/errors to stdout (not stderr) so tests capture
 everything, and flags must precede positional args (`ContinueOnError` FlagSets): every command
@@ -144,8 +147,9 @@ pinned bundle is sent to that bundle.
 
 - **`cli/internal/layout`** — the one source of 1.x positions: the closed root (its own
   files — `Spec` and, from 1.1, `Examples`, the two `Vendored` copies, which the validator
-  gates by the pin with `ExamplesSince` — the five Context documents and the six
-  `Registers`), groups nested to any depth in
+  gates by the pin with `ExamplesSince`; from 1.2 `Tags`, the tag dictionary, gated by
+  `TagsSince` — the five Context documents and the six `Registers`; `CostSince` is the
+  version that gave an entry `cost` and `effort`), groups nested to any depth in
   every register but `releases/`, and the directory rule (a directory beside a feature,
   Change or Fix is its task directory; beside a practice, debt or bug it is an error; any
   other is a group). A directory that holds no Markdown is outside FDF wherever it is
@@ -162,12 +166,12 @@ pinned bundle is sent to that bundle.
   cannot change a result.
 
 - **`cli/internal/bundle`** (`validate.go`) — the heart of the tool. `Validate()` is the
-  enforcement engine for the spec. Rules are coded **F1–F14** (format conformance) and **R1**
+  enforcement engine for the spec. Rules are coded **F1–F16** (format conformance) and **R1**
   (repo integrity); every error message ends with its rule code, e.g. `(F4)`. Highlights:
   - A directory with no `INDEX.md` is no bundle (`fdfroot.NoBundle`). The pin is read
     *before* the walk (`fdfroot.PinOf`): it decides whether the bundle is checked at all,
     and a line of the root `INDEX.md`'s frontmatter that does not parse is F1, as in any
-    document. The validator checks spec **1.0 and 1.1** (`supportedVersions`); a
+    document. The validator checks spec **1.0, 1.1 and 1.2** (`supportedVersions`); a
     missing pin, one that is not a `MAJOR.MINOR` version or is a 0.x version FDF never
     had, an older one (a 0.x bundle, for `fdf migrate`, the user's decision) or a newer
     one (for a newer fdf) is an F1 error that names the fix (`pinProblem`), and the
@@ -181,6 +185,19 @@ pinned bundle is sent to that bundle.
     reads reference definitions too), F10 and F14 suggest the full ID of a feature named
     the 0.7 way (`featureHint`), and F12 reads group names through `layout` (`groupName`:
     at every depth, never a register's own name, nor a directory that holds no Markdown).
+  - **`tags.go`** is F15 and the tag dictionary's parser, exported for `fdf tag`:
+    `ParseTags`/`LoadTags` read `TAGS.md`'s `# Tags` (`## <tag>`, a definition, optional
+    `- instead-of:`; comments and code blanked by `TagsBody`), `TagName` is the tag grammar,
+    `DocumentTags` a document's `tags`, `LookAlike` the plural/hyphen soft check. F15 runs
+    only on a bundle pinned 1.2+ **that has `TAGS.md`** — tags predate the dictionary, so a
+    1.1 bundle's free-form tags must not fail once its pin moves; without one, documents
+    that carry tags draw one warning. Undefined, `instead-of` and ill-formed tags are
+    reported once per tag, naming the documents and the `fdf tag` repair. `lexicon.go` masks
+    TAGS.md's `instead-of` lines, which name words not to use, as DOMAIN.md does.
+  - **`triage.go`** is F16 (a debt's or bug's `cost`/`effort` is one digit, 0–9;
+    `readScore`) and its soft checks: a `cost` with no `# Cost`, and one summary warning per
+    register counting the open/accepted entries with no `cost` (untriaged). Gated by the pin
+    (`layout.CostSince`): to a 1.1 bundle, fields of those names are its own.
   - **`practices.go`** holds F11 (practice body shape, `superseded-by` graph) and the
     `sectionText` helper that `domain.go`, `debts.go` and `bugs.go` also use.
     **`bugs.go`** holds F14 and the `resolves` half of F10: `# Symptom`/`# Expected`
@@ -246,7 +263,7 @@ pinned bundle is sent to that bundle.
   superseded slash commands by exact name;
   `MarkerFile`, `PrimerSection` and `InstructionFile` say what it manages, which
   `fdf migrate` leaves to it), and **`cli/internal/migrate`** (`fdf migrate`: any 0.x
-  bundle, pinned 0.1 to 0.7 or not at all, to 1.1, its `target`, in one run, design §6;
+  bundle, pinned 0.1 to 0.7 or not at all, to 1.2, its `target`, in one run, design §6;
   a 1.x bundle takes the `repair` path, where one pinned before `target` takes it up as
   a minor version: the pin moves, `SPEC.md` and `SPEC.examples.md` are vendored, one
   root `LOG.md` entry says so, nothing moves and no document is edited.
@@ -308,12 +325,22 @@ pinned bundle is sent to that bundle.
   timestamp counts and the debts that may be bugs).
   **`cli/internal/register`** (`fdf debt` and `fdf bug`: `register.Debt` and
   `register.Bug` are two `Kind`s over one implementation — the documents `layout` files
-  in the register, listed with an optional status filter, scaffolded, and `--cleanup`,
+  in the register, listed (`ListOptions`: a status, `--tag`, `--min-cost`, `--untriaged`,
+  and from 1.2 costliest first, or by cost − effort with `--sort value`; a bundle pinned
+  before 1.2 lists as before and refuses the cost flags), scaffolded (`File`, with
+  `Filing`'s cost and effort), and `--cleanup`,
   which folds resolved entries into `<dir>/LOG.md`
   newest-first, with the first *paragraph* of `# Resolution`, and removes their files,
   listings and any group left empty, at any depth: groups are decided deepest first, so
   an emptied group can empty its parent, and a Finder `.DS_Store` goes with it; open and accepted entries are never touched, `--dry-run` previews, `--no-log` skips
-  the log). **`cli/internal/changes`** (`fdf change`/`fdf fix` scaffolding, with
+  the log). **`cli/internal/tags`** is `fdf tag` and the `--tags` of every command that
+  creates a document (`Check` before it writes, `Stamp` after, both run by the command
+  wrapper `tagged`): `List`, `Show`, `Add` (a TODO definition, or `--definition`, which
+  fills a TODO in or redefines, logged), `Sync` (starts `TAGS.md` from the tags documents
+  carry), `Merge` (the tag fix: `retag` rewrites `tags` in the form it was written, no
+  timestamp moves, the dropped tag goes under the kept one's `instead-of`, logged), and
+  `noteResemblance`, which says when a new tag looks like a defined one.
+  **`cli/internal/changes`** (`fdf change`/`fdf fix` scaffolding, with
   `--affects` taking full feature IDs, `--from bugs/<id>` copying a bug's analysis and
   writing `resolves`, and `fdf history`,
   which computes a feature's post-delivery trail and known bugs from `affects:` rather
@@ -392,10 +419,12 @@ describe the case they lock in (e.g. `done-with-open-task`, `depends-on-cycle`,
 ### Specs and versioning
 
 `spec/<version>.md` files are normative. `spec/README.md` and the top-level `SPEC.md` index
-them; the current version is **1.1**: `fdf init` pins it, and every command reads and
-writes 1.0 and 1.1 bundles. `fdf migrate` upgrades any 0.x bundle, and takes a 1.0 one
-up, to 1.1 (`target` in `migrate.go`), and the validator checks 1.0 and 1.1: a 0.x
-bundle fails F1, which sends it to `fdf migrate`. From 1.1 on, a version's examples are a
+them; the current version is **1.2**: `fdf init` pins it, and every command reads and
+writes 1.0, 1.1 and 1.2 bundles. `fdf migrate` upgrades any 0.x bundle, and takes a 1.0
+or 1.1 one up, to 1.2 (`target` in `migrate.go`), and the validator checks 1.0, 1.1 and
+1.2: a 0.x bundle fails F1, which sends it to `fdf migrate`. Migrate never writes
+`TAGS.md` (F15 starts with it); its next steps name `fdf tag --sync` when the validation
+found tags without one, and `--untriaged` when it found unrated entries (`takeUp`). From 1.1 on, a version's examples are a
 file of their own, `spec/<version>.examples.md` (`scaffold.ExamplesText`), vendored as
 `SPEC.examples.md` (`ExamplesDoc`); `fdf spec` prints what a bundle vendors as `SPEC.md`,
 `--examples` the examples and `--full` both.

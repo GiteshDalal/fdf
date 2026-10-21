@@ -17,7 +17,7 @@ import (
 	"github.com/GiteshDalal/fdf/cli/internal/specver"
 )
 
-const currentVersion = "1.1"
+const currentVersion = "1.2"
 const specURL = "https://github.com/GiteshDalal/fdf/blob/main/spec/" + currentVersion + ".md"
 
 // contextDocs are the bundle-root Context documents fdf init scaffolds as
@@ -60,6 +60,31 @@ const domainTermsStub = "# Terms\n\n" +
 	"- except: data store\n" +
 	"- code: `Venue` (model), `venues` (table)\n" +
 	"-->\n"
+
+// TagsDoc is the TAGS.md fdf init writes, and fdf tag starts a bundle's
+// with (spec 1.2): no tag yet, and a comment saying how one is written. It
+// is a valid dictionary as it stands: a young bundle has no tags to define.
+func TagsDoc(now string) string {
+	return fmt.Sprintf(`---
+type: Tags
+title: Tags
+description: Every tag this bundle's documents carry, and what each one gathers.
+timestamp: %s
+---
+
+# Tags
+
+<!-- One `+"`## <tag>`"+` heading per tag, spelled as documents write it: lowercase
+     letters and digits, in words joined by single hyphens (gtm, oauth2,
+     internal-api). The first line under it is the definition: what the tag
+     gathers, and what it does not when a neighboring tag is close. Then,
+     optionally:
+       - instead-of: spellings of this tag that documents must not carry
+     Reuse a tag before adding one: `+"`fdf tag`"+` lists them, with how many
+     documents carry each. `+"`fdf tag <tag>`"+` adds one with a TODO definition,
+     which `+"`fdf validate`"+` reports until it is written (F15). -->
+`, now)
+}
 
 // SpecDoc renders the embedded spec of a version as a bundle-root Reference
 // document. Agents and readers of the bundle need no external context to
@@ -386,11 +411,12 @@ here without `+"`.md`"+`, such as `+"`features/payments/instant-refunds`"+`.
 
 %s* [Stack](/STACK.md), [Architecture](/ARCHITECTURE.md), [Surfaces](/SURFACES.md),
   [Infrastructure](/INFRA.md), [Domain](/DOMAIN.md) - the project's context.
+%s
 * [Format reference](/SPEC.md) - the spec this bundle pins ([upstream](%s)), and
   [its examples](/SPEC.examples.md).
 
 Validate with `+"`fdf validate`"+`; [LOG.md](/LOG.md) records what happened to the bundle.
-`, currentVersion, currentVersion, registers.String(), specURL)
+`, currentVersion, currentVersion, registers.String(), TagsListing, specURL)
 }
 
 func Init(root string, out io.Writer) int {
@@ -460,11 +486,17 @@ func Init(root string, out io.Writer) int {
 	if code := writeContextStubs(root, out); code != 0 {
 		return code
 	}
+	// A new bundle starts with its tag dictionary, so that F15 holds every
+	// tag from the first. A bundle that is here already is not given one: its
+	// tags may predate it, and it takes the dictionary up with fdf tag --sync.
+	if code := ensureFile(root, layout.Tags, []byte(TagsDoc(time.Now().UTC().Format("2006-01-02T15:04:05Z"))), "tag dictionary", out); code != 0 {
+		return code
+	}
 	if code := ensureIndexes(root, out); code != 0 {
 		return code
 	}
 	fmt.Fprintf(out, "\ndone: initialized FDF bundle at %s\n", root)
-	fmt.Fprintf(out, "  pinned fdf_version %s; wrote INDEX.md, LOG.md, SPEC.md, SPEC.examples.md, %d Context stub(s) and the registers' indexes\n", currentVersion, len(contextDocs))
+	fmt.Fprintf(out, "  pinned fdf_version %s; wrote INDEX.md, LOG.md, SPEC.md, SPEC.examples.md, TAGS.md, %d Context stub(s) and the registers' indexes\n", currentVersion, len(contextDocs))
 	fmt.Fprintln(out, "next: run the fdf-init skill to fill "+contextDocNames()+" before adding features.")
 	fmt.Fprintln(out, "      `fdf validate` warns about them now, and fails F9 once a feature exists while any is unfilled.")
 	fmt.Fprintln(out, "      On an existing codebase, map what it already does with `fdf adopt` (the fdf-adopt skill).")

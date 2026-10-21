@@ -13,7 +13,7 @@ import (
 )
 
 // version is set by goreleaser via -ldflags "-X main.version=...".
-var version = "1.1.0"
+var version = "1.2.0"
 
 // banner is the product header both the overview and `fdf help` print.
 // The spec version is derived, never written out, so a spec bump cannot
@@ -30,6 +30,7 @@ var commands = map[string]func(args []string, stdout io.Writer) int{
 	"adopt":    runAdopt,
 	"mv":       runMv,
 	"lexicon":  runLexicon,
+	"tag":      runTag,
 	"log":      runLog,
 	"install":  runInstall,
 	"serve":    runServe,

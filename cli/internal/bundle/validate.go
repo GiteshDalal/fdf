@@ -1,6 +1,6 @@
 // Package bundle validates an FDF bundle against the spec version it pins,
-// which is 1.0: a bundle that pins none, or one this fdf does not validate,
-// fails F1 and is checked no further. Rules F1-F14 are format conformance;
+// one of 1.x: a bundle that pins none, or one this fdf does not validate,
+// fails F1 and is checked no further. Rules F1-F16 are format conformance;
 // R1 is repo integrity. See SPEC.md.
 package bundle
 
@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/GiteshDalal/fdf/cli/internal/fdfroot"
+	"github.com/GiteshDalal/fdf/cli/internal/layout"
 	"github.com/GiteshDalal/fdf/cli/internal/links"
 	"github.com/GiteshDalal/fdf/cli/internal/specver"
 )
@@ -44,7 +45,7 @@ const domainReportCap = 20
 var (
 	// structural types are rejected at the bundle root: each has a position
 	// of its own in a register.
-	structural  = map[string]bool{"Feature": true, "Spec": true, "Plan": true, "Task": true, "Test": true, "Release": true, "Surface": true, "Log": true, "Change": true, "Fix": true, "Practice": true, "Debt": true, "Bug": true}
+	structural  = map[string]bool{"Feature": true, "Spec": true, "Plan": true, "Task": true, "Test": true, "Release": true, "Surface": true, "Log": true, "Change": true, "Fix": true, "Practice": true, "Debt": true, "Bug": true, "Tags": true}
 	recommended = []string{"title", "description", "timestamp"}
 	// fenceOpenRe/inlineCodeRe strip code from a text whose markers and
 	// headings are read (linkScanText): an example quotes them.
@@ -82,7 +83,7 @@ var releaseStatuses = []string{"planned", "shipped"}
 
 // supportedVersions are the spec versions this validator checks: those of
 // spec 1. A bundle pinned to any other is not validated (pinProblem).
-var supportedVersions = map[string]bool{"1.0": true, "1.1": true}
+var supportedVersions = map[string]bool{"1.0": true, "1.1": true, "1.2": true}
 
 // supportedList renders supportedVersions for error messages, so adding a
 // version never leaves a stale literal behind.
@@ -279,7 +280,7 @@ func Validate(root string, opts Options) int {
 		features: features, featureDeps: featureDeps, pairs: pairs, releases: releases, changes: changes,
 		practices: practices, practiceTrails: practiceTrails, debts: debts, debtTrails: debtTrails,
 		bugs: bugs, bugTrails: bugTrails, texts: texts, contextDocs: contextDocs,
-		pin: pinnedVer,
+		pin: pinnedVer, carried: tagCarriers{}, triage: map[string][]triage{},
 	}
 	c.walk(rootAbs)
 
@@ -396,6 +397,11 @@ func Validate(root string, opts Options) int {
 	resolvedBy := checkResolves(changes, bugs, clearedBugs(rootAbs), &errs)
 	checkBugIntegrity(bugs, bugTrails, features, resolvedBy, &errs, &warns)
 	checkDomain(rootAbs, opts.StrictDomain, texts, &errs, &warns)
+	if specver.Since(pinnedVer, layout.TagsSince) {
+		checkTags(rootAbs, c.carried, &errs, &warns)
+	}
+	checkTriage("debts", "debt", c.triage["debts"], &warns)
+	checkTriage("bugs", "bug", c.triage["bugs"], &warns)
 
 	// F9: from the first feature onward, the five Context documents must
 	// exist and be past their stub state. Before any feature exists a

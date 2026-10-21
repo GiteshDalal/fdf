@@ -129,7 +129,8 @@ from this skill, follow the skill.
 4. **Anything knowingly left out → a debt, proposed.** If the plan
    deliberately leaves something undone — a migration the feature does not
    need yet, a call site left on the old mechanism — propose a debt to the
-   user; on approval, file it with `fdf debt --resource <paths> [<group>/…]<slug>`
+   user; on approval, file it with `fdf debt --resource <paths> --cost <0-9> [<group>/…]<slug>`
+   (rated as fdf-help's *Cost, effort and tags* says)
    and replace its `TODO` text (`description`, `# Gap`, `# Cost`) and the
    `TODO.` of its listing line in `debts/INDEX.md`. A deferral written into a task's
    `# Steps` as a TODO

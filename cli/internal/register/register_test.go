@@ -46,7 +46,7 @@ func TestListFiltersAndCounts(t *testing.T) {
 	seed(t, root, "three", "resolved", "\n# Resolution\n\nDone in changes/x.\n")
 
 	var out bytes.Buffer
-	if code := Debt.List(root, "", &out); code != 0 {
+	if code := Debt.List(root, ListOptions{Status: ""}, &out); code != 0 {
 		t.Fatalf("list: %d", code)
 	}
 	s := out.String()
@@ -57,19 +57,19 @@ func TestListFiltersAndCounts(t *testing.T) {
 	}
 
 	out.Reset()
-	Debt.List(root, "open", &out)
+	Debt.List(root, ListOptions{Status: "open"}, &out)
 	if s := out.String(); !strings.Contains(s, "debts/one") || strings.Contains(s, "debts/two") {
 		t.Fatalf("--open should show only open debts:\n%s", s)
 	}
 
 	out.Reset()
-	Debt.List(root, "accepted", &out)
+	Debt.List(root, ListOptions{Status: "accepted"}, &out)
 	if s := out.String(); !strings.Contains(s, "debts/two") || strings.Contains(s, "debts/three") {
 		t.Fatalf("--accepted should show only accepted debts:\n%s", s)
 	}
 }
 
-// FILED is the UTC date: an RFC 3339 time with an offset is converted before
+// UPDATED is the UTC date of the timestamp: an RFC 3339 time with an offset is converted before
 // it is cut to its date, and a date is shown as it is.
 func TestListFiledIsTheUTCDate(t *testing.T) {
 	root := bundleRoot(t)
@@ -83,16 +83,17 @@ func TestListFiledIsTheUTCDate(t *testing.T) {
 		os.WriteFile(filepath.Join(root, "debts", id+".md"), []byte("---\ntype: Debt\nstatus: open\ntitle: "+id+"\ntimestamp: "+stamp+"\n---\n\n# Gap\n\nx\n"), 0o644)
 	}
 	var out bytes.Buffer
-	if code := Debt.List(root, "", &out); code != 0 {
+	if code := Debt.List(root, ListOptions{Status: ""}, &out); code != 0 {
 		t.Fatalf("list: %d\n%s", code, out.String())
 	}
 	for id, want := range map[string]string{"late-evening": "2026-09-17", "early-hours": "2026-09-15", "utc": "2026-09-16", "date-only": "2026-09-16"} {
 		found := false
 		for _, line := range strings.Split(out.String(), "\n") {
-			if f := strings.Fields(line); len(f) >= 3 && f[1] == "debts/"+id {
+			// COST  EFFORT  STATUS  DEBT  UPDATED  TITLE
+			if f := strings.Fields(line); len(f) >= 5 && f[3] == "debts/"+id {
 				found = true
-				if f[2] != want {
-					t.Errorf("debts/%s: FILED %s, want %s", id, f[2], want)
+				if f[4] != want {
+					t.Errorf("debts/%s: UPDATED %s, want %s", id, f[4], want)
 				}
 			}
 		}
@@ -223,7 +224,7 @@ func TestTheRegisterIsWhatLayoutFilesThere(t *testing.T) {
 	seed(t, root, ".archive/old", "resolved", "\n# Resolution\n\nLong gone.\n")
 	seed(t, root, "rounding/worked-example", "resolved", "\n# Resolution\n\nAn example.\n")
 	var out bytes.Buffer
-	if code := Debt.List(root, "", &out); code != 0 || !strings.Contains(out.String(), "debts/rounding ") ||
+	if code := Debt.List(root, ListOptions{Status: ""}, &out); code != 0 || !strings.Contains(out.String(), "debts/rounding ") ||
 		strings.Contains(out.String(), "archive") || strings.Contains(out.String(), "worked-example") {
 		t.Errorf("only debts/rounding is an entry: exit %d\n%s", code, out.String())
 	}
@@ -287,7 +288,7 @@ func TestBugRegisterListsAndClearsBugsOnly(t *testing.T) {
 	seed(t, root, "gap", "open", "") // a debt is not a bug
 
 	var out bytes.Buffer
-	Bug.List(root, "", &out)
+	Bug.List(root, ListOptions{Status: ""}, &out)
 	s := out.String()
 	for _, want := range []string{"BUG", "bugs/crash", "bugs/ui/label", "1 open, 0 accepted, 1 resolved", "fdf bug --cleanup"} {
 		if !strings.Contains(s, want) {
@@ -543,11 +544,11 @@ func TestRegistersPointA0xBundleAtMigrate(t *testing.T) {
 		root := bundleRoot(t, tc.pin)
 		for name, run := range map[string]func(*bytes.Buffer) int{
 			"file":    func(out *bytes.Buffer) int { return tc.k.New(root, "late-close", nil, nil, out) },
-			"list":    func(out *bytes.Buffer) int { return tc.k.List(root, "", out) },
+			"list":    func(out *bytes.Buffer) int { return tc.k.List(root, ListOptions{Status: ""}, out) },
 			"cleanup": func(out *bytes.Buffer) int { return tc.k.Cleanup(root, false, false, out) },
 		} {
 			var out bytes.Buffer
-			want := "error: this bundle pins fdf_version " + tc.pin + "; fdf's commands work on spec 1.0 and 1.1 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n"
+			want := "error: this bundle pins fdf_version " + tc.pin + "; fdf's commands work on spec 1.0, 1.1 and 1.2 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n"
 			if code := run(&out); code != 1 || out.String() != want {
 				t.Errorf("%s %s on a %s bundle: exit %d\n got: %q\nwant: %q", tc.k.noun, name, tc.pin, code, out.String(), want)
 			}
@@ -610,5 +611,146 @@ func TestNestedGroupsAreFiledAndClearedAtAnyDepth(t *testing.T) {
 	}
 	if strings.Contains(out.String(), "unlisted debts/platform/payments/") {
 		t.Errorf("a group whose parent goes too is not unlisted from it:\n%s", out.String())
+	}
+}
+
+// seedRated files a debt whose frontmatter carries fm, such as its cost.
+func seedRated(t *testing.T, root, id, status, fm string) {
+	t.Helper()
+	p := filepath.Join(root, "debts", filepath.FromSlash(id)+".md")
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "---\ntype: Debt\nstatus: " + status + "\ntitle: " + id + "\n" + fm +
+		"timestamp: 2026-09-16T00:00:00Z\n---\n\n# Gap\n\nSomething is missing.\n"
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// ids are the entries a listing shows, in its order.
+func ids(listing string) []string {
+	var out []string
+	for _, line := range strings.Split(listing, "\n") {
+		for _, f := range strings.Fields(line) {
+			if strings.HasPrefix(f, "debts/") {
+				out = append(out, f)
+			}
+		}
+	}
+	return out
+}
+
+// From spec 1.2 a register is read costliest first, cheapest to close first
+// at equal cost, the untriaged last; --sort value orders by cost − effort.
+func TestListOrdersByCostAndValue(t *testing.T) {
+	root := bundleRoot(t)
+	seedRated(t, root, "a-unrated", "open", "")
+	seedRated(t, root, "b-big", "open", "cost: 6\neffort: 4\n")
+	seedRated(t, root, "c-cheap", "open", "cost: 6\neffort: 1\n")
+	seedRated(t, root, "d-small", "open", "cost: 3\neffort: 0\n")
+	seedRated(t, root, "e-no-effort", "open", "cost: 6\n")
+	var out bytes.Buffer
+	if code := Debt.List(root, ListOptions{}, &out); code != 0 {
+		t.Fatalf("exit %d\n%s", code, out.String())
+	}
+	if got := strings.Join(ids(out.String()), " "); got != "debts/c-cheap debts/b-big debts/e-no-effort debts/d-small debts/a-unrated" {
+		t.Errorf("by cost: %s\n%s", got, out.String())
+	}
+	if !strings.HasPrefix(out.String(), "COST  EFFORT  STATUS") || !strings.Contains(out.String(), "1 open or accepted debt(s) have no `cost` yet: `fdf debt --untriaged` lists them") {
+		t.Errorf("the table leads with cost and effort, and counts the untriaged:\n%s", out.String())
+	}
+	out.Reset()
+	Debt.List(root, ListOptions{ByValue: true}, &out)
+	if got := strings.Join(ids(out.String()), " "); got != "debts/c-cheap debts/d-small debts/b-big debts/e-no-effort debts/a-unrated" {
+		t.Errorf("by value: %s\n%s", got, out.String())
+	}
+	if !strings.Contains(out.String(), "VALUE") {
+		t.Errorf("by value shows it:\n%s", out.String())
+	}
+	out.Reset()
+	Debt.List(root, ListOptions{Untriaged: true}, &out)
+	if got := strings.Join(ids(out.String()), " "); got != "debts/a-unrated" || strings.Contains(out.String(), "have no `cost` yet") {
+		t.Errorf("untriaged: %s\n%s", got, out.String())
+	}
+	out.Reset()
+	Debt.List(root, ListOptions{MinCost: 6}, &out)
+	if got := strings.Join(ids(out.String()), " "); got != "debts/c-cheap debts/b-big debts/e-no-effort" {
+		t.Errorf("min cost 6: %s\n%s", got, out.String())
+	}
+}
+
+// --tag lists only the entries that carry it, whatever the pin.
+func TestListByTag(t *testing.T) {
+	for _, pin := range []string{"1.1", scaffold.CurrentVersion()} {
+		root := bundleRoot(t, pin)
+		seedRated(t, root, "a", "open", "tags: [gtm, api]\n")
+		seedRated(t, root, "b", "open", "tags:\n  - api\n")
+		seedRated(t, root, "c", "open", "")
+		var out bytes.Buffer
+		Debt.List(root, ListOptions{Tag: "api"}, &out)
+		if got := strings.Join(ids(out.String()), " "); got != "debts/a debts/b" {
+			t.Errorf("pin %s: --tag api: %s\n%s", pin, got, out.String())
+		}
+		out.Reset()
+		Debt.List(root, ListOptions{Tag: "ghost"}, &out)
+		if !strings.Contains(out.String(), "no debt tagged ghost on the register.") {
+			t.Errorf("pin %s: %s", pin, out.String())
+		}
+	}
+}
+
+// A bundle pinned before 1.2 lists as it did, and refuses what reads or writes
+// cost and effort, which mean nothing to it.
+func TestCostNeedsSpec12(t *testing.T) {
+	root := bundleRoot(t, "1.1")
+	seedRated(t, root, "a", "open", "cost: high\n")
+	var out bytes.Buffer
+	if code := Debt.List(root, ListOptions{}, &out); code != 0 || !strings.HasPrefix(out.String(), "STATUS  DEBT") || strings.Contains(out.String(), "cost") {
+		t.Errorf("a 1.1 register lists as before: exit %d\n%s", code, out.String())
+	}
+	for _, opts := range []ListOptions{{Untriaged: true}, {MinCost: 3}, {ByValue: true}} {
+		out.Reset()
+		if code := Debt.List(root, opts, &out); code != 1 || !strings.Contains(out.String(), "which spec 1.2 gave an entry, and this bundle pins 1.1") {
+			t.Errorf("%+v: exit %d\n%s", opts, code, out.String())
+		}
+	}
+	out.Reset()
+	if code := Debt.File(root, "b", Filing{Cost: 3, Effort: Unrated}, &out); code != 1 || !strings.Contains(out.String(), "--cost and --effort set fields spec 1.2 gave an entry") {
+		t.Errorf("filing with a cost: exit %d\n%s", code, out.String())
+	}
+	out.Reset()
+	if code := Debt.New(root, "b", nil, nil, &out); code != 0 {
+		t.Fatalf("exit %d\n%s", code, out.String())
+	}
+	if raw, _ := os.ReadFile(filepath.Join(root, "debts", "b.md")); strings.Contains(string(raw), "cost:") || !strings.Contains(string(raw), "without a priority field") {
+		t.Errorf("a 1.1 debt is scaffolded as 1.1 wrote it:\n%s", raw)
+	}
+}
+
+// Filing with a cost and effort writes them; filing without writes commented
+// lines that say what each means, and the next step says to rate it.
+func TestFileWritesCostAndEffort(t *testing.T) {
+	root := bundleRoot(t)
+	var out bytes.Buffer
+	if code := Bug.File(root, "rated", Filing{Cost: 7, Effort: 2}, &out); code != 0 {
+		t.Fatalf("exit %d\n%s", code, out.String())
+	}
+	raw, _ := os.ReadFile(filepath.Join(root, "bugs", "rated.md"))
+	if !strings.Contains(string(raw), "\ncost: 7\neffort: 2\ntimestamp: ") || strings.Contains(out.String(), "rate it:") {
+		t.Errorf("bugs/rated.md:\n%s\n%s", raw, out.String())
+	}
+	out.Reset()
+	if code := Debt.File(root, "unrated", Filing{Cost: Unrated, Effort: Unrated}, &out); code != 0 {
+		t.Fatalf("exit %d\n%s", code, out.String())
+	}
+	raw, _ = os.ReadFile(filepath.Join(root, "debts", "unrated.md"))
+	if !strings.Contains(string(raw), "\n# What it costs while it stays, 0 negligible to 9 an emergency, from SPEC.md's Cost and effort table:\n# cost: <0-9>\n") || !strings.Contains(string(raw), "\n# effort: <0-9>\n") ||
+		!strings.Contains(out.String(), "rate it: set `cost` from 0 to 9") {
+		t.Errorf("debts/unrated.md:\n%s\n%s", raw, out.String())
+	}
+	out.Reset()
+	if code := Debt.File(root, "too-big", Filing{Cost: 10, Effort: Unrated}, &out); code != 2 {
+		t.Errorf("a cost of 10: exit %d\n%s", code, out.String())
 	}
 }

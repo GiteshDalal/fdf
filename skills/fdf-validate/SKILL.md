@@ -10,7 +10,7 @@ how you clear it honestly.
 
 New to FDF? The fdf-help skill explains how the fdf skills fit together and
 the mechanics they share. The format rules are in the bundle at
-`docs/fdf/SPEC.md` (rule codes F1–F14 and R1 are defined there); `fdf help`
+`docs/fdf/SPEC.md` (rule codes F1–F16 and R1 are defined there); `fdf help`
 documents every command.
 
 ## When to run
@@ -61,7 +61,7 @@ FAIL: ARCHITECTURE.md: still an unfilled stub; ... (F9)
 warn: features/payments/refunds.md: missing recommended `description`
 
 6 document(s), 1 feature(s), 0 release(s) checked; 4 error(s), 1 warning(s).
-Bundle is NOT conformant with FDF v1.1.
+Bundle is NOT conformant with FDF v1.2.
 ```
 
 - **Read the whole line.** The rule code — usually at the end, sometimes
@@ -92,6 +92,8 @@ Bundle is NOT conformant with FDF v1.1.
 | **F12** | The lexicon is inconsistent, or a banned word reached the bundle | *F12* below |
 | **F13** | A debt is malformed | A debt has a non-empty `# Gap` concrete enough for someone else to confirm (files and counts), and no Gherkin. `accepted` needs `# Rationale`; `resolved` needs `# Resolution`. Its only sibling may be `<slug>.log.md`. |
 | **F14** | A bug is malformed, or cites a scenario that is not there | *F14* below |
+| **F15** | `TAGS.md` is malformed, or a document carries a tag it does not define (spec 1.2) | *F15* below |
+| **F16** | A debt's or bug's `cost` or `effort` is not one digit from 0 to 9 (spec 1.2) | Write one whole number, `cost: 7`, chosen from the table in `docs/fdf/SPEC.md`, section *Cost and effort* (`grep -n 'Cost and effort' docs/fdf/SPEC.md`). `cost` is harm while it stays: the **highest** level whose description is true. `effort` is the work to close it: the level whose duration is **nearest**. Never a list, a word or `07`, and never a comment after the digit (`cost: 4   # …` reads the comment as the value): put a comment on its own line. Not sure of `effort`? Delete the line: it may wait. |
 | **R1** | A `resource` or `applies-to` path does not exist | *R1* below |
 
 ## F1
@@ -123,23 +125,30 @@ Bundle is NOT conformant with FDF v1.1.
   it.
 - **A log date that is not `## YYYY-MM-DD`** → correct the heading.
 - **The `fdf_version` pin** in the root `INDEX.md`. First decide which version
-  the bundle was written for: **1.1 when it has `SPEC.examples.md`**, **1.0
-  when it has `features/INDEX.md` but no `SPEC.examples.md`**, otherwise the
-  0.x version it was written for.
+  the bundle was written for. Its `SPEC.md` says it best: run
+
+  ```bash
+  for v in 1.2 1.1 1.0; do diff -q <(fdf spec -v $v) <(awk 'f; /^---$/ && ++n==2 {f=1}' docs/fdf/SPEC.md | tail -n +2) >/dev/null && echo $v; done
+  ```
+
+  and the version it prints is the one. When it prints nothing, the copy
+  was edited: then **1.2 when the bundle has `TAGS.md`**, **1.1 when it has
+  `SPEC.examples.md`**, **1.0 when it has `features/INDEX.md`**, otherwise
+  the 0.x version it was written for.
   - it pins `0.x` → the bundle predates 1.0: its upgrade is the user's
     decision (fdf-help, *A bundle from before 1.0*). Never edit a 0.x pin to
-    `"1.0"` or `"1.1"` by hand.
+    a 1.x version by hand.
   - it is missing, or is not a `MAJOR.MINOR` version (`1.0.0`, `v1.0`,
     `0.7.1`), or is a 0.x version FDF never had (after 0.7) → correct it to
-    the version the bundle was written for: `"1.1"`, `"1.0"`, or its 0.x
+    the version the bundle was written for: `"1.2"`, `"1.1"`, `"1.0"`, or its 0.x
     version (`0.7.1` → `"0.7"`) — and a bundle written for 0.x is then
     upgraded (fdf-help, *A bundle from before 1.0*). When you cannot tell
     which 0.x version, `fdf migrate --dry-run` works from any 0.x layout: show
     the user its plan.
   - it is newer than this fdf supports → upgrade fdf.
-  - A `1.0` pin is no error: fdf validates every 1.x bundle. Never edit it to
-    `"1.1"` by hand; taking up 1.1 is `fdf migrate`, the user's decision
-    (fdf-help, *A bundle on an older 1.x version*).
+  - A `1.0` or `1.1` pin is no error: fdf validates every 1.x bundle. Never
+    edit it to a later version by hand; taking up 1.2 is `fdf migrate`, the
+    user's decision (fdf-help, *A bundle on an older 1.x version*).
 
 ## F3
 
@@ -174,6 +183,12 @@ Bundle is NOT conformant with FDF v1.1.
     `broken cross-link` to it that `fdf validate` then reports. Tell the user
     that `fdf migrate` would take the bundle up to 1.1 and write the file
     again, if they want that (fdf-help, *A bundle on an older 1.x version*).
+- **`TAGS.md` in a bundle that pins 1.0 or 1.1** — the tag dictionary came
+  with spec 1.2. Change nothing yet: tell the user, and ask whether to take
+  the bundle up to 1.2 (`fdf migrate`, which keeps `TAGS.md` and moves the
+  pin) or to keep the pin. To keep it, move `TAGS.md` out of the bundle with
+  `git mv docs/fdf/TAGS.md docs/TAGS.md` (`mv` outside git), so that its
+  definitions are not lost, and fix any `broken cross-link` to it.
 - **A document whose `type:` does not match its register** — a `type: Feature`
   file under `practices/` — has an ID, but `fdf mv` moves documents across
   registers only between `debts/` and `bugs/` (`fdf mv <debt-id>
@@ -184,7 +199,7 @@ Bundle is NOT conformant with FDF v1.1.
   renames or regroups a document and repairs every reference to it.
 - **Casing** → directories and file names are lowercase; uppercase is only for
   the reserved files (`INDEX.md`, `LOG.md`, `SPEC.md`, `SPEC.examples.md`,
-  `README.md`, the Context documents). No document is named `index.md` or `log.md`.
+  `TAGS.md`, `README.md`, the Context documents). No document is named `index.md` or `log.md`.
 - **Roles**: beside a feature, `spec`, `plan`, `test`, `surface` and `log`;
   beside a Change or Fix only `spec`, `plan` and `log` (its `test` and
   `surface` belong to the affected feature); beside a practice, debt or bug
@@ -266,6 +281,25 @@ declaration to match what you happened to do. If the declaration turned out
 wrong, say so to the user and change it deliberately: that is a scope change,
 not an error to silence.
 
+## F15
+
+F15 applies once the bundle has `TAGS.md` (spec 1.2). Each tag is a `## <tag>`
+heading under `# Tags`, its definition on the line below, and optionally
+`- instead-of: <tag>, …` naming spellings documents must not carry. A tag is
+written in lowercase letters and digits, in words joined by single hyphens.
+
+| Message | Fix |
+|---|---|
+| `tag X still has a TODO definition` / `tag X has no definition` | Write one line saying what the tag gathers, and what it does not when a neighboring tag is close: `fdf tag --definition '<text>' X`. Read the documents that carry it first: `fdf tag --show X`. If X turns out to be another spelling of a defined tag Y, merge it instead: `fdf tag --merge X Y`. |
+| `tag X is not defined in TAGS.md, and N documents carry it` | Run `fdf tag` and read the defined tags. If one means the same, `fdf tag --merge X <that tag>`. Otherwise add X with its definition: `fdf tag --definition '<text>' X`. |
+| `tag X is listed under instead-of of Y` | X is a spelling the dictionary rejects: `fdf tag --merge X Y` makes every document carry Y. |
+| `tag "X" is not a tag name` | Run the `fdf tag --merge` the message gives, which renames it in every document. A message that says `a list of tags is written tags: [a, b]` means the value was written `tags: a, b`: rewrite that line as `tags: [a, b]`. |
+| `## X is not a tag` | Rename the heading to the form the message suggests, then run `fdf validate`: documents that carry the old spelling are reported next. |
+| `tag X is defined twice` | Keep one entry: merge the two definitions into one line, and the two `instead-of` lists into one. |
+| `X is listed under instead-of of Y but is a tag itself` | Decide which tag stays. If X and Y are one tag, `fdf tag --merge X Y`. If they differ, take X out of Y's `instead-of`. |
+| `X is listed under instead-of of both Y and Z` | One spelling belongs to one tag: remove it from the `instead-of` of the tag it is less like. |
+| `missing required # Tags section` | Put the tags under a `# Tags` heading. |
+
 ## F12
 
 Two different failures share this code.
@@ -320,11 +354,16 @@ not new work.
    capitals and "a"/"an" right, renames a scenario everywhere it is joined —
    Gherkin, `slug.test.md`, task acceptance, declarations — logs the sweep, and
    validates. What it cannot decide it lists and leaves: italic mentions, a
-   label quoted in a Gherkin step, table cells, names.
-5. **Names are moves**: `fdf mv <old-id> <new-id>` for each name the report
+   label quoted in a Gherkin step, table cells, names, tags.
+5. **Tags are tag fixes**: a banned word in a document's `tags`, or as a
+   `## <tag>` heading of `TAGS.md`, is never hand-edited into the term, which
+   is no tag (F15). Fold it into the term's lowercase form:
+   `fdf tag --merge store venue`. Where the bundle has no `TAGS.md`, the
+   same command retags every document.
+6. **Names are moves**: `fdf mv <old-id> <new-id>` for each name the report
    lists, choosing the new name yourself — a mechanical one reads badly
    (`02-menu-from-catalog` → `02-catalog-from-catalog`).
-6. Once the report is empty, propose `strict: true` in `DOMAIN.md`.
+7. Once the report is empty, propose `strict: true` in `DOMAIN.md`.
 
 Rules for any lexicon fix, by hand or by tool: replace the banned word with its
 term where it names the concept, and nothing else. A scenario name is a join —
@@ -409,6 +448,11 @@ A `resource:` (on a task, Change, Fix, debt, bug or adopted feature) or
 | `log entries are not in newest-first order` | Move the misplaced entry to its date, newest first, changing no words. |
 | `uses banned "…"` (F12) | *F12* above. |
 | `standalone bundle (no project root): skipping R1` | Nothing to do: R1 needs a project around the bundle. |
+| `N document(s) carry M tag(s), and the bundle has no TAGS.md` | A decision, not a repair: ask the user whether to start the tag dictionary. If yes, `fdf tag --sync`, then write every definition in the same sitting (*F15* above) — `fdf validate` fails until they are written. |
+| `no document carries tag X` | If documents should carry it, tag them; otherwise remove X's entry from `TAGS.md`. Ask when you cannot tell. |
+| `tags X and Y look like one tag` | It shows while either still has a TODO definition. If they mean one thing, run the `fdf tag --merge` the message gives. If they differ, define both, each saying how it differs from the other (`fdf tag --definition '…' <tag>`); the warning then clears. |
+| `` `cost: N` with no `# Cost` to say why `` | Add a `# Cost` section saying what the entry costs while it stays — the description of level N in SPEC.md's *Cost and effort* table, in this entry's terms. |
+| `N open or accepted debt(s)/bug(s) with no cost` | A rating is a judgment the user owns. **If the user asked you to rate entries**, run `fdf debt --untriaged` (or `fdf bug --untriaged`); for each entry, read it, set `cost:` to the highest level of SPEC.md's *Cost and effort* table whose description is true, with a `# Cost` saying why, and set its `timestamp` (fdf-help, *Cost, effort and tags*); ask about any entry you cannot judge. **Otherwise** — the user asked for something else, such as an upgrade — rate nothing: tell the user how many entries are untriaged, and offer to rate them. An entry you file yourself you rate as you file it. |
 
 ## Never silence a rule
 
@@ -426,7 +470,10 @@ validate, and all make the bundle lie:
 | Invent a zone or a time for a timestamp | It now claims a moment nobody recorded. Keep the date. |
 | Bump a test document's `timestamp` with its case untouched, to clear the "predates" warning | It claims the case now catches the defect. First make the test fail without the fix. |
 | Write plausible-sounding STACK.md text to clear F9 | Invented context is worse than none — every later feature is designed against it. |
-| Hand-edit a 0.x `fdf_version` pin to `"1.0"`, or a `"1.0"` pin to `"1.1"` | The pin says which rules the bundle follows, and the vendored spec is that version's. `fdf migrate` moves a bundle into 1.0's layout and then pins it, and takes a 1.0 bundle up to 1.1 with its `SPEC.md` and `SPEC.examples.md`; a hand-edited pin claims a layout or a spec copy the bundle does not have. |
+| Hand-edit a 0.x `fdf_version` pin to a 1.x version, or a 1.x pin to a later one | The pin says which rules the bundle follows, and the vendored spec is that version's. `fdf migrate` moves a bundle into 1.0's layout and then pins it, and takes a 1.0 or 1.1 bundle up to 1.2 with its `SPEC.md` and `SPEC.examples.md`; a hand-edited pin claims a layout or a spec copy the bundle does not have. |
+| Write a vague definition (`Things about X.`) to clear a TODO in `TAGS.md` | A tag whose meaning nobody wrote down is the drift the dictionary exists to stop. Read what carries it (`fdf tag --show <tag>`) and say what it gathers. |
+| Delete `TAGS.md`, or drop a tag from a document, to make F15 stop | The documents lose what filed them together. Define the tag, or merge it into the one it means. |
+| Set `cost: 0` (or any number) on an entry nobody has judged, to clear the untriaged warning | The number then claims a judgment nobody made, and the register's order lies. Rate it from the table, with a `# Cost`, or leave it untriaged and say so. |
 | Give a free-form note an FDF type so the closed root stops rejecting it | It becomes a document the bundle vouches for. Move free-form documentation out of the bundle. |
 | Delete the file the error names | The error was about the file's content, not its existence — unless the file should not exist at all (a Change against an undelivered feature). |
 | Drop an `instead-of` word so an F12 warning goes away | The synonym drift is the thing the lexicon exists to catch; you deleted the detector, not the problem. |

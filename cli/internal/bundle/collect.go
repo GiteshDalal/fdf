@@ -12,6 +12,7 @@ import (
 
 	"github.com/GiteshDalal/fdf/cli/internal/layout"
 	"github.com/GiteshDalal/fdf/cli/internal/links"
+	"github.com/GiteshDalal/fdf/cli/internal/specver"
 )
 
 // crossLink is one link a document writes, for the broken-link soft check.
@@ -51,10 +52,12 @@ type collection struct {
 	debts          map[string]*debtInfo
 	debtTrails     map[string]string // debt ID -> rel of its .log.md
 	bugs           map[string]*bugInfo
-	bugTrails      map[string]string // bug ID -> rel of its .log.md
-	texts          map[string]string // every .md file's text, for F12's scan
-	contextDocs    map[string]bool   // a root Context document -> whether it is still a stub (F9)
-	pin            string            // the version the bundle pins, which decides what a minor version added
+	bugTrails      map[string]string   // bug ID -> rel of its .log.md
+	texts          map[string]string   // every .md file's text, for F12's scan
+	contextDocs    map[string]bool     // a root Context document -> whether it is still a stub (F9)
+	pin            string              // the version the bundle pins, which decides what a minor version added
+	carried        tagCarriers         // each tag a document carries -> the documents that carry it (F15)
+	triage         map[string][]triage // "debts" or "bugs" -> each entry's cost and effort (F16)
 }
 
 func (c *collection) fail(format string, a ...any) {
@@ -151,14 +154,21 @@ func (c *collection) document(rel, text string) (doc, bool) {
 	}
 	checkTimestamp(rel, data["timestamp"], c.errs, c.warns)
 	d.status, _ = data["status"].(string)
+	for _, t := range DocumentTags(data) {
+		c.carried.add(t, rel)
+	}
 	return d, true
 }
 
-// root checks a document at the bundle root: a Context document, or SPEC.md
-// or SPEC.examples.md, the vendored spec and its examples, which take none of
-// the types that have positions of their own.
+// root checks a document at the bundle root: a Context document, TAGS.md, or
+// SPEC.md or SPEC.examples.md, the vendored spec and its examples, which take
+// none of the types that have positions of their own.
 func (c *collection) root(rel, name string, isContext bool, d doc, text string) {
 	switch {
+	case name == layout.Tags:
+		if d.docType != "Tags" {
+			c.fail("%s: expected `type: Tags`, got %q (F3)", rel, d.docType)
+		}
 	case isContext:
 		if d.docType != "Context" {
 			c.fail("%s: expected `type: Context`, got %q (F3)", rel, d.docType)
@@ -166,6 +176,8 @@ func (c *collection) root(rel, name string, isContext bool, d doc, text string) 
 		c.contextDocs[name] = isStub(text)
 	case d.docType == "Context":
 		c.fail("%s: `type: Context` is reserved for STACK/ARCHITECTURE/SURFACES/INFRA/DOMAIN.md — the vendored spec and its examples are `type: Reference` (F3)", rel)
+	case d.docType == "Tags":
+		c.fail("%s: `type: Tags` is reserved for TAGS.md — the vendored spec and its examples are `type: Reference` (F3)", rel)
 	case structural[d.docType]:
 		c.fail("%s: `type: %s` has a position of its own, which is not the bundle root — the vendored spec and its examples are `type: Reference` (F3)", rel, d.docType)
 	}
@@ -285,6 +297,17 @@ func (c *collection) entry(rel, register, id string, d doc) {
 	}
 	if !in(debtStatuses, d.status) {
 		c.fail("%s: %s `status` must be one of %s, got %q (F2)", rel, wantType, strings.Join(debtStatuses, "|"), d.status)
+	}
+	// 1.2 gave an entry its cost and effort; to a bundle pinned before it,
+	// fields of those names are its own, and mean nothing to FDF.
+	if specver.Since(c.pin, layout.CostSince) {
+		cost, ok := sectionText(d.body, "Cost")
+		c.triage[register] = append(c.triage[register], triage{
+			rel: rel, status: d.status,
+			cost:     readScore(rel, "cost", d.data["cost"], c.errs),
+			effort:   readScore(rel, "effort", d.data["effort"], c.errs),
+			costText: ok && strings.TrimSpace(cost) != "",
+		})
 	}
 	if register == "bugs" {
 		c.bugs[id] = &bugInfo{

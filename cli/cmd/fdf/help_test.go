@@ -129,7 +129,7 @@ func TestHelpExplainsASkillName(t *testing.T) {
 spec into tasks and slug.test.md. Skills are run by your AI agent, not by
 fdf — ` + "`fdf install <harness>`" + ` installs them; ask the agent to use fdf-plan.
 commands: init, install, migrate, new, adopt, change, fix, history, bug, debt,
-practice, validate, log, mv, lexicon, release, spec, serve, help, version
+practice, validate, log, mv, lexicon, tag, release, spec, serve, help, version
 `
 	var out bytes.Buffer
 	if code := runHelp([]string{"plan"}, &out); code != 2 || out.String() != want {
@@ -186,8 +186,10 @@ func TestHelpSkillsMatchInstall(t *testing.T) {
 
 func TestWrapUsageBreaksBetweenParts(t *testing.T) {
 	got := wrapUsage("usage: ", mustTopic(t, "debt").usage)
-	want := "usage: fdf debt [--root <dir>] [--open|--accepted|--resolved]\n" +
+	want := "usage: fdf debt [--root <dir>] [--open|--accepted|--resolved] [--untriaged]\n" +
+		"                [--tag <tag>] [--min-cost <n>] [--sort cost|value]\n" +
 		"                [--cleanup [--dry-run] [--no-log]] [--resource <paths>]\n" +
+		"                [--cost <0-9>] [--effort <0-9>] [--tags <tags>]\n" +
 		"                [[<group>/…]<slug>]"
 	if got != want {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)

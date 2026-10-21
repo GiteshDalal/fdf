@@ -88,7 +88,8 @@ the mechanics they share. The format rules are in the bundle at
      flat until they decide. Then run `fdf new [<group>/…]<slug>` (lowercase, hyphenated, in
      `DOMAIN.md`'s terms). `fdf new payments/instant-refunds` writes
      `features/payments/instant-refunds.md`, whose ID is
-     `features/payments/instant-refunds`.
+     `features/payments/instant-refunds`. When tags `fdf tag` lists fit the
+     feature, add them: `fdf new --tags gtm,payments …` (fdf-help, *Cost, effort and tags*).
    - Read the generated file. A `draft` feature has no trail siblings (at most
      a log) and no task directory.
 3. **Understand the feature** through questions, ONE at a time: who is the

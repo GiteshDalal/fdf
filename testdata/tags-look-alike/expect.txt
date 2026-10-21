@@ -1,0 +1,5 @@
+exit: 1
+contains: warn: TAGS.md: tags `session` and `sessions` look like one tag — merge them with `fdf tag --merge sessions session`, or define both, saying in each how it differs from the other
+contains: warn: TAGS.md: tags `e-mail` and `email` look like one tag — merge them with `fdf tag --merge e-mail email`, or define both, saying in each how it differs from the other
+contains: FAIL: TAGS.md: tag `sessions` still has a TODO definition
+not-contains: `security` and

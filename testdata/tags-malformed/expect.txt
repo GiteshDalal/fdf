@@ -1,0 +1,8 @@
+exit: 1
+contains: FAIL: TAGS.md: `## Go To Market` is not a tag — a tag is lowercase letters and digits, in words joined by single hyphens, such as `go-to-market` (F15)
+contains: FAIL: TAGS.md: tag `payments` is defined twice — keep one entry (F15)
+contains: FAIL: TAGS.md: `refunds` is listed under `instead-of` of `payments` but is a tag itself — merge it with `fdf tag --merge refunds payments`, or take it out of `instead-of` (F15)
+contains: FAIL: TAGS.md: `money` is listed under `instead-of` of both `payments` and `refunds` — one spelling, one tag (F15)
+contains: FAIL: TAGS.md: `Cash_Flow` under `instead-of` of `refunds` is not written as a tag is — lowercase letters and digits, in words joined by single hyphens (F15)
+contains: FAIL: tag "Payments" is not a tag name, and 1 document carries it (debts/rounding.md) — `fdf tag --merge 'Payments' payments` renames it in every document (F15)
+contains: FAIL: tag "auth, server" is not a tag name, and 1 document carries it (bugs/split-capture.md) — a list of tags is written `tags: [a, b]` (F15)

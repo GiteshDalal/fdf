@@ -3,8 +3,19 @@
 One file per spec version; each is the normative text for bundles pinning that
 version. The current version is the highest-numbered file.
 
-- [`1.1.md`](1.1.md) — current. Its examples are in
-  [`1.1.examples.md`](1.1.examples.md). Only adds to 1.0: the examples leave
+- [`1.2.md`](1.2.md) — current. Its examples are in
+  [`1.2.examples.md`](1.2.examples.md). Only adds to 1.1: the tag
+  dictionary, `TAGS.md`, a reserved file at the bundle root that defines every
+  tag once (F15 holds a bundle that has one to it: every tag a document
+  carries is defined there, and a `TODO` definition is none), the tag fix as a
+  fourth maintenance edit, and `cost` and `effort` on debts and bugs, two
+  numbers from 0 to 9 on scales the spec defines, by which `fdf debt` and
+  `fdf bug` order the registers (F16). A 1.0 or 1.1 bundle takes it up with
+  `fdf migrate`, which moves the pin, re-vendors the spec and logs the
+  upgrade, and edits no document; `fdf tag --sync` then starts the
+  dictionary. The file's *Changes from 1.1* lists every difference.
+- [`1.1.md`](1.1.md) — validated by fdf 1.x; upgrade with `fdf migrate`. Its
+  examples are in [`1.1.examples.md`](1.1.examples.md). Only adds to 1.0: the examples leave
   the specification for a companion file, which a bundle vendors beside
   `SPEC.md` as `SPEC.examples.md`, so the spec holds the rules alone; the
   three statements only the examples made are stated in the text. A 1.0 bundle

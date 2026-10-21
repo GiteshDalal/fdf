@@ -128,16 +128,19 @@ The paths through them:
      - the bug cites a scenario under `# Violates` →
        `fdf fix --from <bug-id> [<group>/…]<slug>`. It copies the bug's
        `# Symptom` and `# Root cause`, turns its `# Violates` scenarios into
-       regression cases, takes its `affects`, and writes `resolves: <bug-id>`;
+       regression cases, takes its `affects` and its tags, and writes
+       `resolves: <bug-id>`;
      - the bug cites none →
        `fdf change --from <bug-id> [<group>/…]<slug>`. It copies the bug's
-       `# Symptom` and `# Expected` into `# Problem`, takes its `affects`, and
-       writes `resolves: <bug-id>`; carry its root cause into the spec's
-       `## Why` yourself.
+       `# Symptom` and `# Expected` into `# Problem`, takes its `affects` and
+       its tags, and writes `resolves: <bug-id>`; carry its root cause into
+       the spec's `## Why` yourself.
    - **Otherwise**:
      `fdf change --affects <feature-id>[,…] [<group>/…]<slug>` or
      `fdf fix --affects <feature-id>[,…] [<group>/…]<slug>`, for example
      `fdf change --affects features/payments/instant-refunds payments/refund-window`.
+     Add `--tags <tag>,…` with the tags `fdf tag` lists that fit, if any
+     (fdf-help, *Cost, effort and tags*).
    - **Filing**: flat is fine until `changes/` holds about ten documents;
      then group them, usually after the affected feature's group
      (`payments/refund-window`). The group is filing only: nothing ties it to

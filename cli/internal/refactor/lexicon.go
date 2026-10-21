@@ -103,6 +103,9 @@ func manual(o bundle.Occurrence, text string) string {
 	if o.InName() {
 		return "name"
 	}
+	if inTag(o, text) {
+		return "a tag — its fix is a tag fix, `fdf tag --merge <tag> <new tag>`, since a tag is lowercase and a term need not be"
+	}
 	if o.Start > 0 && o.End < len(text) && (text[o.Start-1] == '*' || text[o.Start-1] == '_') && text[o.End] == text[o.Start-1] {
 		return "italic — a mention? put it in a code span"
 	}
@@ -123,6 +126,46 @@ func manual(o bundle.Occurrence, text string) string {
 		}
 	}
 	return ""
+}
+
+// inTag reports whether an occurrence is a tag: in a document's `tags`, or
+// a `## <tag>` heading of TAGS.md. A lexicon fix would write the term, which
+// is no tag (F15); tags change by a tag fix.
+func inTag(o bundle.Occurrence, text string) bool {
+	lineStart := strings.LastIndex(text[:o.Start], "\n") + 1
+	line := text[lineStart:]
+	if i := strings.Index(line, "\n"); i >= 0 {
+		line = line[:i]
+	}
+	if o.Rel == layout.Tags && strings.HasPrefix(line, "## ") {
+		return true
+	}
+	if !strings.HasPrefix(text, "---") {
+		return false
+	}
+	end := strings.Index(text[3:], "\n---")
+	if end < 0 || o.Start > end+3 {
+		return false // not in the frontmatter
+	}
+	// The key the line belongs to: its own, or the one a list item is under.
+	for _, l := range reverseLines(text[:lineStart] + line) {
+		if m := keyLineRe.FindStringSubmatch(l); m != nil {
+			return m[1] == "tags"
+		}
+	}
+	return false
+}
+
+// keyLineRe is a frontmatter key's line.
+var keyLineRe = regexp.MustCompile(`^([A-Za-z0-9_-]+):`)
+
+// reverseLines is text's lines, last first.
+func reverseLines(text string) []string {
+	lines := strings.Split(text, "\n")
+	for i, j := 0, len(lines)-1; i < j; i, j = i+1, j-1 {
+		lines[i], lines[j] = lines[j], lines[i]
+	}
+	return lines
 }
 
 // inGherkin reports whether a line starts inside a ```gherkin fence.

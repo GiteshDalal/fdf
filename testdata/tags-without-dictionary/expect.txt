@@ -1,0 +1,3 @@
+exit: 0
+contains: warn: 2 document(s) carry 3 tag(s), and the bundle has no TAGS.md to define them — `fdf tag --sync` starts one from them, and F15 then holds every tag to it
+not-contains: (F15)
