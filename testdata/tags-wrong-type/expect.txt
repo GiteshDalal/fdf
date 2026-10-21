@@ -1,0 +1,2 @@
+exit: 1
+contains: FAIL: TAGS.md: expected `type: Tags`, got "Context" (F3)

@@ -60,6 +60,15 @@ func (v Version) Less(o Version) bool {
 // AtLeast reports whether v is o or a later version.
 func (v Version) AtLeast(o Version) bool { return !v.Less(o) }
 
+// Since reports whether pin, a bundle's fdf_version, is the version since
+// or a later one: whether the bundle takes up what since added. A pin that
+// is not a version takes up nothing.
+func Since(pin, since string) bool {
+	p, ok := Parse(pin)
+	s, sok := Parse(since)
+	return ok && sok && p.AtLeast(s)
+}
+
 // Known0x reports whether s is one of the versions FDF had before 1.0, 0.1 to
 // 0.7: the pins fdf migrate upgrades from. Any other 0.x pin is a mistake, to
 // be corrected, not a bundle to migrate.

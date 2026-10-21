@@ -263,16 +263,25 @@ next person starts from it instead of from zero.
    twice. Only a defect that truly cannot run here — it needs production data,
    hardware, or a service you cannot reach — is filed unreproduced, and its
    `# Symptom` then says what you tried and why it did not run.
-2. **File it**:
+2. **Rate it** (a bundle that pins 1.2 or later; the pin is `fdf_version` in
+   `docs/fdf/INDEX.md`). Run `grep -n 'Cost and effort' docs/fdf/SPEC.md`
+   and read that table. `cost` is what the defect costs while it stays —
+   harm, not difficulty: the **highest** level whose description is true.
+   `effort` is the work the repair would take: the level whose duration is
+   **nearest** it. Give it only when Phase 2 found the root cause, and leave
+   it out otherwise. Run `fdf tag` and pick the tags it lists that fit;
+   leave tags out when none fits (fdf-help, *Cost, effort and tags*).
+3. **File it**:
 
    ```bash
-   fdf bug --affects <feature-id>[,…] --resource <path>[,…] [<group>/…]<slug>
+   fdf bug --affects <feature-id>[,…] --resource <path>[,…] --cost <0-9> [--effort <0-9>] [--tags <tag>,…] [<group>/…]<slug>
    ```
 
    `--affects` names the features that own the symptom (Phase 1, step 3). `--resource` names the paths in the trace,
    so work that touches them finds the bug. Leave out `--affects` only when no
-   feature documents the code.
-3. **Fill it in**, replacing every `TODO`. Keep the `timestamp` that `fdf bug`
+   feature documents the code. In a bundle pinned to 1.0 or 1.1, leave out
+   `--cost` and `--effort`: `fdf bug` refuses them there.
+4. **Fill it in**, replacing every `TODO`. Keep the `timestamp` that `fdf bug`
    wrote.
    - `description:` — one sentence on what the software does wrong.
    - `# Symptom` — the commands you ran, verbatim, their failing output, and
@@ -306,10 +315,12 @@ next person starts from it instead of from zero.
      no `# Violates` heading.
    - `# Root cause` — the Phase 2 sentence, with the code's `<file>:<line>`.
      If Phase 2 did not finish, write `Not found yet:` and what you ruled out.
-   - `# Cost` — what the defect costs while it stays; optional.
+   - `# Cost` — what the defect costs while it stays: in this defect's terms,
+     why its `cost` is the level it is (who it reaches, how often, what it
+     harms). From spec 1.2 it is expected whenever `cost` is set.
    - Replace the `TODO.` at the end of the listing line `fdf bug` added to the
      `INDEX.md` beside it with the description.
-4. **Remove every probe**, and run `fdf validate`.
+5. **Remove every probe**, and run `fdf validate`.
 
 A filed bug needs no log line: `fdf history` lists it from its `affects`, and
 a hand-written pointer to it is a back-link that drifts.

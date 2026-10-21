@@ -4,10 +4,11 @@
 // command that writes to a bundle, so that none of them keeps its own copy of
 // these rules.
 //
-// The rules, from spec 1.0 and 1.1:
+// The rules, from spec 1.0, 1.1 and 1.2:
 //   - The root is closed. Its Markdown files are INDEX.md, LOG.md, SPEC.md,
-//     SPEC.examples.md (from 1.1), README.md and the five Context documents,
-//     and its directories that hold Markdown are the six registers.
+//     SPEC.examples.md (from 1.1), TAGS.md (from 1.2), README.md and the five
+//     Context documents, and its directories that hold Markdown are the six
+//     registers.
 //   - releases/ is flat. Every other register files its documents flat or in
 //     groups, and groups nest to any depth.
 //   - A directory beside a document of the same name belongs to it: beside a
@@ -47,6 +48,19 @@ const (
 // until its pin moves. The validator, which knows the pin, says so.
 const ExamplesSince = "1.1"
 
+// Tags is the tag dictionary at the bundle root, which spec 1.2 added: every
+// tag the bundle's documents carry, each defined once.
+const Tags = "TAGS.md"
+
+// TagsSince is the spec version that added Tags: a bundle pinned before it
+// has none, and one there is an error until its pin moves.
+const TagsSince = "1.2"
+
+// CostSince is the spec version that gave a debt or bug its `cost` and
+// `effort`: a bundle pinned before it may carry fields of those names, which
+// mean nothing to it.
+const CostSince = "1.2"
+
 // Vendored reports whether rel, a slash-separated path from the bundle
 // root, is a vendored copy of the spec or its examples: a Reference
 // document, written by fdf init and fdf migrate and never edited, that
@@ -68,6 +82,7 @@ const (
 	Readme    Kind = "readme"         // README.md at the root, which FDF ignores
 	Reference Kind = "reference"      // SPEC.md or SPEC.examples.md at the root: the vendored spec and its examples
 	Context   Kind = "context"        // one of the five Context documents
+	TagsDoc   Kind = "tags"           // TAGS.md at the root: the tag dictionary
 	Document  Kind = "document"       // a register's document
 	Trail     Kind = "trail"          // <slug>.<role>.md beside the document it belongs to
 	Task      Kind = "task"           // NN-<name>.md in a task directory
@@ -129,7 +144,7 @@ func CaseTwin(name string) string {
 }
 
 const (
-	rootFileProblem = "the bundle root holds only INDEX.md, LOG.md, SPEC.md, SPEC.examples.md (from spec 1.1), README.md and the five Context documents — file it in a register, or move it out of the bundle"
+	rootFileProblem = "the bundle root holds only INDEX.md, LOG.md, SPEC.md, SPEC.examples.md (from spec 1.1), TAGS.md (from spec 1.2), README.md and the five Context documents — file it in a register, or move it out of the bundle"
 	rootDirProblem  = "the bundle root holds only the registers features/, changes/, practices/, debts/, bugs/ and releases/ — a feature group belongs under features/; file anything else in its register, or move it out of the bundle"
 	taskDirProblem  = "task directories may contain only NN-slug.md tasks"
 )
@@ -281,7 +296,7 @@ func (b *Bundle) File(rel string) Position {
 	case CaseTwin(name) != "":
 		return stray(rel, CaseTwin(name))
 	case !fileRe.MatchString(name):
-		return stray(rel, "filenames are lowercase; uppercase is reserved for INDEX/LOG/SPEC/STACK/ARCHITECTURE/SURFACES/INFRA/DOMAIN.md")
+		return stray(rel, "filenames are lowercase; uppercase is reserved for INDEX/LOG/SPEC/STACK/ARCHITECTURE/SURFACES/INFRA/DOMAIN/TAGS.md")
 	case d.Register == "releases":
 		return Position{Kind: Document, Register: d.Register, ID: strings.TrimSuffix(rel, ".md")}
 	}
@@ -372,6 +387,10 @@ func rootFile(name string) Position {
 		return Position{Kind: Reference}
 	case IsContext(name):
 		return Position{Kind: Context}
+	case name == Tags:
+		return Position{Kind: TagsDoc}
+	case strings.EqualFold(name, Tags):
+		return stray(name, "a disk that ignores case reads it as TAGS.md, the tag dictionary, whose name is uppercase — rename it TAGS.md")
 	}
 	return stray(name, rootFileProblem)
 }

@@ -10,9 +10,9 @@ description: Use when starting any conversation in a project with an FDF bundle 
 FDF (Feature Document Format) documents software features as a directory of
 Markdown files — the **bundle**, at `docs/fdf/` in this project. Its root is
 closed: it holds the five Context documents below, `INDEX.md` (which pins the
-spec version), `LOG.md`, `SPEC.md` (the format rules) and, from spec 1.1,
-`SPEC.examples.md` (one example of each document), an optional `README.md`,
-and six
+spec version), `LOG.md`, `SPEC.md` (the format rules), from spec 1.1
+`SPEC.examples.md` (one example of each document), from spec 1.2 `TAGS.md`
+(the tag dictionary), an optional `README.md`, and six
 **registers** — `features/`, `changes/`, `practices/`, `debts/`, `bugs/` and
 `releases/` — and nothing else. Free-form documentation (guides, ADRs, notes)
 belongs outside the bundle, in the rest of `docs/`. Every register but
@@ -85,6 +85,24 @@ a practice violation is the cause. A bug is **never repaired in place**: its
 repair is a `Fix` or `Change` that names it in `resolves` — or, while its
 feature is still being built, one of that feature's tasks.
 
+From spec 1.2, each debt and bug carries two numbers from 0 to 9: **`cost`**,
+what it costs the project while it stays (harm, not difficulty), and
+**`effort`**, the work it would take to close it. The scale is in
+`docs/fdf/SPEC.md`, section *Cost and effort*: for `cost` take the
+**highest** level whose description is true, for `effort` the level whose
+duration is **nearest**, and say why under `# Cost`. An open or accepted
+entry with no `cost` is **untriaged**. `fdf debt` and `fdf bug` list the
+registers costliest first; `--untriaged`, `--min-cost <n>`, `--tag <tag>` and `--sort value`
+narrow and reorder them. There is no priority field: the order comes from
+these two numbers.
+
+**Tags** (`tags:` in any document's frontmatter) file a document with others
+that share a concern its register and group do not capture — a launch, a
+layer, a risk. From spec 1.2, `TAGS.md` at the bundle root defines every tag
+once; once a bundle has it, every tag a document carries must be defined
+there (rule F15), and a definition still reading `TODO` is an error. `fdf tag`
+lists the defined tags and how many documents carry each.
+
 The bundle is the source of truth for what the software does. Code that
 changes behavior without touching the bundle makes the bundle lie — the
 failure FDF exists to prevent, and tiny changes are where it happens.
@@ -99,7 +117,7 @@ failure FDF exists to prevent, and tiny changes are where it happens.
 | **trail** | A feature's spec, plan, test, surface and log documents, and its tasks. |
 | **living / episodic** | See *Living and episodic documents* below. |
 | **join** | A scenario name repeated elsewhere — its `slug.test.md` case, a task's `# Acceptance`, a Change's declaration. Joins match character for character. |
-| **maintenance edit** | One of the three edits allowed on any document (see below). |
+| **maintenance edit** | One of the four edits allowed on any document (see below). |
 | **the gate** | `fdf validate` exiting 0. |
 
 ## Mechanics every fdf skill relies on
@@ -138,15 +156,52 @@ failure FDF exists to prevent, and tiny changes are where it happens.
   interviewing (fdf-init) is filed at once, and the user is told. Every other
   bug, every debt, and every practice or Context-document edit is proposed
   first, and written only once the user approves it.
+
 - **Validate after every bundle edit.** `fdf validate` must exit 0 (use
   fdf-validate when it does not). Also read its `warn:` lines: fix those whose
   repair you know, such as a leftover placeholder; ask the user about those
   that need a decision.
-- **Rule codes** (F1–F14, R1) are defined in `docs/fdf/SPEC.md`. It is long:
+- **Rule codes** (F1–F16, R1) are defined in `docs/fdf/SPEC.md`. It is long:
   read the section you need (`grep -n '^#' docs/fdf/SPEC.md` lists them)
   rather than all of it. One example of each document, all from one bundle,
   is in `docs/fdf/SPEC.examples.md`; a bundle that pins 1.0 has no such file
   and keeps them inside its `SPEC.md`, under `# Document examples`.
+
+## Cost, effort and tags
+
+From spec 1.2 (the pin is `fdf_version` in `docs/fdf/INDEX.md`). In a bundle
+pinned to 1.0 or 1.1, skip **Rating**: `fdf debt` and `fdf bug` refuse
+`--cost` and `--effort` there. Tags work at every version.
+
+**Rating.** Every debt and bug you file gets a `cost`.
+1. Run `grep -n 'Cost and effort' docs/fdf/SPEC.md` and read that section's
+   table.
+2. `cost` is what the entry costs while it stays — harm, not difficulty.
+   Choose the **highest** level whose description is true of it.
+3. `effort` is the work to close it. Choose the level whose duration is
+   **nearest** that work. Give it only when you know what closing it takes;
+   otherwise leave it out.
+4. Pass them when filing: `fdf debt --cost <0-9> [--effort <0-9>] …` or
+   `fdf bug --cost <0-9> [--effort <0-9>] …`. To rate an entry already filed,
+   add `cost: <n>` (and `effort: <n>`) to its frontmatter, each on its own
+   line with no comment after it, and set its `timestamp`.
+5. Write why under `# Cost`, in the entry's own terms.
+
+**Tags.**
+1. Run `fdf tag`. It lists the tags `TAGS.md` defines, or, when the bundle
+   has no `TAGS.md`, the tags documents already carry.
+2. Tag a document only with tags that list shows. Add a new one only when
+   none fits — never one that only this document would carry.
+3. **The bundle has `TAGS.md`:** define a new tag in the same step:
+   `fdf tag --definition '<what it gathers, and what it does not>' <tag>`.
+   A command that creates a document takes `--tags a,b`; when it says it
+   added a tag with a TODO definition, write that definition before you
+   finish — `fdf validate` fails until you do. An apostrophe would end the
+   quotes: write ’ instead.
+4. **The bundle has no `TAGS.md`:** tags are free-form. Reuse the spellings
+   documents already carry, and do not start the dictionary yourself:
+   `fdf tag --sync` starts it from every tag at once, which is the user's
+   decision (*A bundle on an older 1.x version*, step 6).
 
 ## Living and episodic documents
 
@@ -161,13 +216,16 @@ So a delivered feature that changes keeps **one** feature document, whose
 Gherkin is amended, and gains a **new** Change with its own spec. Never fork a
 second feature document for the same capability.
 
-Three **maintenance edits** may touch any document, living or episodic, at any
+Four **maintenance edits** may touch any document, living or episodic, at any
 status, because each only puts one name in place of another. None needs a
 Change or Fix; each is logged; none changes a `timestamp`:
 
 - a **lexicon fix** — a word `DOMAIN.md` bans replaced by its term
   (`fdf lexicon --term <Term> --fix`; fdf-validate, F12), or put in a code
   span where the text is about the word itself — a log entry included;
+- a **tag fix** — one tag replaced by another in every document's `tags`,
+  the dropped one listed under the kept one's `instead-of` in `TAGS.md`
+  (`fdf tag --merge <from> <into>` does all of it, and logs it);
 - a **reference repair** — a document moved or renamed and every reference to
   it updated. `fdf mv` does the whole thing; never rename a bundle file by
   hand;
@@ -385,11 +443,12 @@ propose it, say what it does, and wait.
 
 ## A bundle on an older 1.x version
 
-fdf 1.x validates and works on every 1.x bundle, so a bundle that pins 1.0
-keeps working as it is: nothing waits on an upgrade. Taking up 1.1 is still
-**the user's decision** — propose it when it comes up (fdf-checkpoint does),
-and wait. 1.1 only adds: its examples moved out of `SPEC.md` into
-`SPEC.examples.md`.
+fdf 1.x validates and works on every 1.x bundle, so a bundle that pins 1.0 or
+1.1 keeps working as it is: nothing waits on an upgrade. Taking up 1.2 is
+still **the user's decision** — propose it when it comes up (fdf-checkpoint
+does), and wait. Each minor version only adds: 1.1 moved the examples out of
+`SPEC.md` into `SPEC.examples.md`, and 1.2 adds the tag dictionary
+(`TAGS.md`) and `cost` and `effort` on debts and bugs.
 
 - **If the user agrees:**
   1. **Start clean.** Commit first, so that `git diff` then shows the
@@ -405,8 +464,28 @@ and wait. 1.1 only adds: its examples moved out of `SPEC.md` into
      (or `codex`, `opencode`; leave out `--project` for a copy installed in
      your home directory).
   5. **Review** `git diff`, then commit.
+  6. **Then, when the user chooses** — migrate writes neither:
+     - The tag dictionary, in this order, in one sitting — `fdf validate`
+       fails from the first step until the last is done:
+       1. `fdf tag --sync` starts `TAGS.md` from the tags the documents
+          already carry, each with a `TODO` definition. Run it first: a
+          merge records the dropped spelling in `TAGS.md`, so it needs the
+          file to be there.
+       2. For each line `--sync` printed saying two tags **look like one
+          tag**, run the `fdf tag --merge <from> <into>` that line gives: it
+          keeps the spelling more documents carry, and the shorter one on a
+          tie. A tag not written as a tag is, such as `Security`, is merged
+          into its lowercase form the same way. A line saying two tags **may
+          be one tag** gives no command: ask the user, and merge only the
+          pairs they confirm.
+       3. `fdf tag` lists what is left. Define each:
+          `fdf tag --definition '<what it gathers, and what it does not>' <tag>`,
+          from what `fdf tag --show <tag>` lists.
+     - `fdf debt --untriaged` and `fdf bug --untriaged` list the entries with
+       no `cost`; rate each as *Cost, effort and tags* says.
 - Never edit the pin by hand: the pin and the vendored `SPEC.md` and
-  `SPEC.examples.md` move together.
+  `SPEC.examples.md` move together. Never write `TAGS.md` into a bundle that
+  pins 1.0 or 1.1: it is an error there (F3) until the pin moves.
 
 ## "It's tiny, just do it"
 
@@ -449,7 +528,10 @@ violation is the *silent* skip — and so is doing it first and asking later.
 | "I'll add a back-link on the feature" | Don't. `affects:` is the whole link; `fdf history <feature-id>` computes the rest. |
 | "I'll keep this design note in the bundle, at its root" | The root is closed (F3). A document of an FDF type goes in its register; a free-form note goes outside the bundle, in the rest of `docs/`. |
 | "The bundle pins 0.7 — I'll just set the pin to 1.0" | 1.0 moved every feature into `features/` and gave every feature ID its register. `fdf migrate` does that in one run; a hand-edited pin claims a layout the bundle does not have. |
-| "The bundle pins 1.0 — I'll just set the pin to 1.1" | Its `SPEC.md` would still be 1.0's and its `SPEC.examples.md` missing. `fdf migrate` moves the pin and vendors both — and taking up 1.1 is the user's call. |
+| "The bundle pins 1.0 or 1.1 — I'll just set the pin to 1.2" | Its `SPEC.md` would still be the old version's. `fdf migrate` moves the pin and vendors the spec and its examples — and taking up 1.2 is the user's call. |
+| "I'll add `priority: high` to this bug" | FDF has no priority field. Rate it: `cost` (harm while it stays) and `effort` (work to close it), each 0–9 from the table in SPEC.md's *Cost and effort*. The register's order comes from them. |
+| "This document needs its own precise tag" | A tag that files one document finds nothing the document's ID does not. Use a tag `fdf tag` lists; add one only when none fits, with its definition. |
+| "I'll leave the tag's TODO definition for someone else" | `fdf validate` fails on it (F15). Write it now: `fdf tag --definition '…' <tag>`. |
 | "I know roughly what time it is" | You don't. `date -u +%Y-%m-%dT%H:%M:%SZ`. |
 
 ## Precedence

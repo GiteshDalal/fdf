@@ -1,0 +1,6 @@
+exit: 0
+contains: warn: debts/rounding.md: `cost: 4` with no `# Cost` to say why — write what the debt costs while it stays, so the number can be checked
+contains: warn: debts/: 2 open or accepted debt(s) with no `cost` — rate each from 0 to 9 (SPEC.md, *Cost and effort*); `fdf debt --untriaged` lists them
+contains: warn: bugs/: 1 open or accepted bug(s) with no `cost` — rate each from 0 to 9 (SPEC.md, *Cost and effort*); `fdf bug --untriaged` lists them
+not-contains: done-and-dusted
+not-contains: (F16)

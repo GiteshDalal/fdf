@@ -1,0 +1,5 @@
+exit: 1
+contains: FAIL: debts/rounding.md: `cost` must be one whole number from 0 to 9, got "10" — see SPEC.md, *Cost and effort*, for what each level means (F16)
+contains: FAIL: debts/rounding.md: `effort` must be one whole number from 0 to 9, got "high" — see SPEC.md, *Cost and effort*, for what each level means (F16)
+contains: FAIL: bugs/split-capture.md: `cost` must be one whole number from 0 to 9, not a list (F16)
+contains: FAIL: bugs/split-capture.md: `effort` must be one whole number from 0 to 9, got "07" — see SPEC.md, *Cost and effort*, for what each level means (F16)

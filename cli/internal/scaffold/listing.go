@@ -119,6 +119,50 @@ func ListRegister(root, reg string, out io.Writer) int {
 	return 0
 }
 
+// TagsListing is the line the root INDEX.md lists TAGS.md with.
+const TagsListing = "* [Tags](/TAGS.md) - the tags documents carry, and what each one gathers."
+
+// ListTags lists TAGS.md in the root INDEX.md, after the Context documents,
+// unless it lists it already, and says so the way ListEntry does: fdf tag
+// does it when it starts a bundle's dictionary.
+func ListTags(root string, out io.Writer) int {
+	p := filepath.Join(root, "INDEX.md")
+	raw, err := os.ReadFile(p)
+	if err != nil {
+		return 0
+	}
+	text, added := WithTagsListing(string(raw))
+	if !added {
+		return 0
+	}
+	if err := os.WriteFile(p, []byte(text), 0o644); err != nil {
+		fmt.Fprintln(out, "error:", err)
+		return 1
+	}
+	fmt.Fprintln(out, `updated INDEX.md (now lists "Tags")`)
+	return 0
+}
+
+// WithTagsListing returns the root INDEX.md's text with TAGS.md listed after
+// the line that lists DOMAIN.md, or at its end when none does, and whether it
+// added it: a text that links TAGS.md already is returned as it is.
+func WithTagsListing(text string) (string, bool) {
+	lines := strings.Split(text, "\n")
+	after := -1
+	for i, l := range lines {
+		if strings.Contains(l, "](/TAGS.md)") || strings.Contains(l, "](TAGS.md)") || strings.Contains(l, "](./TAGS.md)") {
+			return text, false
+		}
+		if strings.Contains(l, "DOMAIN.md)") {
+			after = i
+		}
+	}
+	if after < 0 {
+		return strings.TrimRight(text, "\n") + "\n\n" + TagsListing + "\n", true
+	}
+	return strings.Join(append(lines[:after+1], append([]string{TagsListing}, lines[after+1:]...)...), "\n"), true
+}
+
 // WithRegisterListing returns the root INDEX.md's text with the register
 // reg's listing added after the registers it lists already, or at its end
 // when it lists none, and whether it added it: a text that already lists the

@@ -81,6 +81,7 @@ it appears as a link to that home, not a copy.
 | Canonical names, the words banned in their place, how each appears in code | `DOMAIN.md` |
 | The FDF format rules | `SPEC.md` — vendored, never edited |
 | One example of each FDF document | `SPEC.examples.md` (from spec 1.1) — vendored, never edited |
+| The tags documents carry, and what each one gathers | `TAGS.md` (from spec 1.2) |
 | How agents work in this repository: harness notes, pointers into the bundle | `CLAUDE.md` / `AGENTS.md` |
 | Why one feature was built the way it was | that feature's `slug.spec.md` — frozen |
 
@@ -159,7 +160,7 @@ it appears as a link to that home, not a copy.
    gets a new `timestamp` (a lexicon sweep or a path repair leaves every
    `timestamp` as it is); a practice edit is also logged in the practice's own
    log (`fdf log <practice-id> '**Amended**: …'`). A debt or bug you file is
-   filled as fdf-debug's *Not repairing it now* (step 3) and fdf-validate's
+   filled as fdf-debug's *Not repairing it now* (step 4) and fdf-validate's
    F13 describe; a bug nobody reported gives, under `# Symptom`, the code
    path, the input that reaches it and `Found by reading.`
    What the user declines stays as it is — do not propose it again in this
@@ -291,6 +292,28 @@ you validate — F14 requires it. An open bug whose `resource` paths
 are gone, or whose `# Violates` scenarios a Change has since removed, needs
 amending — it is a living document.
 
+From spec 1.2 the numbers are part of the audit (fdf-help, *Cost, effort and tags*):
+
+- `fdf debt --untriaged` and `fdf bug --untriaged` list the open and accepted
+  entries with no `cost`. Each is a finding: read it and propose its `cost`
+  (and `effort`, when the work is understood), with the `# Cost` that says
+  why.
+- An entry whose `# Cost` no longer supports its number — a release it now
+  blocks, a workaround found, a diagnosis that shrank the repair — is a
+  living document out of date: propose the new number and the amended
+  `# Cost`.
+
+**The tag dictionary** (spec 1.2). Run `fdf tag`:
+
+- no `TAGS.md` while documents carry tags → propose starting it with
+  `fdf tag --sync`, the user's decision: `fdf validate` then fails until every
+  definition is written;
+- two tags that mean one thing, or a tag only one document carries →
+  propose `fdf tag --merge <from> <into>`;
+- a definition that no longer says what the documents carrying it share
+  (`fdf tag --show <tag>` lists them) → propose the new definition,
+  `fdf tag --definition '<text>' <tag>`, which logs the change.
+
 Every mismatch has two readings, and they take opposite fixes:
 
 - **The document is stale** — the project moved on deliberately: a dependency
@@ -302,10 +325,11 @@ Every mismatch has two readings, and they take opposite fixes:
   holds, and newer code ignores it. That is not a document edit; never rewrite
   a rule to match the worst code in the tree. Check `fdf debt --open` first —
   the gap may already be filed. If not, propose a debt
-  (`fdf debt --resource <paths> [<group>/…]<slug>`) naming the paths. If a
+  (`fdf debt --resource <paths> --cost <0-9> [<group>/…]<slug>`, rated as
+  fdf-help's *Cost, effort and tags* says) naming the paths. If a
   user could observe the difference — the software doing something wrong —
   it is a defect, not a debt: propose a bug instead
-  (`fdf bug --affects <feature-id> --resource <paths> [<group>/…]<slug>`).
+  (`fdf bug --affects <feature-id> --resource <paths> --cost <0-9> [<group>/…]<slug>`).
 
 When the evidence does not say which reading is true, ask. A `DOMAIN.md`
 term whose `code:` names nothing that exists, while the code uses a banned

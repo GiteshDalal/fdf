@@ -398,7 +398,8 @@ software doing something wrong that someone could observe — is a bug, not a
 debt. File it, and tell the user you did:
 `fdf bug --resource <paths> [<group>/…]<slug>`, with the evidence under
 `# Symptom` (say it was found by reading) and what should happen under
-`# Expected` (fdf-debug, *Not repairing it now*, step 3). Add
+`# Expected` (fdf-debug, *Not repairing it now*, step 4), rated with
+`--cost <0-9>` from SPEC.md's *Cost and effort* table (fdf-help, *Cost, effort and tags*). Add
 `--affects <feature-id>` when a feature already documents that code; leave
 `affects` unset only when none does. Do not fix it inside this interview.
 
@@ -457,7 +458,9 @@ debt. File it, and tell the user you did:
    description. Keep the `timestamp` the scaffold wrote, or paste fresh
    `date -u` output — never type one.
 3. **On approval, file the debt** for the files that have not caught up:
-   `fdf debt --resource <paths> [<group>/…]<slug>`, then fill it in:
+   `fdf debt --resource <paths> --cost <0-9> [--effort <0-9>] [<group>/…]<slug>`
+   — the numbers chosen from SPEC.md's *Cost and effort* table as fdf-help's
+   *Cost, effort and tags* says — then fill it in:
 
    ```markdown
    ---
@@ -466,6 +469,8 @@ debt. File it, and tell the user you did:
    title: Legacy handlers read roles directly
    description: Twelve handlers check roles by hand instead of calling authz.Can.
    resource: [internal/http/admin.go, internal/http/reports.go]
+   cost: 6
+   effort: 4
    timestamp: <output of date -u +%Y-%m-%dT%H:%M:%SZ, run now for this file>
    ---
 
@@ -478,8 +483,11 @@ debt. File it, and tell the user you did:
    # Cost
 
    Each is a place a permission rule can be changed in one spot and missed in
-   another.
+   another: a security risk that needs an unlikely path, level 6.
    ```
+
+   In a bundle pinned to 1.0 or 1.1, leave out `--cost`, `--effort` and the
+   `cost:` and `effort:` lines.
 
    `# Gap` is required and must be concrete enough for someone else to
    confirm — files and counts, not impressions (F13). `resource` names the

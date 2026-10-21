@@ -1,0 +1,3 @@
+exit: 1
+contains: FAIL: TAGS.md: tag `gtm` still has a TODO definition — replace it with a line on what the tag gathers, and what it does not when a neighboring tag is close (F15)
+contains: FAIL: TAGS.md: tag `launch` has no definition — write a line on what it gathers, and what it does not when a neighboring tag is close (F15)

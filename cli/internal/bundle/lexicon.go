@@ -336,6 +336,16 @@ func maskBody(b []byte, start int, docType string) {
 		}
 	})
 
+	if docType == "Tags" {
+		// TAGS.md's `instead-of` names the spellings documents must not
+		// carry, as DOMAIN.md names the words it bans.
+		eachLine(b, start, func(s, e int) {
+			if tagInsteadOfRe.Match(b[s:e]) {
+				blank(b, s, e)
+			}
+		})
+		return
+	}
 	if docType != "Change" && docType != "Fix" && docType != "Bug" {
 		return
 	}

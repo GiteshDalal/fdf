@@ -30,6 +30,9 @@ const helpWidth = 80
 
 var rootFlagDoc = flagDoc{"--root <dir>", "bundle root (default docs/fdf, or a docs/features from before 1.0; FDF_ROOT_DIR overrides it)"}
 
+// tagsFlagDoc is the --tags every command that creates a document takes.
+var tagsFlagDoc = flagDoc{"--tags <tags>", "comma-separated tags it carries; one TAGS.md does not define yet is added there with a TODO definition"}
+
 var helpPreamble = banner + `
 
 FDF documents each software feature as a Markdown + Gherkin file. Its design
@@ -114,8 +117,9 @@ var helpTopics = []helpTopic{
 		body: "Scaffold a new bundle at the resolved root, docs/fdf by default: INDEX.md\n" +
 			"carrying the fdf_version pin and listing the registers, LOG.md, the spec\n" +
 			"at SPEC.md and its examples at SPEC.examples.md, the five Context stubs\n" +
-			"(STACK.md, ARCHITECTURE.md, SURFACES.md, INFRA.md, DOMAIN.md), and the\n" +
-			"indexes of features/, changes/, practices/, debts/ and bugs/. It never\n" +
+			"(STACK.md, ARCHITECTURE.md, SURFACES.md, INFRA.md, DOMAIN.md), an empty\n" +
+			"tag dictionary at TAGS.md, and the indexes of features/, changes/,\n" +
+			"practices/, debts/ and bugs/. It never\n" +
 			"overwrites: on a 1.x bundle it only adds what is missing, the spec copy of\n" +
 			"the version the bundle pins among it (1.0's holds its examples, so a 1.0\n" +
 			"bundle gets no SPEC.examples.md), and on a 0.x one it points you to\n" +
@@ -159,9 +163,9 @@ var helpTopics = []helpTopic{
 	{
 		name:    "migrate",
 		group:   "Set up",
-		summary: "Upgrade a 0.x or 1.0 bundle to spec 1.1",
+		summary: "Upgrade a 0.x, 1.0 or 1.1 bundle to spec 1.2",
 		usage:   "fdf migrate [--root <dir>] [--dry-run] [--to <dir>] [--skip <glob>]",
-		body: "Upgrade a bundle at any 0.x pin to spec 1.1, then validate it. It works\n" +
+		body: "Upgrade a bundle at any 0.x pin to spec 1.2, then validate it. It works\n" +
 			"out the whole migration and prints it before it writes anything; with\n" +
 			"--dry-run it stops there. Older layouts are made 0.7-shaped first (v0.1's\n" +
 			"renames, v0.3's trail lift, the status tags older tools wrote after index\n" +
@@ -190,18 +194,20 @@ var helpTopics = []helpTopic{
 			"each move. It prints the commands that put everything back should it stop\n" +
 			"partway, and, once done, those that back it out, starting with the\n" +
 			"`git reset` of those marks that git stash and git clean would trip on. A\n" +
-			"pre-flight refuses what 1.1 has no place for, and what migrate cannot move\n" +
+			"pre-flight refuses what 1.2 has no place for, and what migrate cannot move\n" +
 			"safely — a stray Markdown file at the root, a document named index.md or\n" +
 			"log.md, a practice, debt or bug beside a directory of Markdown, a register\n" +
 			"that is a symbolic link or whose place a file takes, a v0.1 rename onto a\n" +
 			"file that is there — and leaves the bundle untouched, so a refused run is\n" +
 			"safe to retry after fixing what it names.\n" +
 			"A 1.x bundle moves nothing, and the steps above do not apply to it. One at\n" +
-			"1.0 takes 1.1 up, as a minor version is taken up: its pin moves to 1.1,\n" +
-			"SPEC.md is vendored again, SPEC.examples.md is written beside it, and\n" +
-			"LOG.md records it; no document is edited. In one at 1.0 or 1.1, a missing\n" +
-			"or altered spec or examples copy, and a missing register index or Context\n" +
-			"stub, are restored — so on a 1.0 bundle, restoring means upgrading.\n" +
+			"1.0 or 1.1 takes 1.2 up, as a minor version is taken up: its pin moves to\n" +
+			"1.2, SPEC.md and SPEC.examples.md are vendored again, and LOG.md records\n" +
+			"it; no document is edited. In any 1.x bundle, a missing or altered spec or\n" +
+			"examples copy, and a missing register index or Context stub, are restored\n" +
+			"— so on a bundle at 1.0 or 1.1, restoring means upgrading. Migrate writes\n" +
+			"no TAGS.md: F15 holds every tag to it from the moment it exists, so\n" +
+			"`fdf tag --sync` starts it when you choose, and the next steps say so.\n" +
 			"Nothing is written through a symbolic link, and in a git repository the\n" +
 			"files written new are marked with `git add -N`.\n" +
 			"An unfilled Context stub is only a warning here; once the bundle has a\n" +
@@ -219,7 +225,7 @@ var helpTopics = []helpTopic{
 		name:    "new",
 		group:   "Features",
 		summary: "Start a feature to build: fdf new [<group>/…]<slug>",
-		usage:   "fdf new [--root <dir>] [<group>/…]<slug>",
+		usage:   "fdf new [--root <dir>] [--tags <tags>] [<group>/…]<slug>",
 		body: "Scaffold a draft feature at features/[<group>/…]<slug>.md with\n" +
 			"frontmatter and placeholder Gherkin, listed in the index beside it. A\n" +
 			"feature is filed flat or in groups nested to any depth; a new group gets\n" +
@@ -228,18 +234,19 @@ var helpTopics = []helpTopic{
 			"clashes with what is beside it is refused: a feature named like a group\n" +
 			"would make that group its task directory. A draft may have a log but no\n" +
 			"other sibling and no task directory; the rest arrive as it advances.",
-		flags: []flagDoc{rootFlagDoc},
+		flags: []flagDoc{tagsFlagDoc, rootFlagDoc},
 		examples: []string{
 			"fdf new payments/instant-refunds",
 			"fdf new onboarding",
 			"fdf new platform/payouts/weekly-payouts",
+			"fdf new --tags gtm,payments payments/payouts",
 		},
 	},
 	{
 		name:    "adopt",
 		group:   "Features",
 		summary: "Map code that predates the bundle, or show what is still unmapped",
-		usage:   "fdf adopt [--root <dir>] [--resource <paths>] [--depth <n>] [[<group>/…]<slug>]",
+		usage:   "fdf adopt [--root <dir>] [--resource <paths>] [--tags <tags>] [--depth <n>] [[<group>/…]<slug>]",
 		body: "Map what a codebase already does. With a name it scaffolds an adopted\n" +
 			"feature at features/[<group>/…]<slug>.md: a capability documented from\n" +
 			"the code as it stands, never built through FDF, so it has no spec, plan\n" +
@@ -254,6 +261,7 @@ var helpTopics = []helpTopic{
 			"directory levels deep, most unclaimed first. Work down that list.",
 		flags: []flagDoc{
 			{"--resource <paths>", "comma-separated project paths of the capability's code (required with an ID)"},
+			tagsFlagDoc,
 			{"--depth <n>", "directory levels the unclaimed code is grouped by (default 2)"},
 			rootFlagDoc,
 		},
@@ -267,7 +275,7 @@ var helpTopics = []helpTopic{
 		name:    "change",
 		group:   "Features",
 		summary: "Start a Change: a delivered feature must behave differently",
-		usage:   "fdf change [--root <dir>] [--from bugs/<id>] [--affects <feature-id>[,…]] [<group>/…]<slug>",
+		usage:   "fdf change [--root <dir>] [--from bugs/<id>] [--affects <feature-id>[,…]] [--tags <tags>] [<group>/…]<slug>",
 		body: "Scaffold a Change under changes/: a request to alter what a delivered\n" +
 			"(done or adopted) feature does. Use it when the feature's Gherkin has to\n" +
 			"change, including when its document was silent on a case nobody foresaw.\n" +
@@ -277,10 +285,12 @@ var helpTopics = []helpTopic{
 			"takes features' full IDs (features/…), and may name several: one Change\n" +
 			"can span them. --from bugs/<id> starts from a filed bug that no scenario\n" +
 			"covers yet: it copies the bug's `# Symptom` and `# Expected` into\n" +
-			"`# Problem`, takes its `affects`, and names it in `resolves`.",
+			"`# Problem`, takes its `affects` and its tags, and names it in\n" +
+			"`resolves`.",
 		flags: []flagDoc{
 			{"--affects <ids>", "comma-separated feature IDs this touches (required unless --from supplies them)"},
 			{"--from bugs/<id>", "the bug this repairs: copies its analysis, writes `resolves`"},
+			{"--tags <tags>", "comma-separated tags it carries (with --from, the bug's by default); one TAGS.md does not define yet is added there with a TODO definition"},
 			rootFlagDoc,
 		},
 		examples: []string{
@@ -293,7 +303,7 @@ var helpTopics = []helpTopic{
 		name:    "fix",
 		group:   "Features",
 		summary: "Start a Fix: the code drifted from what its feature says",
-		usage:   "fdf fix [--root <dir>] [--from bugs/<id>] [--affects <feature-id>[,…]] [<group>/…]<slug>",
+		usage:   "fdf fix [--root <dir>] [--from bugs/<id>] [--affects <feature-id>[,…]] [--tags <tags>] [<group>/…]<slug>",
 		body: "Scaffold a Fix under changes/: the feature document was right and the\n" +
 			"code drifted from it. It has no design gate — restoring documented\n" +
 			"behavior needs no approval — and needs no spec, plan or tasks, so the\n" +
@@ -302,10 +312,11 @@ var helpTopics = []helpTopic{
 			"record is each case in the affected feature's slug.test.md. --affects\n" +
 			"takes features' full IDs (features/…). --from bugs/<id> takes over a\n" +
 			"bug's `# Symptom` and `# Root cause`, turns its `# Violates` scenarios\n" +
-			"into regression cases, and names it in `resolves`.",
+			"into regression cases, takes its tags, and names it in `resolves`.",
 		flags: []flagDoc{
 			{"--affects <ids>", "comma-separated feature IDs this touches (required unless --from supplies them)"},
 			{"--from bugs/<id>", "the bug this repairs: copies its analysis, writes `resolves`"},
+			{"--tags <tags>", "comma-separated tags it carries (with --from, the bug's by default); one TAGS.md does not define yet is added there with a TODO definition"},
 			rootFlagDoc,
 		},
 		examples: []string{
@@ -330,12 +341,13 @@ var helpTopics = []helpTopic{
 		name:    "bug",
 		group:   "Registers and practices",
 		summary: "List the bug register (known defects), or file a bug",
-		usage:   "fdf bug [--root <dir>] [--open|--accepted|--resolved] [--cleanup [--dry-run]] [--affects <ids>] [--resource <paths>] [[<group>/…]<slug>]",
+		usage:   "fdf bug [--root <dir>] [--open|--accepted|--resolved] [--untriaged] [--tag <tag>] [--min-cost <n>] [--sort cost|value] [--cleanup [--dry-run]] [--affects <ids>] [--resource <paths>] [--cost <0-9>] [--effort <0-9>] [--tags <tags>] [[<group>/…]<slug>]",
 		body: "Read or file the bug register under bugs/: known defects — the software\n" +
 			"doing something wrong that someone could observe — that have not been\n" +
 			"repaired yet. A gap no one could observe is a debt instead.\n" +
 			"\n" +
-			"Without a slug it prints the register. With a slug it files a new bug,\n" +
+			"Without a slug it prints the register, costliest first (see `fdf debt`).\n" +
+			"With a slug it files a new bug,\n" +
 			"flat or in groups nested to any depth, status `open`, with `# Symptom` and\n" +
 			"`# Expected` to fill; --affects names features by their full IDs\n" +
 			"(features/…). When a scenario already promises the expected behavior, cite\n" +
@@ -349,15 +361,23 @@ var helpTopics = []helpTopic{
 			"logs them: F10 checks a done Fix or Change against bugs/LOG.md.",
 		flags: []flagDoc{
 			{"--open", "list only open bugs (also --accepted, --resolved)"},
+			{"--untriaged", "list only the open and accepted bugs with no `cost` yet"},
+			{"--tag <tag>", "list only the bugs that carry this tag"},
+			{"--min-cost <n>", "list only the bugs whose cost is at least n, 1 to 9"},
+			{"--sort cost|value", "order by cost (the default), or by cost − effort"},
 			{"--cleanup", "clear resolved bugs, recording each in bugs/LOG.md"},
 			{"--dry-run", "with --cleanup: show what would be cleared, change nothing"},
 			{"--affects <ids>", "when filing: comma-separated feature IDs the defect shows up in"},
 			{"--resource <paths>", "when filing: comma-separated paths carrying it"},
+			{"--cost <0-9>", "when filing: what the defect costs while it stays (SPEC.md, Cost and effort)"},
+			{"--effort <0-9>", "when filing: the work it would take to repair it"},
+			{"--tags <tags>", "when filing: comma-separated tags it carries; one TAGS.md does not define yet is added there with a TODO definition"},
 			rootFlagDoc,
 		},
 		examples: []string{
 			"fdf bug --open",
-			"fdf bug --affects features/payments/instant-refunds --resource internal/payments/refund.go refund-split-capture",
+			"fdf bug --untriaged",
+			"fdf bug --affects features/payments/instant-refunds --resource internal/payments/refund.go --cost 7 --effort 2 refund-split-capture",
 			"fdf bug --cleanup --dry-run",
 		},
 	},
@@ -365,16 +385,22 @@ var helpTopics = []helpTopic{
 		name:    "debt",
 		group:   "Registers and practices",
 		summary: "List the debt register (known gaps), or file a debt",
-		usage:   "fdf debt [--root <dir>] [--open|--accepted|--resolved] [--cleanup [--dry-run] [--no-log]] [--resource <paths>] [[<group>/…]<slug>]",
+		usage:   "fdf debt [--root <dir>] [--open|--accepted|--resolved] [--untriaged] [--tag <tag>] [--min-cost <n>] [--sort cost|value] [--cleanup [--dry-run] [--no-log]] [--resource <paths>] [--cost <0-9>] [--effort <0-9>] [--tags <tags>] [[<group>/…]<slug>]",
 		body: "Read or file the debt register under debts/: the known gaps between what\n" +
 			"the project says and what the code does — work left undone, and rules the\n" +
 			"codebase does not follow everywhere yet.\n" +
 			"\n" +
-			"Without a slug it prints the register: status, ID, filing date (UTC) and\n" +
-			"title. With a slug it files a new debt, flat or in groups nested to any\n" +
-			"depth, status `open` (later `accepted` or `resolved`), and lists it in the\n" +
-			"index beside it. Set `resource` to the paths that carry the gap: that is\n" +
-			"how later work finds the debt, and R1 fails it once those paths are gone.\n" +
+			"Without a slug it prints the register: status, ID, the UTC date it last\n" +
+			"changed (its timestamp, the filing date until it is amended or rated) and\n" +
+			"title, and from spec 1.2 on each entry's cost and effort, two numbers from\n" +
+			"0 to 9 (SPEC.md, Cost and effort): costliest first and, at equal cost,\n" +
+			"cheapest to close first. --sort value orders by cost − effort instead,\n" +
+			"what one unit of work buys. An open or accepted entry with no cost is\n" +
+			"untriaged: --untriaged lists those. With a slug it files a new debt,\n" +
+			"flat or in groups nested to any depth, status `open` (later `accepted` or\n" +
+			"`resolved`), and lists it in the index beside it; --cost and --effort\n" +
+			"rate it. Set `resource` to the paths that carry the gap: that is how\n" +
+			"later work finds the debt, and R1 fails it once those paths are gone.\n" +
 			"\n" +
 			"--cleanup clears resolved debts: each gets one line in debts/LOG.md, and\n" +
 			"its file, its log and its index listing are removed; a group left with no\n" +
@@ -383,24 +409,32 @@ var helpTopics = []helpTopic{
 			"clears them without the LOG.md line.",
 		flags: []flagDoc{
 			{"--open", "list only open debts (also --accepted, --resolved)"},
+			{"--untriaged", "list only the open and accepted debts with no `cost` yet"},
+			{"--tag <tag>", "list only the debts that carry this tag"},
+			{"--min-cost <n>", "list only the debts whose cost is at least n, 1 to 9"},
+			{"--sort cost|value", "order by cost (the default), or by cost − effort"},
 			{"--cleanup", "clear resolved debts, recording each in debts/LOG.md"},
 			{"--dry-run", "with --cleanup: show what would be cleared, change nothing"},
 			{"--no-log", "with --cleanup: clear them without writing debts/LOG.md"},
 			{"--resource <paths>", "when filing: comma-separated paths carrying the gap"},
+			{"--cost <0-9>", "when filing: what the gap costs while it stays (SPEC.md, Cost and effort)"},
+			{"--effort <0-9>", "when filing: the work it would take to close it"},
+			{"--tags <tags>", "when filing: comma-separated tags it carries; one TAGS.md does not define yet is added there with a TODO definition"},
 			rootFlagDoc,
 		},
 		examples: []string{
 			"fdf debt",
-			"fdf debt --open",
+			"fdf debt --open --min-cost 6",
+			"fdf debt --tag gtm --sort value",
 			"fdf debt --cleanup --dry-run",
-			"fdf debt authz-legacy-handlers",
+			"fdf debt --resource internal/http --cost 6 --effort 4 --tags security authz-legacy-handlers",
 		},
 	},
 	{
 		name:    "practice",
 		group:   "Registers and practices",
 		summary: "Write down the one way the project does a recurring mechanism",
-		usage:   "fdf practice [--root <dir>] [<group>/…]<slug>",
+		usage:   "fdf practice [--root <dir>] [--tags <tags>] [<group>/…]<slug>",
 		body: "Scaffold a Practice under practices/: the project's binding answer to\n" +
 			"how one recurring mechanism is done (authorization, permission checks,\n" +
 			"payment capture, database access). It is listed in practices/INDEX.md,\n" +
@@ -411,7 +445,7 @@ var helpTopics = []helpTopic{
 			"project paths it governs: that is how later work is routed to it, since\n" +
 			"features never list the practices they follow. A practice binds all\n" +
 			"future code: land one only with human approval.",
-		flags: []flagDoc{rootFlagDoc},
+		flags: []flagDoc{tagsFlagDoc, rootFlagDoc},
 		examples: []string{
 			"fdf practice permission-checks",
 			"fdf practice payments/idempotency",
@@ -420,14 +454,15 @@ var helpTopics = []helpTopic{
 	{
 		name:    "validate",
 		group:   "Check and maintain",
-		summary: "Check the bundle against its pinned spec (F1-F14, R1)",
+		summary: "Check the bundle against its pinned spec (F1-F16, R1)",
 		usage:   "fdf validate [--root <dir>] [--repo-root <dir>] [--strict-domain]",
-		body: "Check the bundle against the spec version pinned in its root INDEX.md, 1.0\n" +
-			"or 1.1: a 1.0 bundle is checked as 1.0, so a SPEC.examples.md in it, which\n" +
-			"1.1 added, fails F3, and taking it up to 1.1 with `fdf migrate` is the\n" +
-			"user's choice. A bundle that pins none, or one this fdf does not validate,\n" +
-			"fails F1 and is checked no further: `fdf migrate` upgrades a bundle from\n" +
-			"before 1.0. Every error names its rule: F1-F14 for the format, R1 for\n" +
+		body: "Check the bundle against the spec version pinned in its root INDEX.md,\n" +
+			"1.0, 1.1 or 1.2, by that version's rules: a SPEC.examples.md, which 1.1\n" +
+			"added, fails F3 in a 1.0 bundle, and a TAGS.md, which 1.2 added, in a 1.0\n" +
+			"or 1.1 one; taking a bundle up with `fdf migrate` is the user's choice. A\n" +
+			"bundle that pins none, or one this fdf does not validate, fails F1 and is\n" +
+			"checked no further: `fdf migrate` upgrades a bundle from before 1.0.\n" +
+			"Every error names its rule: F1-F16 for the format, R1 for\n" +
 			"paths that must exist in the project. Warnings never fail the run: soft\n" +
 			"checks, and F12's banned words unless strict domain mode is on\n" +
 			"(`strict: true` in DOMAIN.md, or --strict-domain). Exit 0 means\n" +
@@ -526,6 +561,45 @@ var helpTopics = []helpTopic{
 			"fdf lexicon --term Venue --all",
 			"fdf lexicon --term Venue --fix --dry-run",
 			"fdf lexicon --term Venue --fix",
+		},
+	},
+	{
+		name:    "tag",
+		group:   "Check and maintain",
+		summary: "List the tag dictionary (TAGS.md), add a tag, or merge two",
+		usage:   "fdf tag [--root <dir>] [--show <tag>] [--sync [--dry-run]] [--merge [--dry-run] <from> <into>] [--definition <text>] [<tag>…]",
+		body: "Keep the tag dictionary, TAGS.md (spec 1.2): every tag the bundle's\n" +
+			"documents carry, each defined once, so a tag finds every document that\n" +
+			"shares a concern. Once a bundle has TAGS.md, F15 holds every tag to it:\n" +
+			"a tag it does not define, a definition still reading TODO, and a\n" +
+			"spelling it lists under `instead-of` are errors.\n" +
+			"\n" +
+			"Without an argument it lists the tags with how many documents carry each\n" +
+			"and their definitions, then the tags documents carry that it lacks:\n" +
+			"reuse one before adding another. With tags it adds each, with a TODO\n" +
+			"definition to write; --definition gives one tag its definition, new or\n" +
+			"not. It never starts TAGS.md while documents carry tags: --sync does,\n" +
+			"from them all. --show lists the\n" +
+			"documents that carry a tag. --sync starts TAGS.md from the tags the\n" +
+			"documents already carry, as a bundle from before 1.2 takes it up; its\n" +
+			"next step is to write every definition. --merge folds one tag into\n" +
+			"another, a tag fix: every document that carries <from> carries <into>\n" +
+			"instead, <from> goes under <into>'s `instead-of`, and the root LOG.md\n" +
+			"records it; no document's timestamp changes.",
+		flags: []flagDoc{
+			{"--show <tag>", "list the documents that carry this tag"},
+			{"--sync", "add every tag the documents carry that TAGS.md lacks, each with a TODO definition"},
+			{"--merge", "fold the tag <from> into <into> in every document and in TAGS.md"},
+			{"--dry-run", "with --sync or --merge: show what would change, write nothing"},
+			{"--definition <text>", "with one tag: its definition — a new tag's instead of a TODO, or a TODO filled in, or a new meaning for a defined tag, the one LOG.md records"},
+			rootFlagDoc,
+		},
+		examples: []string{
+			"fdf tag",
+			"fdf tag --show gtm",
+			"fdf tag --definition 'Work the public launch waits for.' gtm",
+			"fdf tag --sync --dry-run",
+			"fdf tag --merge testing test",
 		},
 	},
 	{

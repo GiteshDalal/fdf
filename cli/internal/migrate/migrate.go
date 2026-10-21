@@ -54,8 +54,8 @@ import (
 	"github.com/GiteshDalal/fdf/cli/internal/specver"
 )
 
-// target is the pin migrate writes: 1.1.
-const target = "1.1"
+// target is the pin migrate writes: 1.2.
+const target = "1.2"
 
 // Version is the CLI version, set by the command wrapper. A migrate that
 // finds the pin already current is indistinguishable from a migrate that has
@@ -179,6 +179,7 @@ func Run(o Options, out io.Writer) int {
 		fmt.Fprintf(out, "error: %v\n", err)
 		return 1
 	}
+	problems = append(problems, ownScores(rootAbs)...)
 	if len(problems) > 0 {
 		fmt.Fprintln(out, "cannot migrate — fix these first (bundle left unchanged):")
 		for _, problem := range problems {
@@ -253,6 +254,7 @@ func Run(o Options, out io.Writer) int {
 	if v, _ := specver.Parse(pin); v.Less(specver.Version{Minor: 7}) {
 		reportV07(root, report.String(), out)
 	}
+	defer takeUp(report.String(), out)
 	fmt.Fprintln(out, "\nnext: re-run `fdf install` as you installed fdf: the installed skills and primer still describe 0.7.")
 	switch {
 	case project == "":
@@ -290,7 +292,7 @@ func supported(pin string) bool {
 }
 
 // repair takes a bundle already at 1.x, in which nothing moves. One pinned
-// to an earlier 1.x version than target takes target up as spec 1.1's
+// to an earlier 1.x version than target takes target up as the spec's
 // Versioning takes up a minor version: its pin moves, and one entry in the
 // root LOG.md says so. Then, as for a bundle already at target, it restores
 // the vendored spec and examples when missing or not target's, each
@@ -367,6 +369,12 @@ func repair(o Options, root, from string, out io.Writer) int {
 			linked = append(linked, linkedFile(rel, to))
 		}
 	}
+	// A minor version only adds, but a field it adds has the meaning it
+	// gives it: a debt or bug that used `cost` or `effort` for something of
+	// its own would fail F16 the moment its pin moved.
+	if upgrade && !specver.Since(from, layout.CostSince) {
+		linked = append(linked, ownScores(root)...)
+	}
 	if len(linked) > 0 {
 		if upgrade {
 			fmt.Fprintln(out, "cannot migrate — fix these first (bundle left unchanged):")
@@ -422,7 +430,8 @@ func repair(o Options, root, from string, out io.Writer) int {
 	}
 	fmt.Fprintf(out, "\ndone: migrated the bundle at %s to fdf_version %s; logged in LOG.md.\n", root, target)
 	fmt.Fprintln(out, "\nvalidating migrated bundle:")
-	code := bundle.Validate(root, bundle.Options{RepoRoot: o.Project, Out: out, FreshStubsAdvisory: true})
+	var report bytes.Buffer
+	code := bundle.Validate(root, bundle.Options{RepoRoot: o.Project, Out: io.MultiWriter(out, &report), FreshStubsAdvisory: true})
 	fmt.Fprintf(out, "\nnext: re-run `fdf install` as you installed fdf, so the installed skills and primer are %s's;\n", target)
 	if o.Project != "" {
 		fmt.Fprintln(out, "      then review the upgrade with `git diff` — migrate marked the files it wrote new")
@@ -430,7 +439,78 @@ func repair(o Options, root, from string, out io.Writer) int {
 	} else {
 		fmt.Fprintln(out, "      then review the upgrade: the bundle is not in a git repository, so nothing can undo it.")
 	}
+	takeUp(report.String(), out)
 	return code
+}
+
+// takeUp says what spec 1.2 leaves a migrated bundle to take up by hand,
+// when its validation found it: the tag dictionary, which migrate never
+// writes, because F15 holds every tag to it from the moment it exists; and a
+// cost for each open or accepted debt and bug.
+func takeUp(report string, out io.Writer) {
+	tags := strings.Contains(report, "and the bundle has no TAGS.md")
+	untriaged := strings.Contains(report, "with no `cost`")
+	if !tags && !untriaged {
+		return
+	}
+	fmt.Fprintln(out, "\nthen, when you choose (spec 1.2 adds both, and migrate writes neither):")
+	if tags {
+		fmt.Fprintln(out, "  - `fdf tag --sync` starts the tag dictionary, TAGS.md, from the tags your documents carry, each")
+		fmt.Fprintln(out, "    with a TODO definition; F15 then holds every tag to it, so next fold the spellings of one tag")
+		fmt.Fprintln(out, "    into one with `fdf tag --merge`, then write each definition (fdf-help, step 6).")
+	}
+	if untriaged {
+		fmt.Fprintln(out, "  - `fdf debt --untriaged` and `fdf bug --untriaged` list the entries with no `cost` yet;")
+		fmt.Fprintln(out, "    rate each from 0 to 9 as SPEC.md's *Cost and effort* says.")
+	}
+}
+
+// ownScores names each debt and bug whose `cost` or `effort` is a field of
+// the bundle's own — anything but one digit, which spec 1.2 makes the field
+// — so that migrate refuses before moving a pin F16 would then fail.
+func ownScores(root string) []string {
+	b := layout.New(os.DirFS(root))
+	var out []string
+	for _, reg := range []string{"debts", "bugs"} {
+		filepath.WalkDir(filepath.Join(root, reg), func(p string, d os.DirEntry, err error) error {
+			switch {
+			case err != nil:
+				return nil
+			case d.IsDir() && strings.HasPrefix(d.Name(), "."):
+				return filepath.SkipDir
+			case d.IsDir() || !strings.HasSuffix(d.Name(), ".md"):
+				return nil
+			}
+			rel, _ := filepath.Rel(root, p)
+			rel = filepath.ToSlash(rel)
+			if b.File(rel).Kind != layout.Document {
+				return nil
+			}
+			raw, rerr := os.ReadFile(p)
+			if rerr != nil {
+				return nil
+			}
+			data, _, ok := bundle.Frontmatter(string(raw))
+			if t, _ := data["type"].(string); !ok || t != "Debt" && t != "Bug" {
+				return nil
+			}
+			for _, field := range []string{"cost", "effort"} {
+				v, present := data[field]
+				if !present || bundle.Score(v) >= 0 {
+					continue
+				}
+				if l, isList := v.([]string); isList && len(l) == 0 {
+					continue // empty: a missing value, which 1.2 reads as none
+				}
+				if s, isText := v.(string); isText && strings.TrimSpace(s) == "" {
+					continue
+				}
+				out = append(out, fmt.Sprintf("%s: `%s: %v` is a field of this bundle's own, and spec %s gives `%s` a meaning, one whole number from 0 to 9 (F16) — rename the field, such as to `%s-note:`, or write a number", rel, field, v, layout.CostSince, field, field))
+			}
+			return nil
+		})
+	}
+	return out
 }
 
 // upgradeEntry is the root LOG.md's entry for a minor upgrade from from to
@@ -482,8 +562,9 @@ func vendored(root, name string, want []byte) bool {
 // returns "" when no sign is there. A bundle from before 1.0 held a features/INDEX.md only in a group it
 // named features, which its pin, once written in, tells apart.
 func laidOut1(root string) (sign, version string) {
-	// 1.0 laid out every 1.x bundle, and 1.1 added the examples copy, which
-	// decides over a SPEC.md of another version, as fdf-validate decides.
+	// 1.0 laid out every 1.x bundle; 1.1 added the examples copy and 1.2 the
+	// tag dictionary, and a file a later version added decides over a SPEC.md
+	// of an earlier one, as fdf-validate decides.
 	version = scaffold.Supported()[0]
 	for _, v := range scaffold.Supported() {
 		if want, _ := scaffold.SpecText(v); vendored(root, layout.Spec, want) {
@@ -491,8 +572,10 @@ func laidOut1(root string) (sign, version string) {
 			break
 		}
 	}
-	if exists(filepath.Join(root, layout.Examples)) && version != layout.ExamplesSince {
-		sign, version = "it holds SPEC.examples.md", layout.ExamplesSince
+	for _, added := range []struct{ file, since string }{{layout.Examples, layout.ExamplesSince}, {layout.Tags, layout.TagsSince}} {
+		if exists(filepath.Join(root, added.file)) && !specver.Since(version, added.since) {
+			sign, version = "it holds "+added.file, added.since
+		}
 	}
 	if index := filepath.Join(root, "features", "INDEX.md"); exists(index) && onDisk(index) == index {
 		sign = "it holds features/INDEX.md"

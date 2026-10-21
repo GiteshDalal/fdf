@@ -1,0 +1,2 @@
+exit: 1
+contains: FAIL: TAGS.md: missing required `# Tags` section — one `## <tag>` heading per tag, its definition under it (F15)

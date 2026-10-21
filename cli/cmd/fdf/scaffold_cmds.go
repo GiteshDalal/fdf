@@ -34,6 +34,7 @@ func runInit(args []string, stdout io.Writer) int {
 
 func runNew(args []string, stdout io.Writer) int {
 	fs := newFlagSet("new")
+	tagList := fs.String("tags", "", "comma-separated tags the feature carries")
 	r, rest, exit, ok := resolveRootSource(fs, args, stdout)
 	if !ok {
 		return exit
@@ -47,11 +48,12 @@ func runNew(args []string, stdout io.Writer) int {
 	if !requireBundle(root, stdout) {
 		return 1
 	}
-	return scaffold.New(root, rest[0], stdout)
+	return tagged(root, "features", rest[0], splitList(*tagList), func() int { return scaffold.New(root, rest[0], stdout) }, stdout)
 }
 
 func runPractice(args []string, stdout io.Writer) int {
 	fs := newFlagSet("practice")
+	tagList := fs.String("tags", "", "comma-separated tags the practice carries")
 	r, rest, exit, ok := resolveRootSource(fs, args, stdout)
 	if !ok {
 		return exit
@@ -65,5 +67,5 @@ func runPractice(args []string, stdout io.Writer) int {
 	if !requireBundle(root, stdout) {
 		return 1
 	}
-	return scaffold.Practice(root, rest[0], stdout)
+	return tagged(root, "practices", rest[0], splitList(*tagList), func() int { return scaffold.Practice(root, rest[0], stdout) }, stdout)
 }

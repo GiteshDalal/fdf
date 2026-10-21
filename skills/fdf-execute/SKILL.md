@@ -175,7 +175,8 @@ capable model, with the failure output. A second failure is a blocker (see
      (`<who>` is the name the user gave, or "the user" — never a name you
      guessed);
   5. file a debt naming what was left undone — part of the descoping the user
-     decided: `fdf debt --resource <paths> [<group>/…]<slug>`, then replace
+     decided: `fdf debt --resource <paths> --cost <0-9> [<group>/…]<slug>`
+     (rated as fdf-help's *Cost, effort and tags* says), then replace
      its `TODO` text (`description`, `# Gap`, `# Cost`) and the `TODO.` of its
      listing line;
   6. run `fdf validate`.
@@ -311,7 +312,8 @@ broken?**
 - **Left undone** — work deferred to ship, a rule the new code follows that
   older code does not, a task descoped because it was blocked → a **debt**.
   `# Gap` states it concretely (files and counts, not impressions — F13),
-  `# Cost` says what carrying it risks, and `resource` names the paths.
+  `cost` rates it and `# Cost` says what carrying it risks (fdf-help,
+  *Cost, effort and tags*), and `resource` names the paths.
   When an open debt already names the same gap, amend its `# Gap` and
   `resource` instead of filing a second one. A feature that shipped without
   its batch import is genuinely done *and* has left a gap: the debt is what
@@ -319,7 +321,8 @@ broken?**
 - **Broken outside this feature's scope** — the software doing something
   observably wrong in code this feature does not own → a **bug**, carrying
   the reproduction under `# Symptom` and what should happen under
-  `# Expected`: `fdf bug --affects <owning-feature-id>[,…] --resource <paths> [<group>/…]<slug>`,
+  `# Expected`: `fdf bug --affects <owning-feature-id>[,…] --resource <paths> --cost <0-9> [<group>/…]<slug>`
+  (rated as fdf-help's *Cost, effort and tags* says),
   where `--affects` names the features the defect shows in — not the one you
   are building — and is left out when no feature documents that code. A defect
   inside this feature's scope is simply its next task.

@@ -89,3 +89,28 @@ func asList(v any) []string {
 		return nil
 	}
 }
+
+// Frontmatter reads a document's frontmatter as the validator does: its
+// fields, and the body after it. ok is false when the text has no complete
+// frontmatter block or the block does not parse (F1).
+func Frontmatter(text string) (data map[string]any, body string, ok bool) {
+	block, delimited, body := splitFrontmatter(strings.TrimPrefix(text, "\uFEFF"))
+	if !delimited {
+		return nil, text, false
+	}
+	data, err := parseFrontmatter(block)
+	if err != nil {
+		return nil, body, false
+	}
+	return data, body, true
+}
+
+// Score reads a debt's or bug's `cost` or `effort` (spec 1.2) as a listing
+// does: its value from 0 to 9, or -1 when it is absent, empty or not one of
+// those, which the validator reports (F16).
+func Score(v any) int {
+	if s, ok := v.(string); ok && scoreRe.MatchString(strings.TrimSpace(s)) {
+		return int(strings.TrimSpace(s)[0] - '0')
+	}
+	return noScore
+}

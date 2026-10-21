@@ -1,0 +1,3 @@
+exit: 1
+contains: FAIL: TAGS.md: the tag dictionary is a file of the bundle from spec 1.2, and this bundle pins 1.1 — remove it, or move the pin with `fdf migrate` first (F3)
+not-contains: (F15)

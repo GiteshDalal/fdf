@@ -15,7 +15,7 @@ silently drift.
 
 ```
 docs/fdf/
-├── INDEX.md                      # bundle root (pins fdf_version: "1.1")
+├── INDEX.md                      # bundle root (pins fdf_version: "1.2")
 ├── LOG.md
 ├── SPEC.md                       # the format spec, shipped in the bundle
 ├── SPEC.examples.md              # one example of each document, beside it
@@ -24,6 +24,7 @@ docs/fdf/
 ├── SURFACES.md                   # Context: interface principles (all surfaces)
 ├── INFRA.md                      # Context: build & deployment infra
 ├── DOMAIN.md                     # Context: the project's domain language
+├── TAGS.md                       # the tag dictionary: every tag, defined once
 ├── features/                     # what the software does
 │   ├── INDEX.md
 │   ├── onboarding.md             # a flat feature: ID features/onboarding
@@ -69,8 +70,9 @@ Context docs — and are amended in place. Episodic documents are frozen records
 of one piece of work — `slug.spec.md`, `slug.plan.md`, tasks, changes, log
 entries — and are never rewritten, except by a **maintenance edit**, which
 only puts one name in place of another: a lexicon fix (a banned word replaced
-by its term), a reference repair after a move (`fdf mv`), or a path repair
-after the code moved. So a delivered feature that changes keeps **one**
+by its term), a tag fix (one tag folded into another, `fdf tag --merge`), a
+reference repair after a move (`fdf mv`), or a path repair after the code
+moved. So a delivered feature that changes keeps **one**
 feature document, whose Gherkin is edited, and gains a **new** episode under
 `changes/`. Its
 original spec and plan stay untouched: they record how it was first built,
@@ -187,18 +189,20 @@ go install github.com/GiteshDalal/fdf/cli/cmd/fdf@latest
 ## Use
 
 ```bash
-fdf init                     # scaffold docs/fdf/ + SPEC.md + SPEC.examples.md + context stubs (or FDF_ROOT_DIR / --root)
+fdf init                     # scaffold docs/fdf/ + SPEC.md + SPEC.examples.md + TAGS.md + context stubs (or FDF_ROOT_DIR / --root)
                              #   then run the fdf-init skill to fill STACK/ARCHITECTURE/SURFACES/INFRA/DOMAIN
 fdf new payments/instant-refunds  # features/payments/instant-refunds.md; `fdf new onboarding` files one flat
-fdf validate                 # F1-F14 + R1; exit 1 on any violation
+fdf validate                 # F1-F16 + R1; exit 1 on any violation
 fdf validate --strict-domain # …and F12 banned words become errors (or `strict: true` in DOMAIN.md)
 fdf practice permission-checks  # scaffold a Practice under practices/
 fdf adopt --resource internal/payments/card.go payments/card-payments  # map existing code
 fdf adopt                    # the adoption map: built, adopted, and unclaimed code
 
-fdf debt                     # the register: status, id, filing date (UTC), title
+fdf debt                     # the register, costliest first: cost, effort, status, id, date last changed (UTC), title
 fdf debt --open              # …only what is outstanding (also --accepted, --resolved)
-fdf debt authz-legacy-handlers  # file a new debt
+fdf debt --untriaged         # …the open entries nobody has given a cost yet
+fdf debt --tag gtm --sort value  # …those tagged gtm, ordered by cost − effort (what one unit of work buys)
+fdf debt --cost 6 --effort 4 authz-legacy-handlers  # file a new debt, rated 0-9 (SPEC.md, Cost and effort)
 fdf debt --cleanup           # fold resolved debts into debts/LOG.md and clear them
 fdf debt --cleanup --dry-run # …show the plan first, change nothing
 fdf bug --open               # the bug register (fdf debt's flags; clearing always logs)
@@ -206,6 +210,10 @@ fdf bug --affects features/payments/instant-refunds refund-split-capture  # file
 fdf mv features/payments/store-hours features/venues/opening-hours  # move/rename with its trail; every reference repaired
 fdf lexicon                  # every banned domain word, with file:line:col
 fdf lexicon --term Venue --fix --dry-run  # …sweep one term, reviewing the diff first
+fdf tag                      # the tag dictionary (TAGS.md): each tag, how many documents carry it, what it means
+fdf tag --definition 'Work the public launch waits for.' gtm  # add a tag with its definition
+fdf tag --sync               # start TAGS.md from the tags documents already carry (each a TODO to define)
+fdf tag --merge testing test # fold one tag into another in every document (a tag fix, logged)
 fdf log features/payments/instant-refunds '**Specified**: design approved.'  # into the feature's own log, created on first use
 fdf log '**Checkpoint**: Context documents current.'  # the root LOG.md: bundle-wide events only
 fdf spec                     # print the format spec (-v 1.0 for an older one)
@@ -223,7 +231,7 @@ fdf install claude-code      # user-level skills + "## Feature Document Format" 
 fdf install codex            #   (a primer you edited is left alone; one fdf wrote is upgraded)
 fdf install opencode
 fdf install --project claude-code   # project-level: skills under .claude/, primer in ./CLAUDE.md
-fdf migrate                  # upgrade a 1.0 bundle to 1.1, or one from before 1.0 (see Upgrading)
+fdf migrate                  # upgrade a 1.0 or 1.1 bundle to 1.2, or one from before 1.0 (see Upgrading)
 ```
 
 `fdf install` defaults to **user-level** (under your home directory). Prefer
@@ -259,22 +267,31 @@ Works the same everywhere: the bundle may be a plain directory or a git
 submodule mounted at the same path — `resource:` paths always verify against
 the **project** root.
 
-### Upgrading from 1.0 to 1.1
+### Upgrading from 1.0 or 1.1 to 1.2
 
-fdf 1.1 validates and works on 1.0 bundles as they are, so there is no hurry.
-1.1 only adds: the spec's examples leave `SPEC.md` for `SPEC.examples.md`
-beside it. To take it up, commit first, then run `fdf migrate` (`--dry-run`
-first, if you like):
-it moves the pin, re-vendors `SPEC.md`, writes `SPEC.examples.md`, restores
-any missing register index or Context stub, and logs one entry in `LOG.md` —
-nothing moves and no document is edited. Then re-run `fdf install` for each
-harness you use, review `git diff`, and commit.
+fdf 1.2 validates and works on 1.0 and 1.1 bundles as they are, so there is no
+hurry. Each minor version only adds: 1.1 moved the spec's examples out of
+`SPEC.md` into `SPEC.examples.md` beside it, and 1.2 adds the tag dictionary,
+`TAGS.md`, and `cost` and `effort` on debts and bugs. To take it up, commit
+first, then run `fdf migrate` (`--dry-run` first, if you like): it moves the
+pin, re-vendors `SPEC.md` and `SPEC.examples.md`, restores any missing
+register index or Context stub, and logs one entry in `LOG.md` — nothing
+moves and no document is edited. Then re-run `fdf install` for each harness
+you use, review `git diff`, and commit.
+
+Migrate writes no `TAGS.md`, because rule F15 holds every tag to it from the
+moment it exists. When you are ready, `fdf tag --sync` starts it from the
+tags your documents already carry, each with a `TODO` definition that
+`fdf validate` reports until it is written; then fold the spellings of one
+tag into one with `fdf tag --merge`, which records the dropped spelling in
+`TAGS.md`, and define what is left. `fdf debt --untriaged` and
+`fdf bug --untriaged` list the entries still to rate.
 
 ### Upgrading from 0.x
 
 fdf 1.x works on spec 1.x bundles only. A bundle that pins 0.x fails
 `fdf validate` (F1), and every command that works on a bundle refuses it,
-pointing at `fdf migrate`, which upgrades any 0.x bundle to 1.1 in one run.
+pointing at `fdf migrate`, which upgrades any 0.x bundle to 1.2 in one run.
 Upgrade fdf and the bundle together: until `fdf install` runs again, an agent
 works from 0.7's skills, which tell it to run `fdf migrate` whenever a pin is
 not supported, and 1.0's `fdf migrate` moves the bundle and rewrites
@@ -483,6 +500,7 @@ adopted, and which code no document claims yet.
 
 `fdf mv` → *(every reference repaired, the move logged, the bundle validated)*
 · `fdf lexicon` → triage → `fdf lexicon --term <Term> --fix`
+· `fdf tag` → `fdf tag --merge <from> <into>`
 
 A rename is a maintenance edit: it reaches frozen documents because it only
 puts one name in place of another. Never rename a bundle file by hand.
@@ -490,9 +508,9 @@ puts one name in place of another. Never rename a bundle file by hand.
 ## Spec
 
 FDF is defined by versioned specs under [`spec/`](spec/) — current
-[v1.1](spec/1.1.md), with its examples in
-[spec/1.1.examples.md](spec/1.1.examples.md), and [v1.0](spec/1.0.md) before
-it; the 0.x versions, [v0.7](spec/0.7.md) /
+[v1.2](spec/1.2.md), with its examples in
+[spec/1.2.examples.md](spec/1.2.examples.md), and [v1.1](spec/1.1.md) and
+[v1.0](spec/1.0.md) before it; the 0.x versions, [v0.7](spec/0.7.md) /
 [v0.6](spec/0.6.md) / [v0.5](spec/0.5.md) / [v0.4](spec/0.4.md) /
 [v0.3](spec/0.3.md) / [v0.2](spec/0.2.md), are kept as history: fdf 1.x does
 not validate them, and `fdf migrate` upgrades a bundle from any of them.

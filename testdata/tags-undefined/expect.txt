@@ -1,0 +1,2 @@
+exit: 1
+contains: FAIL: tag `gtm` is not defined in TAGS.md, and 1 document carries it (debts/rounding.md) — carry a tag it defines (`fdf tag` lists them), or add it with `fdf tag gtm` and write its definition (F15)

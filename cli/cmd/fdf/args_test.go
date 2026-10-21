@@ -194,10 +194,10 @@ func TestFilingFlagsWithoutASlug(t *testing.T) {
 		if code != 2 {
 			t.Errorf("%v: exit %d", tc.args, code)
 		}
-		if tc.args[0] == "debt" && out != "usage: --resource applies when filing a debt: fdf debt [--resource <paths>] [<group>/…]<slug>\n" {
+		if tc.args[0] == "debt" && out != "usage: --resource, --cost, --effort and --tags apply when filing a debt: fdf debt [--resource <paths>] [--cost <0-9>] [--effort <0-9>] [--tags <tags>] [<group>/…]<slug>\n" {
 			t.Errorf("debt: %q", out)
 		}
-		if tc.args[0] == "bug" && out != "usage: --affects and --resource apply when filing a bug: fdf bug [--affects <ids>] [--resource <paths>] [<group>/…]<slug>\n" {
+		if tc.args[0] == "bug" && out != "usage: --affects, --resource, --cost, --effort and --tags apply when filing a bug: fdf bug [--affects <ids>] [--resource <paths>] [--cost <0-9>] [--effort <0-9>] [--tags <tags>] [<group>/…]<slug>\n" {
 			t.Errorf("bug: %q", out)
 		}
 	}
@@ -235,7 +235,7 @@ func TestCommandsPointA0xBundleAtMigrate(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("FDF_ROOT_DIR", root)
-	want := "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0 and 1.1 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n"
+	want := "error: this bundle pins fdf_version 0.7; fdf's commands work on spec 1.0, 1.1 and 1.2 bundles — upgrading the bundle is the user's decision, since `fdf migrate` moves its documents and rewrites references to them across the project: `fdf migrate --dry-run` shows the plan\n"
 	for _, args := range [][]string{
 		{"new", "payments/x"}, {"adopt", "--resource", "main.go", "payments/x"}, {"adopt"}, {"practice", "x"},
 		{"debt"}, {"debt", "x"}, {"bug", "--cleanup"}, {"change", "--affects", "features/p/q", "x"},

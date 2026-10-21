@@ -50,6 +50,12 @@ func (c *collection) walk(rootAbs string) {
 				c.fail("%s: %s (F3)", pos.Where, pos.Problem)
 			}
 			return nil
+		case layout.TagsDoc:
+			// 1.2 added the tag dictionary.
+			if since, _ := specver.Parse(layout.TagsSince); pinned(c.pin).Less(since) {
+				c.fail("%s: the tag dictionary is a file of the bundle from spec %s, and this bundle pins %s — remove it, or move the pin with `fdf migrate` first (F3)", rel, layout.TagsSince, c.pin)
+				return nil
+			}
 		case layout.Reference:
 			// 1.1 added the examples file; a bundle pinned before it keeps
 			// its examples inside SPEC.md.
@@ -73,7 +79,7 @@ func (c *collection) walk(rootAbs string) {
 			return nil
 		}
 		switch pos.Kind {
-		case layout.Reference, layout.Context:
+		case layout.Reference, layout.Context, layout.TagsDoc:
 			c.root(rel, rel, pos.Kind == layout.Context, d, text)
 		case layout.Trail:
 			if pos.Register == "features" || pos.Register == "changes" {

@@ -325,7 +325,7 @@ func TestMigrateRepairsLinksWithTheEngine(t *testing.T) {
 // registers' indexes and the Context stubs — is restored, as a repair at 1.0
 // restored it. No other file changes, and a second run, at 1.1, changes no
 // byte.
-func TestMigrateTakesA10BundleUpTo11(t *testing.T) {
+func TestMigrateTakesA10BundleUpTo12(t *testing.T) {
 	for _, pin := range []string{`"1.0"`, `'1.0'`, `1.0`} {
 		root := t.TempDir()
 		write(t, root, "INDEX.md", "---\nfdf_version: "+pin+"\n---\n\n# Bundle\n\n* [Features](/features/INDEX.md) - features.\n")
@@ -335,7 +335,7 @@ func TestMigrateTakesA10BundleUpTo11(t *testing.T) {
 		before := tree(t, root)
 		var out bytes.Buffer
 		if code := Run(Options{Root: root, DryRun: true}, &out); code != 0 ||
-			!strings.Contains(out.String(), "fdf_version 1.0 → 1.1: a minor version only adds, so nothing moves and no document is edited.\n") ||
+			!strings.Contains(out.String(), "fdf_version 1.0 → 1.2: a minor version only adds, so nothing moves and no document is edited.\n") ||
 			!strings.Contains(out.String(), "would write: ARCHITECTURE.md, DOMAIN.md, INDEX.md, INFRA.md, LOG.md, SPEC.examples.md, SPEC.md, STACK.md, SURFACES.md, bugs/INDEX.md, changes/INDEX.md, debts/INDEX.md, practices/INDEX.md\n") {
 			t.Fatalf("pin %s: a dry run says what it would write: exit %d\n%s", pin, code, out.String())
 		}
@@ -344,21 +344,21 @@ func TestMigrateTakesA10BundleUpTo11(t *testing.T) {
 		}
 		out.Reset()
 		if code := Run(Options{Root: root}, &out); code != 0 || !strings.Contains(out.String(), "wrote: ARCHITECTURE.md, DOMAIN.md, INDEX.md, INFRA.md, LOG.md, SPEC.examples.md, SPEC.md, STACK.md, SURFACES.md, bugs/INDEX.md, changes/INDEX.md, debts/INDEX.md, practices/INDEX.md\n") ||
-			!strings.Contains(out.String(), "next: re-run `fdf install` as you installed fdf, so the installed skills and primer are 1.1's;") {
+			!strings.Contains(out.String(), "next: re-run `fdf install` as you installed fdf, so the installed skills and primer are 1.2's;") {
 			t.Fatalf("pin %s: exit %d\n%s", pin, code, out.String())
 		}
 		if got := readPin(root); got != target {
 			t.Errorf("pin %s: pins %q after migrate", pin, got)
 		}
-		if idx := string(mustRead(t, filepath.Join(root, "INDEX.md"))); idx != "---\nfdf_version: \"1.1\"\n---\n\n# Bundle\n\n* [Features](/features/INDEX.md) - features.\n" {
+		if idx := string(mustRead(t, filepath.Join(root, "INDEX.md"))); idx != "---\nfdf_version: \"1.2\"\n---\n\n# Bundle\n\n* [Features](/features/INDEX.md) - features.\n" {
 			t.Errorf("pin %s: only the pin changes in INDEX.md:\n%s", pin, idx)
 		}
 		log := string(mustRead(t, filepath.Join(root, "LOG.md")))
-		if want := "* **Migrated**: fdf_version 1.0 → 1.1 with `fdf migrate`: moved the pin and vendored `SPEC.md` and `SPEC.examples.md`; restored `ARCHITECTURE.md`, `DOMAIN.md`, `INFRA.md`, `STACK.md`, `SURFACES.md`, `bugs/INDEX.md`, `changes/INDEX.md`, `debts/INDEX.md`, and `practices/INDEX.md`; no document was edited.\n"; !strings.Contains(log, want) || !strings.HasSuffix(log, "* **Initialization**: created.\n") {
+		if want := "* **Migrated**: fdf_version 1.0 → 1.2 with `fdf migrate`: moved the pin and vendored `SPEC.md` and `SPEC.examples.md`; restored `ARCHITECTURE.md`, `DOMAIN.md`, `INFRA.md`, `STACK.md`, `SURFACES.md`, `bugs/INDEX.md`, `changes/INDEX.md`, `debts/INDEX.md`, and `practices/INDEX.md`; no document was edited.\n"; !strings.Contains(log, want) || !strings.HasSuffix(log, "* **Initialization**: created.\n") {
 			t.Errorf("pin %s: LOG.md records the upgrade, newest first:\n%s", pin, log)
 		}
-		if ex := string(mustRead(t, filepath.Join(root, "SPEC.examples.md"))); !strings.Contains(ex, "# Feature Document Format (FDF) — v1.1 examples") {
-			t.Errorf("pin %s: SPEC.examples.md holds 1.1's examples:\n%.300s", pin, ex)
+		if ex := string(mustRead(t, filepath.Join(root, "SPEC.examples.md"))); !strings.Contains(ex, "# Feature Document Format (FDF) — v1.2 examples") {
+			t.Errorf("pin %s: SPEC.examples.md holds 1.2's examples:\n%.300s", pin, ex)
 		}
 		after := tree(t, root)
 		for _, file := range strings.SplitAfter(before, "\n== ")[1:] {
@@ -367,7 +367,7 @@ func TestMigrateTakesA10BundleUpTo11(t *testing.T) {
 			}
 		}
 		out.Reset()
-		if code := Run(Options{Root: root}, &out); code != 0 || !strings.Contains(out.String(), "nothing to migrate: the bundle already pins fdf_version 1.1") || !strings.Contains(out.String(), "nothing to restore") {
+		if code := Run(Options{Root: root}, &out); code != 0 || !strings.Contains(out.String(), "nothing to migrate: the bundle already pins fdf_version 1.2") || !strings.Contains(out.String(), "nothing to restore") {
 			t.Errorf("pin %s: a second run restores nothing: exit %d\n%s", pin, code, out.String())
 		}
 		if again := tree(t, root); again != after {
@@ -411,23 +411,68 @@ func TestMigrateMarksWhatTheUpgradeWritesNew(t *testing.T) {
 
 // A bundle already at 1.1 moves nothing: migrate restores what is missing or
 // not 1.1's own text — its spec and examples copies — and nothing else.
-func TestMigrateRepairsA11BundleInPlace(t *testing.T) {
+func TestMigrateTakesA11BundleUpTo12(t *testing.T) {
 	root := copyFixture(t, "valid-v11")
 	var out bytes.Buffer
-	if code := Run(Options{Root: root}, &out); code != 0 || !strings.Contains(out.String(), "nothing to migrate: the bundle already pins fdf_version 1.1") || !strings.Contains(out.String(), "restored: SPEC.examples.md, SPEC.md\n") {
+	if code := Run(Options{Root: root}, &out); code != 0 ||
+		!strings.Contains(out.String(), "fdf_version 1.1 → 1.2: a minor version only adds, so nothing moves and no document is edited.\n") ||
+		!strings.Contains(out.String(), "wrote: INDEX.md, LOG.md, SPEC.examples.md, SPEC.md\n") {
 		t.Errorf("valid-v11: exit %d\n%s", code, out.String())
 	}
-	if log := string(mustRead(t, filepath.Join(root, "LOG.md"))); strings.Contains(log, "Migrated") {
-		t.Errorf("a repair logs nothing:\n%s", log)
+	if got := readPin(root); got != "1.2" {
+		t.Errorf("pins %q after migrate", got)
+	}
+	if exists(filepath.Join(root, "TAGS.md")) {
+		t.Errorf("migrate writes no TAGS.md: F15 holds every tag to it from the moment it exists")
+	}
+	if log := string(mustRead(t, filepath.Join(root, "LOG.md"))); !strings.Contains(log, "* **Migrated**: fdf_version 1.1 → 1.2 with `fdf migrate`: moved the pin and vendored `SPEC.md` and `SPEC.examples.md`; no document was edited.\n") {
+		t.Errorf("LOG.md records the upgrade:\n%s", log)
 	}
 	out.Reset()
 	before := tree(t, root)
 	if code := Run(Options{Root: root, To: filepath.Join(t.TempDir(), "fdf")}, &out); code != 1 ||
-		!strings.Contains(out.String(), "cannot migrate: the bundle already pins fdf_version 1.1, and migrate moves nothing in a bundle at 1.x") {
-		t.Errorf("--to on a 1.1 bundle: exit %d\n%s", code, out.String())
+		!strings.Contains(out.String(), "cannot migrate: the bundle already pins fdf_version 1.2, and migrate moves nothing in a bundle at 1.x") {
+		t.Errorf("--to on a 1.2 bundle: exit %d\n%s", code, out.String())
 	}
 	if tree(t, root) != before {
 		t.Errorf("a refused migration changes nothing")
+	}
+}
+
+// A bundle whose documents carry tags hears, once migrated, that spec 1.2
+// adds a tag dictionary migrate does not write, and how to start one; and
+// one with unrated debts or bugs, how to list them.
+func TestMigrateSaysWhat12LeavesToTakeUp(t *testing.T) {
+	root := copyFixture(t, "valid-v11")
+	write(t, root, "debts/platform/payments/rounding.md", strings.Replace(string(mustRead(t, filepath.Join("testdata", "valid-v11", "debts/platform/payments/rounding.md"))), "timestamp:", "tags: [payments]\ntimestamp:", 1))
+	var out bytes.Buffer
+	if code := Run(Options{Root: root}, &out); code != 0 {
+		t.Fatalf("exit %d\n%s", code, out.String())
+	}
+	for _, want := range []string{
+		"warn: 1 document(s) carry 1 tag(s), and the bundle has no TAGS.md to define them — `fdf tag --sync` starts one from them",
+		"warn: debts/: 1 open or accepted debt(s) with no `cost`",
+		"then, when you choose (spec 1.2 adds both, and migrate writes neither):\n",
+		"  - `fdf tag --sync` starts the tag dictionary, TAGS.md, from the tags your documents carry, each\n",
+		"  - `fdf debt --untriaged` and `fdf bug --untriaged` list the entries with no `cost` yet;\n",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("missing %q:\n%s", want, out.String())
+		}
+	}
+}
+
+func TestMigrateRepairsA12BundleInPlace(t *testing.T) {
+	root := copyFixture(t, "valid-v12")
+	var out bytes.Buffer
+	if code := Run(Options{Root: root}, &out); code != 0 || !strings.Contains(out.String(), "nothing to migrate: the bundle already pins fdf_version 1.2") || !strings.Contains(out.String(), "restored: SPEC.examples.md, SPEC.md\n") {
+		t.Errorf("valid-v12: exit %d\n%s", code, out.String())
+	}
+	if log := string(mustRead(t, filepath.Join(root, "LOG.md"))); strings.Contains(log, "Migrated") {
+		t.Errorf("a repair logs nothing:\n%s", log)
+	}
+	if strings.Contains(out.String(), "then, when you choose") {
+		t.Errorf("a bundle with its dictionary and its costs hears nothing to take up:\n%s", out.String())
 	}
 }
 
@@ -439,7 +484,7 @@ func TestMigrateRefusesAPinItDoesNotKnow(t *testing.T) {
 		return "cannot migrate: the bundle pins fdf_version " + pin + ", which is not a MAJOR.MINOR version such as " + specver.Meant(pin, scaffold.CurrentVersion()) + " — correct the pin in INDEX.md; the bundle was left as it is."
 	}
 	for _, tc := range []struct{ pin, says string }{
-		{`"1.2"`, "cannot migrate: the bundle pins fdf_version 1.2, newer than any spec this binary knows (" + target + ") — upgrade fdf; the bundle was left as it is."},
+		{`"1.3"`, "cannot migrate: the bundle pins fdf_version 1.3, newer than any spec this binary knows (" + target + ") — upgrade fdf; the bundle was left as it is."},
 		{`"2.0"`, "cannot migrate: the bundle pins fdf_version 2.0, newer than any spec this binary knows (" + target + ") — upgrade fdf; the bundle was left as it is."},
 		{`"0.8"`, "cannot migrate: the bundle pins fdf_version 0.8, which is no 0.x version this binary knows (0.1 to 0.7) — correct the pin in INDEX.md; the bundle was left as it is."},
 		{`"1.0.0"`, notAVersion("1.0.0")}, {`"v1.0"`, notAVersion("v1.0")},
@@ -616,7 +661,7 @@ func TestMigrateRefusesARegisterThatIsASymlink(t *testing.T) {
 
 	dir := t.TempDir()
 	root := filepath.Join(dir, "handbook")
-	copyFixtureTo(t, "valid-v11", root)
+	copyFixtureTo(t, "valid-v12", root)
 	write(t, dir, "shared/SPEC.md", "A copy of the spec, shared.\n")
 	if err := os.MkdirAll(filepath.Join(dir, "shared", "empty-bugs"), 0o755); err != nil {
 		t.Fatal(err)
@@ -989,23 +1034,23 @@ func TestMigrateAsksABundleLaidOutFor10ForItsPin(t *testing.T) {
 			t.Error("a refused migration changes nothing")
 		}
 	}
-	// With no spec copy it can read, a bundle laid out for 1.x is 1.1 when it
-	// holds SPEC.examples.md, and 1.0 when it does not, as fdf-validate says.
+	// With no spec copy it can read, a bundle laid out for 1.x is 1.2 when it
+	// holds TAGS.md, 1.1 when it holds SPEC.examples.md, and 1.0 when it holds
+	// neither, as fdf-validate says.
 	write(t, root, "SPEC.md", "---\ntype: Reference\n---\n\nEdited.\n")
 	write(t, root, "features/INDEX.md", "# Features\n")
 	for _, tc := range []struct {
-		examples bool
-		version  string
-	}{{true, "1.1"}, {false, "1.0"}} {
-		if !tc.examples {
-			if err := os.Remove(filepath.Join(root, "SPEC.examples.md")); err != nil {
+		remove, version string
+	}{{"", "1.2"}, {"TAGS.md", "1.1"}, {"SPEC.examples.md", "1.0"}} {
+		if tc.remove != "" {
+			if err := os.Remove(filepath.Join(root, tc.remove)); err != nil {
 				t.Fatal(err)
 			}
 		}
 		var out bytes.Buffer
 		Run(Options{Root: root, DryRun: true}, &out)
 		if want := "as in a bundle written for spec " + tc.version + " — if it was, pin fdf_version: \"" + tc.version + "\""; !strings.Contains(out.String(), want) {
-			t.Errorf("examples %v: want %q:\n%s", tc.examples, want, out.String())
+			t.Errorf("without %q: want %q:\n%s", tc.remove, want, out.String())
 		}
 	}
 	if err := os.Remove(filepath.Join(root, "features", "INDEX.md")); err != nil {
@@ -1021,7 +1066,7 @@ func TestMigrateAsksABundleLaidOutFor10ForItsPin(t *testing.T) {
 	write(t, root, "SPEC.md", string(doc))
 	write(t, root, "SPEC.examples.md", "---\ntype: Reference\n---\n\nExamples.\n")
 	var out bytes.Buffer
-	if Run(Options{Root: root, DryRun: true}, &out); !strings.Contains(out.String(), "but it holds SPEC.examples.md, as in a bundle written for spec 1.1 — if it was, pin fdf_version: \"1.1\" in INDEX.md, and there is nothing to migrate;") {
+	if Run(Options{Root: root, DryRun: true}, &out); !strings.Contains(out.String(), "but it holds SPEC.examples.md, as in a bundle written for spec 1.1 — if it was, pin fdf_version: \"1.1\" in INDEX.md, and run migrate again, which takes it up to "+target+";") {
 		t.Errorf("SPEC.examples.md says 1.1:\n%s", out.String())
 	}
 	if err := os.Remove(filepath.Join(root, "SPEC.examples.md")); err != nil {
@@ -1589,7 +1634,7 @@ func TestMigrateRefusesWhat10HasNoPlaceFor(t *testing.T) {
 		"  specials: a symbolic link to " + shared + ", a directory of Markdown that migrate does not read through — replace it with the directory it names\n" +
 		"  venues/log.md: no document is named log.md: a disk that ignores case reads it as the LOG.md beside it — rename it\n" +
 		"  venues/sub: a symbolic link to " + shared + ", a directory of Markdown that migrate does not read through — replace it with the directory it names\n" +
-		"  worklog.md: the bundle root holds only INDEX.md, LOG.md, SPEC.md, SPEC.examples.md (from spec 1.1), README.md and the five Context documents — file it in a register, or move it out of the bundle\n"
+		"  worklog.md: the bundle root holds only INDEX.md, LOG.md, SPEC.md, SPEC.examples.md (from spec 1.1), TAGS.md (from spec 1.2), README.md and the five Context documents — file it in a register, or move it out of the bundle\n"
 	if out.String() != want {
 		t.Errorf("migrate names what it cannot place:\n got: %q\nwant: %q", out.String(), want)
 	}
@@ -1611,8 +1656,8 @@ func TestMigrateRefusesWhat10HasNoPlaceFor(t *testing.T) {
 			t.Errorf("a refused migration changes nothing")
 		}
 	}
-	// So in a bundle at 1.1 does one where an index it restores goes.
-	root = copyFixture(t, "valid-v11")
+	// So in a bundle at 1.2 does one where an index it restores goes.
+	root = copyFixture(t, "valid-v12")
 	if err := os.RemoveAll(filepath.Join(root, "debts")); err != nil {
 		t.Fatal(err)
 	}
@@ -2767,5 +2812,30 @@ func TestMigrateSaysHowToUndoAMigrationStoppedAfterTheMove(t *testing.T) {
 				t.Errorf("submodule %v: git status is clean again in %s:\n%s", submodule, dir, status)
 			}
 		}
+	}
+}
+
+// A field a minor version adds has the meaning that version gives it: a 1.1
+// bundle whose debt uses `cost` for a note of its own would fail F16 once its
+// pin moved, so migrate refuses first, naming the field, and writes nothing.
+func TestMigrateRefusesAFieldOfTheBundlesOwn(t *testing.T) {
+	root := copyFixture(t, "valid-v11")
+	rel := "debts/platform/payments/rounding.md"
+	text := strings.Replace(string(mustRead(t, filepath.Join(root, rel))), "timestamp:", "cost: high\neffort: \"2 days\"\ntimestamp:", 1)
+	write(t, root, rel, text)
+	before := tree(t, root)
+	var out bytes.Buffer
+	if code := Run(Options{Root: root, DryRun: true}, &out); code != 1 ||
+		!strings.Contains(out.String(), "debts/platform/payments/rounding.md: `cost: high` is a field of this bundle's own, and spec 1.2 gives `cost` a meaning") ||
+		!strings.Contains(out.String(), "`effort: 2 days`") {
+		t.Errorf("exit %d\n%s", code, out.String())
+	}
+	if tree(t, root) != before {
+		t.Errorf("a refused migration changes nothing")
+	}
+	write(t, root, rel, strings.Replace(text, "cost: high\neffort: \"2 days\"\n", "cost: 4\neffort:\n", 1))
+	out.Reset()
+	if code := Run(Options{Root: root}, &out); code != 0 {
+		t.Errorf("a digit, and an empty value, migrate: exit %d\n%s", code, out.String())
 	}
 }

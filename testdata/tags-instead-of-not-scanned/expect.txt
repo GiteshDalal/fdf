@@ -1,0 +1,3 @@
+flags: --strict-domain
+exit: 0
+not-contains: (F12)
