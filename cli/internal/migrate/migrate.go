@@ -1,5 +1,5 @@
 // Package migrate upgrades a 0.x bundle, at any pin from 0.1 to 0.7 or none,
-// to spec 1.1 in one run:
+// to target, the current spec, in one run:
 //
 //	older layouts → 0.7-shaped: v0.1's case renames and the removal of its
 //	      vendored spec, v0.3's trail lift and the test stubs, and the status
