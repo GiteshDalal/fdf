@@ -1,4 +1,3 @@
-// Package fdf exposes the repo's skills and specs to the CLI.
 package fdf
 
 import "embed"

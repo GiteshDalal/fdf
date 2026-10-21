@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Installs a prebuilt fdf binary from GitHub Releases.
+#   curl -fsSL https://giteshdalal.com/fdf.sh | bash
 #   curl -fsSL https://raw.githubusercontent.com/GiteshDalal/fdf/main/install.sh | bash
+# (the short link hands off to this file, so there is one installer to maintain)
 # Env: FDF_VERSION (tag to install, default latest), FDF_INSTALL_DIR (default ~/.local/bin)
 set -euo pipefail
 

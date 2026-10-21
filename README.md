@@ -1,17 +1,40 @@
 # FDF — Feature Document Format
 
-**Documentation-as-a-directory for software features.** Each feature is a
-Markdown + Gherkin document under `features/`; its design spec, plan,
-acceptance tests, and optional surface/log trail live as **stem-qualified
-siblings** beside it; tasks live only under a paired `slug/` directory;
-post-delivery change requests and bug fixes live under `changes/`; the
-recurring mechanisms every feature must follow the same way live as
-**practices**, what the project has said but not yet done everywhere is
-written down as **debt**, and what the software does wrong and nobody has
-repaired yet is written down as a **bug**; code that predates the bundle is
-**adopted** rather than given an invented history; an opinionated CLI
-validates the whole bundle — and renames and rewords it — so it can never
-silently drift.
+**Documentation-as-a-directory for software features.** FDF keeps what your
+software does, and why, in the repository as Markdown and Gherkin, and the
+`fdf` CLI validates it so that it cannot silently drift from the code. It is
+built for teams who work with AI agents: the bundle is what every agent and
+every teammate reads before changing anything.
+
+[Project page](https://giteshdalal.com/projects/fdf/) ·
+[Command reference](https://pkg.go.dev/github.com/GiteshDalal/fdf/cli/cmd/fdf) ·
+[Spec v1.2](spec/1.2.md) ·
+[Releases](https://github.com/GiteshDalal/fdf/releases)
+
+```bash
+curl -fsSL https://giteshdalal.com/fdf.sh | bash   # install (macOS/Linux; more ways below)
+fdf init                                            # start a bundle in docs/fdf/
+fdf install --project claude-code                   # teach your agent the workflow (or codex, opencode)
+fdf validate                                        # the gate: exit 1 on any violation
+```
+
+A bundle holds:
+
+- **Features** under `features/`, each a Markdown + Gherkin document. Its
+  design spec, plan, acceptance tests, and optional surface/log trail live
+  beside it as **stem-qualified siblings**, and its tasks only under a paired
+  `slug/` directory.
+- **Changes and Fixes** under `changes/`: post-delivery change requests and
+  bug fixes.
+- **Practices**: the recurring mechanisms every feature must follow the same
+  way.
+- **Debts**: what the project has said but not yet done everywhere.
+- **Bugs**: what the software does wrong that nobody has repaired yet.
+- **Adopted features**: code that predates the bundle, documented as it
+  stands rather than given an invented history.
+
+The opinionated CLI validates the whole bundle — and renames and rewords it —
+so it can never silently drift.
 
 ```
 docs/fdf/
@@ -172,10 +195,16 @@ work in between. Built for **agentic engineering, not vibe coding**.
 
 ## Install
 
-- One-liner (macOS/Linux, no Go needed):
+- One-liner (macOS/Linux, no Go needed): downloads the latest release,
+  verifies its checksum, and installs `fdf` to `~/.local/bin`
 ```bash
-curl -fsSL https://raw.githubusercontent.com/GiteshDalal/fdf/main/install.sh | bash
+curl -fsSL https://giteshdalal.com/fdf.sh | bash
 ```
+  The short link hands off to this repository's [`install.sh`](install.sh),
+  so this is the same as
+  `curl -fsSL https://raw.githubusercontent.com/GiteshDalal/fdf/main/install.sh | bash`.
+  `FDF_VERSION=vX.Y.Z` pins a release and `FDF_INSTALL_DIR` picks another
+  directory: `curl -fsSL https://giteshdalal.com/fdf.sh | FDF_VERSION=v1.2.0 bash`.
 - Binaries on the [releases page](https://github.com/GiteshDalal/fdf/releases)
 - With [mise](https://mise.jdx.dev)
 ```
